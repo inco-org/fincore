@@ -1,8 +1,5 @@
 __pycache__/
-
 .DS_Store
 .aider*
-
-# Added by cargo
 /rust/target
 /rust/Cargo.lock
