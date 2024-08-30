@@ -80,7 +80,7 @@ fn calculate_revenue_tax(begin: NaiveDate, end: NaiveDate) -> Decimal {
 
 fn calculate_interest_factor(rate: Decimal, period: Decimal, percent: bool) -> Decimal {
     let rate = if percent { rate / Decimal::new(100, 0) } else { rate };
-    (ONE + rate).powf(period.to_f64().unwrap() as f64)
+    (ONE + rate).powi(period.to_i64().unwrap() as i32)
 }
 
 // Main functions (to be implemented)
