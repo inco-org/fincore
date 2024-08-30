@@ -38,11 +38,14 @@ pub struct Amortization {
 }
 
 pub struct VariableIndex {
-    // Add fields as needed
+    pub code: String,
+    pub percentage: i32,
+    pub value: Decimal,
 }
 
 pub struct CalcDate {
-    // Add fields as needed
+    pub value: NaiveDate,
+    pub runaway: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -87,20 +90,6 @@ fn calculate_interest_factor(rate: Decimal, period: Decimal, percent: bool) -> D
 
 // Main functions (to be implemented)
 use std::collections::HashMap;
-
-#[derive(Debug, Clone)]
-pub enum VariableIndex {
-    CDI(Decimal),
-    Poupanca(Decimal),
-    IPCA(Decimal),
-    IGPM(Decimal),
-}
-
-#[derive(Debug, Clone)]
-pub struct CalcDate {
-    pub value: NaiveDate,
-    pub runaway: bool,
-}
 
 pub fn get_payments_table(
     principal: Decimal,
@@ -206,9 +195,13 @@ fn calculate_factors(
             calculate_interest_factor(*apy, days / Decimal::from(360), true)
         },
         "252" => {
-            if let Some(VariableIndex::CDI(percentage)) = vir {
-                let working_days = Decimal::from(252); // This should be calculated properly
-                calculate_interest_factor(*apy, working_days / Decimal::from(252), true) * (ONE + percentage / Decimal::from(100))
+            if let Some(vir) = vir {
+                if vir.code == "CDI" {
+                    let working_days = Decimal::from(252); // This should be calculated properly
+                    calculate_interest_factor(*apy, working_days / Decimal::from(252), true) * (ONE + vir.value / Decimal::from(100))
+                } else {
+                    panic!("CDI index required for 252 capitalisation");
+                }
             } else {
                 panic!("CDI index required for 252 capitalisation");
             }
@@ -217,7 +210,7 @@ fn calculate_factors(
     };
 
     let f_c = match vir {
-        Some(VariableIndex::IPCA(factor)) | Some(VariableIndex::IGPM(factor)) => *factor,
+        Some(vir) if vir.code == "IPCA" || vir.code == "IGPM" => vir.value,
         _ => ONE,
     };
 
