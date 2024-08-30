@@ -7,6 +7,6 @@ edition = "2021"
 chrono = "0.4.38"
 rust_decimal = "1.36.0"
 
-[[bin]]
+[lib]
 name = "fincore"
 path = "fincore.rs"
