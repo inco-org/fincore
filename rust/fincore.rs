@@ -1,6 +1,5 @@
-use chrono::{Date, Datelike, Duration, NaiveDate, Utc};
+use chrono::NaiveDate;
 use rust_decimal::Decimal;
-use std::collections::HashMap;
 
 // Constants
 const CENTI: Decimal = Decimal::new(1, 2); // 0.01
@@ -15,6 +14,11 @@ pub struct PriceLevelAdjustment {
     period: i32,
     shift: String,
     amortizes_adjustment: bool,
+}
+
+fn main() {
+    println!("Hello from Rust fincore!");
+}
 }
 
 #[derive(Debug, Clone)]
