@@ -85,11 +85,10 @@ fn calculate_revenue_tax(begin: NaiveDate, end: NaiveDate) -> Decimal {
 
 fn calculate_interest_factor(rate: Decimal, period: Decimal, percent: bool) -> Decimal {
     let rate = if percent { rate / Decimal::from(100) } else { rate };
-    (ONE + rate).powf(period.to_f64().unwrap())
+    (ONE + rate).powi(period.to_i64().unwrap() as i32)
 }
 
 // Main functions (to be implemented)
-use std::collections::HashMap;
 
 pub fn get_payments_table(
     principal: Decimal,
@@ -188,10 +187,10 @@ fn calculate_factors(
     capitalisation: &str,
 ) -> (Decimal, Decimal) {
     let f_s = match capitalisation {
-        "360" => calculate_interest_factor(*apy, Decimal::from((end_date - start_date).num_days()) / Decimal::from(360), true),
-        "365" => calculate_interest_factor(*apy, Decimal::from((end_date - start_date).num_days()) / Decimal::from(365), true),
+        "360" => calculate_interest_factor(*apy, Decimal::from(end_date.signed_duration_since(*start_date).num_days()) / Decimal::from(360), true),
+        "365" => calculate_interest_factor(*apy, Decimal::from(end_date.signed_duration_since(*start_date).num_days()) / Decimal::from(365), true),
         "30/360" => {
-            let days = Decimal::from((end_date - start_date).num_days());
+            let days = Decimal::from(end_date.signed_duration_since(*start_date).num_days());
             calculate_interest_factor(*apy, days / Decimal::from(360), true)
         },
         "252" => {
