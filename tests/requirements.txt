@@ -1,0 +1,25 @@
+# Test battery python requirements.
+#
+# Each dependency below has a respective comment. It states the purpose of the library.
+#
+#   • Meta, indicates that the library is required by the test battery itself.
+#   • test_fincore, dependencies of the test_fincore module.
+#   • test_hub_i2c, dependencies of the test_hub_i2c module.
+#
+# A given library might have multiple purposes (for example, "python-dateutil").
+#
+coverage~=6.5        # Meta.
+faker~=19.3          # test_fincore.
+mongomock~=4.1.2     # test_hub_ops.
+moto~=4.1            # test_hub_i2c, test_hub_ops, test_synapse.
+nanoid~=2.0          # test_hub_ops, test_hub_i2c, test_synapse, test_translation_domain.
+platformdirs~=4.2.0  # test_synapse.
+pyjwt~=2.8           # test_synapse.
+pymongo~=4.4         # test_hub_i2c.
+pytest~=7.4          # Meta.
+python-dateutil~=2.8 # test_fincore, test_hub_i2c.
+requests~=2.31       # test_hub_i2c.
+responses~=0.23      # Meta.
+sh2py~=0.1.0         # test_cli_icicle.
+toml~=0.10           # Meta.
+typeguard~=4.1       # test_fincore.
