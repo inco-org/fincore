@@ -1,6 +1,7 @@
-use chrono::NaiveDate;
-use rust_decimal::Decimal;
-use rust_decimal::prelude::{ToPrimitive, Zero};
+pub mod fincore {
+    use chrono::NaiveDate;
+    use rust_decimal::Decimal;
+    use rust_decimal::prelude::{ToPrimitive, Zero};
 
 // Constants
 const CENTI: Decimal = Decimal::from_parts(1, 0, 0, false, 2); // 0.01
@@ -222,3 +223,4 @@ fn calculate_factors(
 }
 
 // Other functions and implementations would follow...
+} // Close the fincore module
