@@ -1,6 +1,6 @@
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::prelude::{ToPrimitive, Zero};
 
 // Constants
 const CENTI: Decimal = Decimal::from_parts(1, 0, 0, false, 2); // 0.01
@@ -82,7 +82,7 @@ fn calculate_revenue_tax(begin: NaiveDate, end: NaiveDate) -> Decimal {
 
 fn calculate_interest_factor(rate: Decimal, period: Decimal, percent: bool) -> Decimal {
     let rate = if percent { rate / Decimal::from(100) } else { rate };
-    (ONE + rate).pow(period)
+    (ONE + rate).powf(period.to_f64().unwrap())
 }
 
 // Main functions (to be implemented)
@@ -112,7 +112,7 @@ pub fn get_payments_table(
     tax_exempt: Option<bool>,
     gain_output: String,
 ) -> Vec<Payment> {
-    if principal == Decimal::zero() {
+    if principal.is_zero() {
         return Vec::new();
     }
 
@@ -124,7 +124,7 @@ pub fn get_payments_table(
         panic!("At least two amortizations are required: the start of the schedule, and its end");
     }
 
-    let calc_date = calc_date.unwrap_or(CalcDate {
+    let calc_date = calc_date.unwrap_or_else(|| CalcDate {
         value: amortizations.last().unwrap().date,
         runaway: false,
     });
@@ -183,7 +183,7 @@ pub fn get_payments_table(
 
         payments.push(payment);
 
-        if balance == Decimal::zero() {
+        if balance.is_zero() {
             break;
         }
     }
