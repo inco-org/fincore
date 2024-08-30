@@ -1,5 +1,6 @@
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 
 // Constants
 const CENTI: Decimal = Decimal::from_parts(1, 0, 0, false, 2); // 0.01
@@ -79,19 +80,19 @@ fn calculate_revenue_tax(begin: NaiveDate, end: NaiveDate) -> Decimal {
 
 fn calculate_interest_factor(rate: Decimal, period: Decimal, percent: bool) -> Decimal {
     let rate = if percent { rate / Decimal::new(100, 0) } else { rate };
-    (ONE + rate).powi(period.to_i64().unwrap() as i32)
+    (ONE + rate).powf(period.to_f64().unwrap() as f64)
 }
 
 // Main functions (to be implemented)
 pub fn get_payments_table(
-    principal: Decimal,
-    apy: Decimal,
-    amortizations: Vec<Amortization>,
-    vir: Option<VariableIndex>,
-    capitalisation: String,
-    calc_date: Option<CalcDate>,
-    tax_exempt: Option<bool>,
-    gain_output: String,
+    _principal: Decimal,
+    _apy: Decimal,
+    _amortizations: Vec<Amortization>,
+    _vir: Option<VariableIndex>,
+    _capitalisation: String,
+    _calc_date: Option<CalcDate>,
+    _tax_exempt: Option<bool>,
+    _gain_output: String,
 ) -> Vec<Payment> {
     // Implementation goes here
     vec![]
