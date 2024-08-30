@@ -17,9 +17,6 @@ pub struct PriceLevelAdjustment {
     amortizes_adjustment: bool,
 }
 
-fn main() {
-    println!("Hello from Rust fincore!");
-}
 
 #[derive(Debug, Clone)]
 pub struct DctOverride {
