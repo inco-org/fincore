@@ -2,7 +2,7 @@ use chrono::NaiveDate;
 use rust_decimal::Decimal;
 
 // Constants
-const CENTI: Decimal = Decimal::new(1, 2); // 0.01
+const CENTI: Decimal = Decimal::from_parts(1, 0, 0, false, 2); // 0.01
 const ZERO: Decimal = Decimal::ZERO;
 const ONE: Decimal = Decimal::ONE;
 
@@ -36,6 +36,14 @@ pub struct Amortization {
     dct_override: Option<DctOverride>,
 }
 
+pub struct VariableIndex {
+    // Add fields as needed
+}
+
+pub struct CalcDate {
+    // Add fields as needed
+}
+
 #[derive(Debug, Clone)]
 pub struct Payment {
     no: i32,
@@ -56,11 +64,11 @@ fn calculate_revenue_tax(begin: NaiveDate, end: NaiveDate) -> Decimal {
             (0, 180, Decimal::new(225, 3)),
             (180, 360, Decimal::new(2, 1)),
             (360, 720, Decimal::new(175, 3)),
-            (720, i32::MAX, Decimal::new(15, 2)),
+            (720, i64::MAX, Decimal::new(15, 2)),
         ];
 
         for (minimum, maximum, rate) in tax_brackets {
-            if minimum < diff && diff <= maximum {
+            if minimum < diff && diff <= maximum as i64 {
                 return rate;
             }
         }
@@ -71,7 +79,7 @@ fn calculate_revenue_tax(begin: NaiveDate, end: NaiveDate) -> Decimal {
 
 fn calculate_interest_factor(rate: Decimal, period: Decimal, percent: bool) -> Decimal {
     let rate = if percent { rate / Decimal::new(100, 0) } else { rate };
-    (ONE + rate).powf(period)
+    (ONE + rate).powi(period.to_i64().unwrap() as i32)
 }
 
 // Main functions (to be implemented)
