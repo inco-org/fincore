@@ -3,11 +3,19 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::cmp::min;
 use std::collections::HashMap;
+use serde_json::Value;
 
 // Constants
 const CENTI: Decimal = dec!(0.01);
 const ZERO: Decimal = dec!(0);
 const ONE: Decimal = dec!(1);
+
+const REVENUE_TAX_BRACKETS: [(i32, i32, Decimal); 4] = [
+    (0, 180, dec!(0.225)),
+    (180, 360, dec!(0.2)),
+    (360, 720, dec!(0.175)),
+    (720, i32::MAX, dec!(0.15)),
+];
 
 // Enums
 #[derive(Debug, Clone, Copy, PartialEq)]
