@@ -32,18 +32,6 @@ pub enum VrIndex {
     Poupanca,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum PlIndex {
-    IPCA,
-    IGPM,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum PlShift {
-    AUTO,
-    M1,
-    M2,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Capitalisation {
@@ -61,14 +49,6 @@ pub enum GainOutputMode {
 }
 
 // Structs
-#[derive(Debug, Clone)]
-pub struct PriceLevelAdjustment {
-    pub code: PlIndex,
-    pub base_date: Option<NaiveDate>,
-    pub period: i32,
-    pub shift: PlShift,
-    pub amortizes_adjustment: bool,
-}
 
 #[derive(Debug, Clone)]
 pub struct DctOverride {
@@ -123,12 +103,6 @@ pub struct DailyReturn {
 }
 
 #[derive(Debug, Clone)]
-pub struct PriceAdjustedPayment {
-    pub payment: Payment,
-    pub pla: Decimal,
-}
-
-#[derive(Debug, Clone)]
 pub struct LatePayment {
     pub payment: Payment,
     pub extra_gain: Decimal,
@@ -139,14 +113,6 @@ pub struct LatePayment {
 impl LatePayment {
     pub const FEE_RATE: Decimal = dec!(1);
     pub const FINE_RATE: Decimal = dec!(2);
-}
-
-#[derive(Debug, Clone)]
-pub struct LatePriceAdjustedPayment {
-    pub price_adjusted_payment: PriceAdjustedPayment,
-    pub extra_gain: Decimal,
-    pub penalty: Decimal,
-    pub fine: Decimal,
 }
 
 #[derive(Debug, Clone)]
@@ -203,29 +169,9 @@ pub struct DailyIndex {
     pub value: Decimal,
 }
 
-#[derive(Debug, Clone)]
-pub struct MonthlyIndex {
-    pub date: NaiveDate,
-    pub value: Decimal,
-}
-
-#[derive(Debug, Clone)]
-pub struct RangedIndex {
-    pub begin_date: NaiveDate,
-    pub end_date: NaiveDate,
-    pub value: Decimal,
-}
-
 pub trait IndexStorageBackend {
     fn get_cdi_indexes(&self, begin: NaiveDate, end: NaiveDate) -> Result<Vec<DailyIndex>, BackendError>;
-    fn get_savings_indexes(&self, begin: NaiveDate, end: NaiveDate) -> Result<Vec<RangedIndex>, BackendError>;
-    fn get_ipca_indexes(&self, begin: NaiveDate, end: NaiveDate) -> Result<Vec<MonthlyIndex>, BackendError>;
-    fn get_igpm_indexes(&self, begin: NaiveDate, end: NaiveDate) -> Result<Vec<MonthlyIndex>, BackendError>;
-    
     fn calculate_cdi_factor(&self, begin: NaiveDate, end: NaiveDate, percentage: i32) -> Result<(Decimal, i32), BackendError>;
-    fn calculate_savings_factor(&self, begin: NaiveDate, end: NaiveDate, percentage: i32) -> Result<(Decimal, i32), BackendError>;
-    fn calculate_ipca_factor(&self, base: NaiveDate, period: i32, shift: PlShift, ratio: Decimal) -> Result<Decimal, BackendError>;
-    fn calculate_igpm_factor(&self, base: NaiveDate, period: i32, shift: PlShift, ratio: Decimal) -> Result<Decimal, BackendError>;
 }
 
 #[derive(Debug, Clone)]
