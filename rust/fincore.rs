@@ -197,18 +197,91 @@ impl InMemoryBackend {
     }
 
     fn initialize_data(&mut self) {
-        // Initialize _ignore_cdi and _registry_cdi with the provided data
-        // This part would be a direct translation of the Python data initialization
-        // For brevity, I'm not including the full data set here
         self._ignore_cdi = vec![
             NaiveDate::from_ymd_opt(2018, 1, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2018, 2, 12).unwrap(),
+            NaiveDate::from_ymd_opt(2018, 2, 13).unwrap(),
             NaiveDate::from_ymd_opt(2018, 3, 30).unwrap(),
-            // ... other dates ...
+            NaiveDate::from_ymd_opt(2018, 5, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2018, 5, 31).unwrap(),
+            NaiveDate::from_ymd_opt(2018, 9, 7).unwrap(),
+            NaiveDate::from_ymd_opt(2018, 10, 12).unwrap(),
+            NaiveDate::from_ymd_opt(2018, 11, 2).unwrap(),
+            NaiveDate::from_ymd_opt(2018, 11, 15).unwrap(),
+            NaiveDate::from_ymd_opt(2018, 12, 25).unwrap(),
+            NaiveDate::from_ymd_opt(2019, 1, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2019, 3, 4).unwrap(),
+            NaiveDate::from_ymd_opt(2019, 3, 5).unwrap(),
+            NaiveDate::from_ymd_opt(2019, 4, 19).unwrap(),
+            NaiveDate::from_ymd_opt(2019, 5, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2019, 6, 20).unwrap(),
+            NaiveDate::from_ymd_opt(2019, 11, 15).unwrap(),
+            NaiveDate::from_ymd_opt(2019, 12, 25).unwrap(),
+            NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2020, 2, 24).unwrap(),
+            NaiveDate::from_ymd_opt(2020, 2, 25).unwrap(),
+            NaiveDate::from_ymd_opt(2020, 4, 10).unwrap(),
+            NaiveDate::from_ymd_opt(2020, 4, 21).unwrap(),
+            NaiveDate::from_ymd_opt(2020, 5, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2020, 6, 11).unwrap(),
+            NaiveDate::from_ymd_opt(2020, 9, 7).unwrap(),
+            NaiveDate::from_ymd_opt(2020, 10, 12).unwrap(),
+            NaiveDate::from_ymd_opt(2020, 11, 2).unwrap(),
+            NaiveDate::from_ymd_opt(2020, 12, 25).unwrap(),
+            NaiveDate::from_ymd_opt(2021, 1, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2021, 2, 15).unwrap(),
+            NaiveDate::from_ymd_opt(2021, 2, 16).unwrap(),
+            NaiveDate::from_ymd_opt(2021, 4, 2).unwrap(),
+            NaiveDate::from_ymd_opt(2021, 4, 21).unwrap(),
+            NaiveDate::from_ymd_opt(2021, 6, 3).unwrap(),
+            NaiveDate::from_ymd_opt(2021, 9, 7).unwrap(),
+            NaiveDate::from_ymd_opt(2021, 10, 12).unwrap(),
+            NaiveDate::from_ymd_opt(2021, 11, 2).unwrap(),
+            NaiveDate::from_ymd_opt(2021, 11, 15).unwrap(),
+            NaiveDate::from_ymd_opt(2022, 2, 28).unwrap(),
+            NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2022, 4, 15).unwrap(),
+            NaiveDate::from_ymd_opt(2022, 4, 21).unwrap(),
+            NaiveDate::from_ymd_opt(2022, 6, 16).unwrap(),
+            NaiveDate::from_ymd_opt(2022, 9, 7).unwrap(),
+            NaiveDate::from_ymd_opt(2022, 10, 12).unwrap(),
+            NaiveDate::from_ymd_opt(2022, 11, 2).unwrap(),
+            NaiveDate::from_ymd_opt(2022, 11, 15).unwrap(),
+            NaiveDate::from_ymd_opt(2023, 2, 20).unwrap(),
+            NaiveDate::from_ymd_opt(2023, 2, 21).unwrap(),
+            NaiveDate::from_ymd_opt(2023, 4, 7).unwrap(),
+            NaiveDate::from_ymd_opt(2023, 4, 21).unwrap(),
+            NaiveDate::from_ymd_opt(2023, 5, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2023, 6, 8).unwrap(),
         ];
 
-        self._registry_cdi.insert(NaiveDate::from_ymd_opt(2018, 1, 2).unwrap(), dec!(0.000284));
-        self._registry_cdi.insert(NaiveDate::from_ymd_opt(2018, 1, 3).unwrap(), dec!(0.000284));
-        // ... other date-value pairs ...
+        self._registry_cdi = vec![
+            (NaiveDate::from_ymd_opt(2017, 12, 29).unwrap(), NaiveDate::from_ymd_opt(2018, 2, 7).unwrap(), dec!(0.026444)),
+            (NaiveDate::from_ymd_opt(2018, 2, 8).unwrap(), NaiveDate::from_ymd_opt(2018, 3, 21).unwrap(), dec!(0.025515)),
+            (NaiveDate::from_ymd_opt(2018, 3, 22).unwrap(), NaiveDate::from_ymd_opt(2018, 9, 28).unwrap(), dec!(0.024583)),
+            (NaiveDate::from_ymd_opt(2018, 10, 1).unwrap(), NaiveDate::from_ymd_opt(2019, 7, 31).unwrap(), dec!(0.024620)),
+            (NaiveDate::from_ymd_opt(2019, 8, 1).unwrap(), NaiveDate::from_ymd_opt(2019, 9, 18).unwrap(), dec!(0.022751)),
+            (NaiveDate::from_ymd_opt(2019, 9, 19).unwrap(), NaiveDate::from_ymd_opt(2019, 10, 30).unwrap(), dec!(0.020872)),
+            (NaiveDate::from_ymd_opt(2019, 10, 31).unwrap(), NaiveDate::from_ymd_opt(2019, 12, 11).unwrap(), dec!(0.018985)),
+            (NaiveDate::from_ymd_opt(2019, 12, 12).unwrap(), NaiveDate::from_ymd_opt(2020, 2, 5).unwrap(), dec!(0.017089)),
+            (NaiveDate::from_ymd_opt(2020, 2, 6).unwrap(), NaiveDate::from_ymd_opt(2020, 3, 18).unwrap(), dec!(0.016137)),
+            (NaiveDate::from_ymd_opt(2020, 3, 19).unwrap(), NaiveDate::from_ymd_opt(2020, 5, 6).unwrap(), dec!(0.014227)),
+            (NaiveDate::from_ymd_opt(2020, 5, 7).unwrap(), NaiveDate::from_ymd_opt(2020, 6, 17).unwrap(), dec!(0.011345)),
+            (NaiveDate::from_ymd_opt(2020, 6, 18).unwrap(), NaiveDate::from_ymd_opt(2020, 8, 5).unwrap(), dec!(0.008442)),
+            (NaiveDate::from_ymd_opt(2020, 8, 6).unwrap(), NaiveDate::from_ymd_opt(2021, 3, 17).unwrap(), dec!(0.007469)),
+            (NaiveDate::from_ymd_opt(2021, 3, 18).unwrap(), NaiveDate::from_ymd_opt(2021, 5, 5).unwrap(), dec!(0.010379)),
+            (NaiveDate::from_ymd_opt(2021, 5, 6).unwrap(), NaiveDate::from_ymd_opt(2021, 6, 16).unwrap(), dec!(0.013269)),
+            (NaiveDate::from_ymd_opt(2021, 6, 17).unwrap(), NaiveDate::from_ymd_opt(2021, 8, 4).unwrap(), dec!(0.016137)),
+            (NaiveDate::from_ymd_opt(2021, 8, 5).unwrap(), NaiveDate::from_ymd_opt(2021, 9, 22).unwrap(), dec!(0.019930)),
+            (NaiveDate::from_ymd_opt(2021, 9, 23).unwrap(), NaiveDate::from_ymd_opt(2021, 10, 27).unwrap(), dec!(0.023687)),
+            (NaiveDate::from_ymd_opt(2021, 10, 28).unwrap(), NaiveDate::from_ymd_opt(2021, 12, 8).unwrap(), dec!(0.029256)),
+            (NaiveDate::from_ymd_opt(2021, 12, 9).unwrap(), NaiveDate::from_ymd_opt(2022, 2, 2).unwrap(), dec!(0.034749)),
+            (NaiveDate::from_ymd_opt(2022, 2, 3).unwrap(), NaiveDate::from_ymd_opt(2022, 3, 16).unwrap(), dec!(0.040168)),
+            (NaiveDate::from_ymd_opt(2022, 3, 17).unwrap(), NaiveDate::from_ymd_opt(2022, 5, 4).unwrap(), dec!(0.043739)),
+            (NaiveDate::from_ymd_opt(2022, 5, 5).unwrap(), NaiveDate::from_ymd_opt(2022, 6, 15).unwrap(), dec!(0.047279)),
+            (NaiveDate::from_ymd_opt(2022, 6, 17).unwrap(), NaiveDate::from_ymd_opt(2022, 8, 3).unwrap(), dec!(0.049037)),
+            (NaiveDate::from_ymd_opt(2022, 8, 4).unwrap(), NaiveDate::from_ymd_opt(2022, 11, 14).unwrap(), dec!(0.050788)),
+        ];
     }
 }
 
