@@ -444,9 +444,56 @@ pub fn get_payments_table(
             }
         }
 
-        // TODO: Implement the rest of the phases
+        // Phase B.1: Register variations in principal, interest, and monetary correction
+        if ent0.date < calc_date.value || ent1.date <= calc_date.value || calc_date.runaway {
+            // Register accrued interest
+            regs.interest.current = calc_balance(principal, f_c, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total) * (f_s - ONE);
+            regs.interest.accrued += regs.interest.current;
+            regs.interest.deferred = regs.interest.accrued - (regs.interest.current + regs.interest.settled.total);
 
-        // Placeholder: Create a dummy payment
+            match ent1 {
+                Amortization { amortization_ratio, amortizes_interest, .. } => {
+                    // Regular amortization
+                    let adj = (ONE - regs.principal.amortization_ratio.current) / (ONE - regs.principal.amortization_ratio.regular);
+                    let amortization = amortization_ratio * adj;
+
+                    // Register principal amortization
+                    regs.principal.amortization_ratio.current += amortization;
+                    regs.principal.amortized.current = amortization * principal;
+                    regs.principal.amortized.total = regs.principal.amortization_ratio.current * principal;
+
+                    // Register regular amortization
+                    regs.principal.amortization_ratio.regular += *amortization_ratio;
+
+                    // Register interest to be paid
+                    if *amortizes_interest {
+                        regs.interest.settled.current = regs.interest.current + regs.principal.amortization_ratio.current * regs.interest.deferred;
+                        regs.interest.settled.total += regs.interest.settled.current;
+                    }
+                },
+                Amortization::Bare { value, .. } => {
+                    // Prepayment (extraordinary amortization)
+                    let plfv = principal * (ONE - regs.principal.amortization_ratio.current) * (f_c - ONE);
+                    let val0 = value.min(&calc_balance(principal, f_c, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total));
+                    let val1 = val0.min(&(regs.interest.accrued - regs.interest.settled.total));
+                    let val2 = (val0 - val1).min(&plfv);
+                    let val3 = val0 - val1 - val2;
+
+                    // Register principal amortization
+                    regs.principal.amortization_ratio.current += val3 / principal;
+                    regs.principal.amortized.current = val3;
+                    regs.principal.amortized.total += val3;
+
+                    // Register interest to be paid
+                    regs.interest.settled.current = val1;
+                    regs.interest.settled.total += val1;
+                }
+            }
+        }
+
+        // TODO: Implement Phase B.2 (assembling the payment instance and performing rounding)
+
+        // Placeholder: Create a dummy payment (to be replaced with actual calculation)
         let payment = Payment {
             no: num as i32 + 1,
             date: ent1.date,
@@ -458,6 +505,11 @@ pub fn get_payments_table(
             bal: ZERO,
         };
         payments.push(payment);
+
+        // Break if balance is zero
+        if calc_balance(principal, f_c, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total) == ZERO {
+            break;
+        }
     }
 
     Ok(payments)
