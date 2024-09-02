@@ -849,3 +849,549 @@ impl AmortizedPrincipal {
         }
     }
 }
+pub fn preprocess_bullet(
+    principal: Decimal,
+    apy: Decimal,
+    zero_date: NaiveDate,
+    term: i32,
+    insertions: Vec<Amortization::Bare>,
+    anniversary_date: Option<NaiveDate>,
+    capitalisation: Capitalisation,
+    vir: Option<&VariableIndex>,
+    calc_date: Option<&CalcDate>,
+) -> Result<Vec<Amortization>, String> {
+    let mut sched: Vec<Amortization> = Vec::new();
+
+    // 1. Validate
+    if term <= 0 {
+        return Err("'term' must be greater than or equal to one".to_string());
+    }
+
+    if let Some(anniversary) = anniversary_date {
+        if anniversary <= zero_date {
+            return Err(format!("the 'anniversary_date', {}, must be greater than 'zero_date', {}", anniversary, zero_date));
+        }
+        if (anniversary - (zero_date + Duration::days(term as i64 * 30))).num_days().abs() > 20 {
+            return Err(format!("the 'anniversary_date', {}, is more than 20 days away from the regular payment date, {}", 
+                               anniversary, zero_date + Duration::days(term as i64 * 30)));
+        }
+    }
+
+    for (i, x) in insertions.iter().enumerate() {
+        if x.value <= ZERO {
+            return Err(format!("invalid value for insertion entry #{} – should be positive", i));
+        }
+        if x.date <= zero_date {
+            return Err(format!("'insertions[{}].date', {}, must succeed 'zero_date', {}", i, x.date, zero_date));
+        }
+        let due = anniversary_date.unwrap_or(zero_date + Duration::days(term as i64 * 30));
+        if x.date > due {
+            return Err(format!("'insertions[{}].date', {}, succeeds the regular payment date, {}", i, x.date, due));
+        }
+    }
+
+    if capitalisation == Capitalisation::Days365 {
+        println!("WARNING: capitalising 365 days per year exists solely for legacy Bullet support – prefer 360 days");
+    }
+
+    // 2.1. Create amortizations. Regular flow, without insertions. Fast.
+    if insertions.is_empty() && vir.is_none() {
+        sched.push(Amortization {
+            date: zero_date,
+            amortization_ratio: ZERO,
+            amortizes_interest: false,
+            price_level_adjustment: None,
+            dct_override: None,
+        });
+        sched.push(Amortization {
+            date: anniversary_date.unwrap_or(zero_date + Duration::days(term as i64 * 30)),
+            amortization_ratio: ONE,
+            amortizes_interest: true,
+            price_level_adjustment: None,
+            dct_override: if anniversary_date.is_some() {
+                Some(DctOverride {
+                    date_from: anniversary_date.unwrap(),
+                    date_to: anniversary_date.unwrap(),
+                    predates_first_amortization: false,
+                })
+            } else {
+                None
+            },
+        });
+    } else {
+        // 2.3. Create amortizations. Make insertions in the regular flow. Slow.
+        let mut lst = vec![
+            Amortization {
+                date: zero_date,
+                amortization_ratio: ZERO,
+                amortizes_interest: false,
+                price_level_adjustment: None,
+                dct_override: None,
+            },
+            Amortization {
+                date: anniversary_date.unwrap_or(zero_date + Duration::days(term as i64 * 30)),
+                amortization_ratio: ONE,
+                amortizes_interest: true,
+                price_level_adjustment: None,
+                dct_override: None,
+            },
+        ];
+
+        let mut merged: Vec<Amortization> = Vec::new();
+        let mut lst_iter = lst.into_iter();
+        let mut insertions_iter = insertions.into_iter();
+        let mut next_lst = lst_iter.next();
+        let mut next_insertion = insertions_iter.next();
+
+        while next_lst.is_some() || next_insertion.is_some() {
+            match (next_lst, next_insertion) {
+                (Some(l), Some(i)) => {
+                    if l.date <= i.date {
+                        merged.push(l);
+                        next_lst = lst_iter.next();
+                    } else {
+                        merged.push(Amortization {
+                            date: i.date,
+                            amortization_ratio: ZERO,
+                            amortizes_interest: true,
+                            price_level_adjustment: None,
+                            dct_override: Some(DctOverride {
+                                date_from: zero_date,
+                                date_to: if anniversary_date.is_some() { anniversary_date.unwrap() } else { zero_date + Duration::days(term as i64 * 30) },
+                                predates_first_amortization: true,
+                            }),
+                        });
+                        next_insertion = insertions_iter.next();
+                    }
+                },
+                (Some(l), None) => {
+                    merged.push(l);
+                    next_lst = lst_iter.next();
+                },
+                (None, Some(i)) => {
+                    merged.push(Amortization {
+                        date: i.date,
+                        amortization_ratio: ZERO,
+                        amortizes_interest: true,
+                        price_level_adjustment: None,
+                        dct_override: Some(DctOverride {
+                            date_from: zero_date,
+                            date_to: if anniversary_date.is_some() { anniversary_date.unwrap() } else { zero_date + Duration::days(term as i64 * 30) },
+                            predates_first_amortization: true,
+                        }),
+                    });
+                    next_insertion = insertions_iter.next();
+                },
+                (None, None) => break,
+            }
+        }
+
+        sched = merged;
+    }
+
+    Ok(sched)
+}
+
+pub fn preprocess_jm(
+    principal: Decimal,
+    apy: Decimal,
+    zero_date: NaiveDate,
+    term: i32,
+    insertions: Vec<Amortization::Bare>,
+    anniversary_date: Option<NaiveDate>,
+    vir: Option<&VariableIndex>,
+) -> Result<Vec<Amortization>, String> {
+    let mut lst1 = Vec::new();
+    let mut lst2 = Vec::new();
+
+    // 1. Validate
+    if term <= 0 {
+        return Err("'term' must be greater than or equal to one".to_string());
+    }
+
+    if let Some(anniversary) = anniversary_date {
+        if anniversary <= zero_date {
+            return Err(format!("the 'anniversary_date', {}, must be greater than 'zero_date', {}", anniversary, zero_date));
+        }
+        if (anniversary - (zero_date + Duration::days(30))).num_days().abs() > 20 {
+            return Err(format!("the 'anniversary_date', {}, is more than 20 days away from the regular payment date, {}", 
+                               anniversary, zero_date + Duration::days(30)));
+        }
+    }
+
+    if let Some(VrIndex::Poupanca) = vir.map(|v| v.code) {
+        return Err("'Poupança' is currently unsupported".to_string());
+    }
+
+    for (i, x) in insertions.iter().enumerate() {
+        if x.date <= zero_date {
+            return Err(format!("'insertions[{}].date', {}, must succeed 'zero_date', {}", i, x.date, zero_date));
+        }
+        let due = if let Some(anniversary) = anniversary_date {
+            anniversary + Duration::days((term - 1) as i64 * 30)
+        } else {
+            zero_date + Duration::days(term as i64 * 30)
+        };
+        if x.date > due {
+            return Err(format!("'insertions[{}].date', {}, succeeds the last regular payment date, {}", i, x.date, due));
+        }
+    }
+
+    // 2. Create amortizations
+    let anniversary_date = if anniversary_date == Some(zero_date + Duration::days(30)) {
+        None
+    } else {
+        anniversary_date
+    };
+
+    // Regular flow, without insertions. Fast.
+    lst1.push(Amortization {
+        date: zero_date,
+        amortization_ratio: ZERO,
+        amortizes_interest: false,
+        price_level_adjustment: None,
+        dct_override: None,
+    });
+
+    for i in 1..=term {
+        let due = if let Some(anniversary) = anniversary_date {
+            anniversary + Duration::days((i - 1) as i64 * 30)
+        } else {
+            zero_date + Duration::days(i as i64 * 30)
+        };
+        let mut ent = Amortization {
+            date: due,
+            amortization_ratio: if i == term { ONE } else { ZERO },
+            amortizes_interest: true,
+            price_level_adjustment: None,
+            dct_override: None,
+        };
+
+        if i == 1 && anniversary_date.is_some() {
+            ent.dct_override = Some(DctOverride {
+                date_from: anniversary_date.unwrap(),
+                date_to: anniversary_date.unwrap(),
+                predates_first_amortization: false,
+            });
+        }
+
+        lst1.push(ent);
+    }
+
+    // Make insertions in the regular flow. Slow.
+    if !insertions.is_empty() {
+        let mut lst1_iter = lst1.into_iter();
+        let mut insertions_iter = insertions.into_iter();
+        let mut next_lst1 = lst1_iter.next();
+        let mut next_insertion = insertions_iter.next();
+
+        while next_lst1.is_some() || next_insertion.is_some() {
+            match (next_lst1, next_insertion) {
+                (Some(l), Some(i)) => {
+                    if l.date <= i.date {
+                        lst2.push(l);
+                        next_lst1 = lst1_iter.next();
+                    } else {
+                        let mut new_amort = Amortization {
+                            date: i.date,
+                            amortization_ratio: ZERO,
+                            amortizes_interest: true,
+                            price_level_adjustment: None,
+                            dct_override: None,
+                        };
+                        let prev_date = lst2.last().map_or(zero_date, |a| a.date);
+                        new_amort.dct_override = Some(DctOverride {
+                            date_from: prev_date,
+                            date_to: l.date,
+                            predates_first_amortization: lst2.len() == 1,
+                        });
+                        lst2.push(new_amort);
+                        next_insertion = insertions_iter.next();
+                    }
+                },
+                (Some(l), None) => {
+                    lst2.push(l);
+                    next_lst1 = lst1_iter.next();
+                },
+                (None, Some(i)) => {
+                    let mut new_amort = Amortization {
+                        date: i.date,
+                        amortization_ratio: ZERO,
+                        amortizes_interest: true,
+                        price_level_adjustment: None,
+                        dct_override: None,
+                    };
+                    let prev_date = lst2.last().map_or(zero_date, |a| a.date);
+                    new_amort.dct_override = Some(DctOverride {
+                        date_from: prev_date,
+                        date_to: i.date,
+                        predates_first_amortization: lst2.len() == 1,
+                    });
+                    lst2.push(new_amort);
+                    next_insertion = insertions_iter.next();
+                },
+                (None, None) => break,
+            }
+        }
+
+        Ok(lst2)
+    } else {
+        Ok(lst1)
+    }
+}
+
+pub fn preprocess_price(
+    principal: Decimal,
+    apy: Decimal,
+    zero_date: NaiveDate,
+    term: i32,
+    insertions: Vec<Amortization::Bare>,
+    anniversary_date: Option<NaiveDate>,
+) -> Result<Vec<Amortization>, String> {
+    let mut lst1 = Vec::new();
+    let mut lst2 = Vec::new();
+
+    // 1. Validate
+    if term <= 0 {
+        return Err("'term' must be greater than or equal to one".to_string());
+    }
+
+    if let Some(anniversary) = anniversary_date {
+        if anniversary <= zero_date {
+            return Err(format!("the 'anniversary_date', {}, must be greater than 'zero_date', {}", anniversary, zero_date));
+        }
+        if (anniversary - (zero_date + Duration::days(30))).num_days().abs() > 20 {
+            return Err(format!("the 'anniversary_date', {}, is more than 20 days away from the regular payment date, {}", 
+                               anniversary, zero_date + Duration::days(30)));
+        }
+    }
+
+    for (i, x) in insertions.iter().enumerate() {
+        if x.date <= zero_date {
+            return Err(format!("'insertions[{}].date', {}, must succeed 'zero_date', {}", i, x.date, zero_date));
+        }
+        let due = if let Some(anniversary) = anniversary_date {
+            anniversary + Duration::days((term - 1) as i64 * 30)
+        } else {
+            zero_date + Duration::days(term as i64 * 30)
+        };
+        if x.date > due {
+            return Err(format!("'insertions[{}].date', {}, succeeds the last regular payment date, {}", i, x.date, due));
+        }
+    }
+
+    // 2. Create amortizations
+    let anniversary_date = if anniversary_date == Some(zero_date + Duration::days(30)) {
+        None
+    } else {
+        anniversary_date
+    };
+
+    // Regular flow, without insertions. Fast.
+    lst1.push(Amortization {
+        date: zero_date,
+        amortization_ratio: ZERO,
+        amortizes_interest: false,
+        price_level_adjustment: None,
+        dct_override: None,
+    });
+
+    for (i, y) in amortize_fixed(principal, apy, term).enumerate() {
+        let due = if let Some(anniversary) = anniversary_date {
+            anniversary + Duration::days((i as i64) * 30)
+        } else {
+            zero_date + Duration::days((i as i64 + 1) * 30)
+        };
+
+        let mut amort = Amortization {
+            date: due,
+            amortization_ratio: y,
+            amortizes_interest: true,
+            price_level_adjustment: None,
+            dct_override: None,
+        };
+
+        if i == 0 && anniversary_date.is_some() {
+            amort.dct_override = Some(DctOverride {
+                date_from: anniversary_date.unwrap(),
+                date_to: anniversary_date.unwrap(),
+                predates_first_amortization: false,
+            });
+        }
+
+        lst1.push(amort);
+    }
+
+    // Make insertions in the regular flow. Slow.
+    if !insertions.is_empty() {
+        let mut lst1_iter = lst1.into_iter();
+        let mut insertions_iter = insertions.into_iter();
+        let mut next_lst1 = lst1_iter.next();
+        let mut next_insertion = insertions_iter.next();
+
+        while next_lst1.is_some() || next_insertion.is_some() {
+            match (next_lst1, next_insertion) {
+                (Some(l), Some(i)) => {
+                    if l.date <= i.date {
+                        lst2.push(l);
+                        next_lst1 = lst1_iter.next();
+                    } else {
+                        let mut new_amort = Amortization {
+                            date: i.date,
+                            amortization_ratio: ZERO,
+                            amortizes_interest: true,
+                            price_level_adjustment: None,
+                            dct_override: None,
+                        };
+                        let prev_date = lst2.last().map_or(zero_date, |a| a.date);
+                        new_amort.dct_override = Some(DctOverride {
+                            date_from: prev_date,
+                            date_to: l.date,
+                            predates_first_amortization: lst2.len() == 1,
+                        });
+                        lst2.push(new_amort);
+                        next_insertion = insertions_iter.next();
+                    }
+                },
+                (Some(l), None) => {
+                    lst2.push(l);
+                    next_lst1 = lst1_iter.next();
+                },
+                (None, Some(i)) => {
+                    let mut new_amort = Amortization {
+                        date: i.date,
+                        amortization_ratio: ZERO,
+                        amortizes_interest: true,
+                        price_level_adjustment: None,
+                        dct_override: None,
+                    };
+                    let prev_date = lst2.last().map_or(zero_date, |a| a.date);
+                    new_amort.dct_override = Some(DctOverride {
+                        date_from: prev_date,
+                        date_to: i.date,
+                        predates_first_amortization: lst2.len() == 1,
+                    });
+                    lst2.push(new_amort);
+                    next_insertion = insertions_iter.next();
+                },
+                (None, None) => break,
+            }
+        }
+
+        Ok(lst2)
+    } else {
+        Ok(lst1)
+    }
+}
+
+pub fn preprocess_livre(
+    principal: Decimal,
+    apy: Decimal,
+    amortizations: Vec<Amortization>,
+    insertions: Vec<Amortization::Bare>,
+    vir: Option<&VariableIndex>,
+) -> Result<Vec<Amortization>, String> {
+    let mut sched: Vec<Amortization> = Vec::new();
+    let mut aux = ZERO;
+
+    // 1. Validate
+    if amortizations.len() < 2 {
+        return Err("at least two amortizations are required: the start of the schedule, and its end".to_string());
+    }
+
+    if let Some(VrIndex::Poupanca) = vir.map(|v| v.code) {
+        return Err("'Poupança' is currently unsupported".to_string());
+    }
+
+    for (i, x) in amortizations.iter().enumerate() {
+        aux += x.amortization_ratio;
+
+        // TODO: Implement price level adjustment check
+    }
+
+    for (i, y) in insertions.iter().enumerate() {
+        if y.value <= ZERO {
+            return Err(format!("invalid value for insertion entry #{} – should be positive", i));
+        }
+        if y.date <= amortizations[0].date {
+            return Err(format!("'insertions[{}].date', {}, must succeed 'zero_date', {}", i, y.date, amortizations[0].date));
+        }
+        if y.date > amortizations.last().unwrap().date {
+            return Err(format!("'insertions[{}].date', {}, succeeds the last regular payment date, {}", i, y.date, amortizations.last().unwrap().date));
+        }
+    }
+
+    if (amortizations[1].date - (amortizations[0].date + Duration::days(30))).num_days().abs() > 20 {
+        return Err(format!("the first payment date, {}, is more than 20 days away from the regular payment date, {}", 
+                           amortizations[1].date, amortizations[0].date + Duration::days(30)));
+    }
+
+    if amortizations.iter().map(|a| a.date).collect::<std::collections::HashSet<_>>().len() != amortizations.len() {
+        return Err("amortization dates must be unique.".to_string());
+    }
+
+    if !aux.is_close_to(ONE, Some(dec!(1e-9))) {
+        return Err("the accumulated percentage of the amortizations does not reach 1.0".to_string());
+    }
+
+    // 2. Create amortizations
+    if insertions.is_empty() {
+        // Regular flow, without insertions
+        sched.extend(amortizations);
+    } else {
+        // Extraordinary flow, with insertions
+        let mut amortizations_iter = amortizations.into_iter();
+        let mut insertions_iter = insertions.into_iter();
+        let mut next_amortization = amortizations_iter.next();
+        let mut next_insertion = insertions_iter.next();
+
+        while next_amortization.is_some() || next_insertion.is_some() {
+            match (next_amortization, next_insertion) {
+                (Some(a), Some(i)) => {
+                    if a.date <= i.date {
+                        sched.push(a);
+                        next_amortization = amortizations_iter.next();
+                    } else {
+                        let prev_date = sched.last().map_or(a.date, |last| last.date);
+                        let new_amort = Amortization {
+                            date: i.date,
+                            amortization_ratio: ZERO,
+                            amortizes_interest: true,
+                            price_level_adjustment: None,
+                            dct_override: Some(DctOverride {
+                                date_from: prev_date,
+                                date_to: a.date,
+                                predates_first_amortization: sched.is_empty(),
+                            }),
+                        };
+                        sched.push(new_amort);
+                        next_insertion = insertions_iter.next();
+                    }
+                },
+                (Some(a), None) => {
+                    sched.push(a);
+                    next_amortization = amortizations_iter.next();
+                },
+                (None, Some(i)) => {
+                    let prev_date = sched.last().map_or(amortizations[0].date, |last| last.date);
+                    let new_amort = Amortization {
+                        date: i.date,
+                        amortization_ratio: ZERO,
+                        amortizes_interest: true,
+                        price_level_adjustment: None,
+                        dct_override: Some(DctOverride {
+                            date_from: prev_date,
+                            date_to: i.date,
+                            predates_first_amortization: sched.is_empty(),
+                        }),
+                    };
+                    sched.push(new_amort);
+                    next_insertion = insertions_iter.next();
+                },
+                (None, None) => break,
+            }
+        }
+    }
+
+    Ok(sched)
+}
