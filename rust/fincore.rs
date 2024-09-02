@@ -323,3 +323,163 @@ impl IndexStorageBackend for InMemoryBackend {
 }
 
 // The rest of the implementation (functions, methods, etc.) will follow...
+
+pub fn get_payments_table(
+    principal: Decimal,
+    apy: Decimal,
+    amortizations: Vec<Amortization>,
+    vir: Option<VariableIndex>,
+    capitalisation: Capitalisation,
+    calc_date: Option<CalcDate>,
+    tax_exempt: Option<bool>,
+    gain_output: GainOutputMode,
+) -> Result<Vec<Payment>, String> {
+    // Helper function to calculate balance
+    fn calc_balance(
+        principal: Decimal,
+        f_c: Decimal,
+        interest_accrued: Decimal,
+        principal_amortized_total: Decimal,
+        interest_settled_total: Decimal,
+    ) -> Decimal {
+        principal * f_c + interest_accrued - principal_amortized_total * f_c - interest_settled_total
+    }
+
+    // Validation
+    if principal == ZERO {
+        return Ok(Vec::new());
+    }
+
+    if principal < CENTI {
+        return Err("principal value should be at least 0.01".to_string());
+    }
+
+    if amortizations.len() < 2 {
+        return Err("at least two amortizations are required: the start of the schedule, and its end".to_string());
+    }
+
+    if vir.is_none() && capitalisation == Capitalisation::Days252 {
+        return Err("fixed interest rates should not use the 252 working days capitalisation".to_string());
+    }
+
+    if let Some(ref v) = vir {
+        if v.code == VrIndex::CDI && capitalisation != Capitalisation::Days252 {
+            return Err("CDI should use the 252 working days capitalisation".to_string());
+        }
+    }
+
+    let mut aux = ZERO;
+    for (i, x) in amortizations.iter().enumerate() {
+        aux += x.amortization_ratio;
+
+        // TODO: Implement price level adjustment check
+
+        if aux > ONE && !aux.is_close_to(ONE, Some(dec!(1e-9))) {
+            return Err("the accumulated percentage of the amortizations overflows 1.0".to_string());
+        }
+    }
+
+    if !aux.is_close_to(ONE, Some(dec!(1e-9))) {
+        return Err("the accumulated percentage of the amortizations does not reach 1.0".to_string());
+    }
+
+    let calc_date = calc_date.unwrap_or(CalcDate {
+        value: amortizations.last().unwrap().date,
+        runaway: false,
+    });
+
+    // Initialize registers
+    let mut regs = Registers::new();
+
+    // TODO: Implement the rest of the function phases
+
+    Ok(Vec::new()) // Placeholder return
+}
+
+struct Registers {
+    interest: InterestRegisters,
+    principal: PrincipalRegisters,
+}
+
+impl Registers {
+    fn new() -> Self {
+        Registers {
+            interest: InterestRegisters::new(),
+            principal: PrincipalRegisters::new(),
+        }
+    }
+}
+
+struct InterestRegisters {
+    current: Decimal,
+    accrued: Decimal,
+    settled: SettledInterest,
+    deferred: Decimal,
+}
+
+impl InterestRegisters {
+    fn new() -> Self {
+        InterestRegisters {
+            current: ZERO,
+            accrued: ZERO,
+            settled: SettledInterest::new(),
+            deferred: ZERO,
+        }
+    }
+}
+
+struct SettledInterest {
+    current: Decimal,
+    total: Decimal,
+}
+
+impl SettledInterest {
+    fn new() -> Self {
+        SettledInterest {
+            current: ZERO,
+            total: ZERO,
+        }
+    }
+}
+
+struct PrincipalRegisters {
+    amortization_ratio: AmortizationRatio,
+    amortized: AmortizedPrincipal,
+}
+
+impl PrincipalRegisters {
+    fn new() -> Self {
+        PrincipalRegisters {
+            amortization_ratio: AmortizationRatio::new(),
+            amortized: AmortizedPrincipal::new(),
+        }
+    }
+}
+
+struct AmortizationRatio {
+    current: Decimal,
+    regular: Decimal,
+}
+
+impl AmortizationRatio {
+    fn new() -> Self {
+        AmortizationRatio {
+            current: ZERO,
+            regular: ZERO,
+        }
+    }
+}
+
+struct AmortizedPrincipal {
+    current: Decimal,
+    total: Decimal,
+}
+
+impl AmortizedPrincipal {
+    fn new() -> Self {
+        AmortizedPrincipal {
+            current: ZERO,
+            total: ZERO,
+        }
+    }
+}
