@@ -745,7 +745,6 @@ pub fn get_daily_returns(
 
     Ok(daily_returns)
 }
-}
 
 fn calculate_revenue_tax(begin: NaiveDate, end: NaiveDate) -> Decimal {
     if end <= begin {
