@@ -5,6 +5,16 @@ use std::cmp::min;
 use std::collections::HashMap;
 use serde_json::Value;
 
+trait RoundingExt {
+    fn round_dp(&self, decimal_places: u32) -> Self;
+}
+
+impl RoundingExt for Decimal {
+    fn round_dp(&self, decimal_places: u32) -> Self {
+        self.round_with_scale(decimal_places)
+    }
+}
+
 // Constants
 const CENTI: Decimal = dec!(0.01);
 const ZERO: Decimal = dec!(0);
@@ -491,28 +501,82 @@ pub fn get_payments_table(
             }
         }
 
-        // TODO: Implement Phase B.2 (assembling the payment instance and performing rounding)
+        // Phase B.2: Assemble the payment instance and perform rounding
+        if ent0.date < calc_date.value || ent1.date <= calc_date.value || calc_date.runaway {
+            let mut payment = Payment {
+                no: num as i32 + 1,
+                date: ent1.date,
+                raw: ZERO,
+                tax: ZERO,
+                net: ZERO,
+                gain: ZERO,
+                amort: ZERO,
+                bal: ZERO,
+            };
 
-        // Placeholder: Create a dummy payment (to be replaced with actual calculation)
-        let payment = Payment {
-            no: num as i32 + 1,
-            date: ent1.date,
-            raw: ZERO,
-            tax: ZERO,
-            net: ZERO,
-            gain: ZERO,
-            amort: ZERO,
-            bal: ZERO,
-        };
-        payments.push(payment);
+            // Assemble the payment
+            payment.amort = regs.principal.amortized.current;
+            payment.gain = match gain_output {
+                GainOutputMode::Deferred => regs.interest.deferred + regs.interest.current,
+                GainOutputMode::Settled => if matches!(ent1, Amortization { amortizes_interest: true, .. }) { regs.interest.settled.current } else { ZERO },
+                GainOutputMode::Current => regs.interest.current,
+            };
+            payment.bal = calc_balance(principal, f_c, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total);
 
-        // Break if balance is zero
-        if calc_balance(principal, f_c, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total) == ZERO {
-            break;
+            // Calculate raw value and tax
+            if matches!(ent1, Amortization { amortizes_interest: true, .. }) {
+                payment.raw = payment.amort + regs.interest.settled.current;
+                payment.tax = regs.interest.settled.current * calculate_revenue_tax(amortizations[0].date, due);
+            } else if payment.amort > ZERO {
+                payment.raw = payment.amort;
+                payment.tax = ZERO;
+            } else if matches!(ent1, Amortization { amortizes_interest: true, .. }) {
+                payment.raw = regs.interest.settled.current;
+                payment.tax = regs.interest.settled.current * calculate_revenue_tax(amortizations[0].date, due);
+            } else {
+                payment.raw = ZERO;
+                payment.tax = ZERO;
+            }
+
+            // Apply tax exemption if applicable
+            if tax_exempt.unwrap_or(false) {
+                payment.tax = ZERO;
+            }
+
+            // Round values
+            payment.amort = payment.amort.round_dp(2);
+            payment.gain = payment.gain.round_dp(2);
+            payment.raw = payment.raw.round_dp(2);
+            payment.tax = payment.tax.round_dp(2);
+            payment.net = (payment.raw - payment.tax).round_dp(2);
+            payment.bal = payment.bal.round_dp(2);
+
+            payments.push(payment);
+
+            // Break if balance is zero
+            if payment.bal == ZERO {
+                break;
+            }
         }
     }
 
     Ok(payments)
+}
+
+fn calculate_revenue_tax(begin: NaiveDate, end: NaiveDate) -> Decimal {
+    if end <= begin {
+        panic!("end date should be greater than the begin date");
+    }
+
+    let diff = (end - begin).num_days();
+
+    for &(minimum, maximum, rate) in REVENUE_TAX_BRACKETS.iter() {
+        if minimum < diff && diff <= maximum {
+            return rate;
+        }
+    }
+
+    panic!("No matching tax bracket found");
 }
 
 struct Registers {
