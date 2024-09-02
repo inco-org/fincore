@@ -391,9 +391,76 @@ pub fn get_payments_table(
     // Initialize registers
     let mut regs = Registers::new();
 
-    // TODO: Implement the rest of the function phases
+    // Main calculation phases
+    let mut payments = Vec::new();
+    for (num, (ent0, ent1)) in amortizations.windows(2).enumerate() {
+        let due = min(calc_date.value, ent1.date);
+        let mut f_s = ONE;
+        let mut f_c = ONE;
 
-    Ok(Vec::new()) // Placeholder return
+        // Phase B.0: Calculate spread and correction factors
+        if ent0.date < calc_date.value || ent1.date <= calc_date.value {
+            match (&vir, capitalisation) {
+                (None, Capitalisation::Days360) => {
+                    let days = (due - ent0.date).num_days() as Decimal;
+                    f_s = calculate_interest_factor(apy, days / dec!(360), false);
+                },
+                (None, Capitalisation::Days365) => {
+                    let days = (due - ent0.date).num_days() as Decimal;
+                    f_s = calculate_interest_factor(apy, days / dec!(365), false);
+                },
+                (None, Capitalisation::Days30360) => {
+                    let mut dcp = (due - ent0.date).num_days() as Decimal;
+                    let mut dct = (ent1.date - ent0.date).num_days() as Decimal;
+
+                    // Handle DCT override cases
+                    if let Some(override_data) = &ent1.dct_override {
+                        if num == 0 {
+                            dct = diff_surrounding_dates(ent0.date, 24) as Decimal;
+                        } else {
+                            dct = (override_data.date_to - override_data.date_from).num_days() as Decimal;
+                            if override_data.predates_first_amortization {
+                                dct = diff_surrounding_dates(override_data.date_from, 24) as Decimal;
+                            }
+                        }
+                    }
+
+                    if let Some(override_data) = &ent0.dct_override {
+                        dct = (ent1.date - override_data.date_from).num_days() as Decimal;
+                        if override_data.predates_first_amortization {
+                            dct = diff_surrounding_dates(override_data.date_from, 24) as Decimal;
+                        }
+                    }
+
+                    f_s = calculate_interest_factor(apy, dcp / (dec!(12) * dct), false);
+                },
+                (Some(v), Capitalisation::Days252) if v.code == VrIndex::CDI => {
+                    let f_v = v.backend.calculate_cdi_factor(ent0.date, due, v.percentage).unwrap();
+                    let f_s_temp = calculate_interest_factor(apy, Decimal::from(f_v.1) / dec!(252), false);
+                    f_s = f_s_temp * f_v.0;
+                },
+                // Add other cases here as needed
+                _ => return Err("Unsupported combination of variable interest rate and capitalisation".to_string()),
+            }
+        }
+
+        // TODO: Implement the rest of the phases
+
+        // Placeholder: Create a dummy payment
+        let payment = Payment {
+            no: num as i32 + 1,
+            date: ent1.date,
+            raw: ZERO,
+            tax: ZERO,
+            net: ZERO,
+            gain: ZERO,
+            amort: ZERO,
+            bal: ZERO,
+        };
+        payments.push(payment);
+    }
+
+    Ok(payments)
 }
 
 struct Registers {
