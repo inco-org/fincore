@@ -3,6 +3,9 @@ name = "fincore"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+path = "fincore.rs"
+
 [dependencies]
 chrono = "0.4"
 rust_decimal = "1.30"
