@@ -563,6 +563,190 @@ pub fn get_payments_table(
     Ok(payments)
 }
 
+pub fn get_daily_returns(
+    principal: Decimal,
+    apy: Decimal,
+    amortizations: Vec<Amortization>,
+    vir: Option<VariableIndex>,
+    capitalisation: Capitalisation,
+) -> Result<Vec<DailyReturn>, String> {
+    // Internal functions
+    fn get_normalized_cdi_indexes(backend: &dyn IndexStorageBackend) -> impl Iterator<Item = Decimal> + '_ {
+        backend.get_cdi_indexes(amortizations[0].date, amortizations.last().unwrap().date)
+            .unwrap()
+            .into_iter()
+            .map(|index| index.value / dec!(100))
+    }
+
+    fn get_normalized_savings_indexes(backend: &dyn IndexStorageBackend) -> impl Iterator<Item = Decimal> + '_ {
+        backend.get_savings_indexes(amortizations[0].date, amortizations.last().unwrap().date)
+            .unwrap()
+            .into_iter()
+            .flat_map(|ranged| {
+                let init = amortizations[0].date.max(ranged.begin_date);
+                let ends = amortizations.last().unwrap().date.min(ranged.end_date);
+                let days = (ranged.end_date - ranged.begin_date).num_days() as Decimal;
+                let rate = calculate_interest_factor(ranged.value, ONE / days, false);
+                date_range(init, ends).map(move |_| rate - ONE)
+            })
+    }
+
+    fn calc_balance(
+        principal: Decimal,
+        f_c: Decimal,
+        interest_accrued: Decimal,
+        principal_amortized_total: Decimal,
+        interest_settled_total: Decimal,
+    ) -> Decimal {
+        principal * f_c + interest_accrued - principal_amortized_total * f_c - interest_settled_total
+    }
+
+    // A. Validate and prepare for execution
+    if principal == ZERO {
+        return Ok(Vec::new());
+    }
+
+    if principal < CENTI {
+        return Err("principal value should be at least 0.01".to_string());
+    }
+
+    if amortizations.len() < 2 {
+        return Err("at least two amortizations are required: the start of the schedule, and its end".to_string());
+    }
+
+    if vir.is_none() && capitalisation == Capitalisation::Days252 {
+        return Err("fixed interest rates should not use the 252 working days capitalisation".to_string());
+    }
+
+    if let Some(ref v) = vir {
+        if v.code == VrIndex::CDI && capitalisation != Capitalisation::Days252 {
+            return Err("CDI should use the 252 working days capitalisation".to_string());
+        }
+    }
+
+    let mut aux = ZERO;
+    for (i, x) in amortizations.iter().enumerate() {
+        aux += x.amortization_ratio;
+        // TODO: Implement price level adjustment check
+        if aux > ONE && !aux.is_close_to(ONE, Some(dec!(1e-9))) {
+            return Err("the accumulated percentage of the amortizations overflows 1.0".to_string());
+        }
+    }
+
+    if !aux.is_close_to(ONE, Some(dec!(1e-9))) {
+        return Err("the accumulated percentage of the amortizations does not reach 1.0".to_string());
+    }
+
+    let mut regs = Registers::new();
+    let mut gens = Generators::new();
+
+    // Initialize indexes
+    let idxs = match &vir {
+        Some(v) if v.code == VrIndex::CDI => Box::new(get_normalized_cdi_indexes(&*v.backend)) as Box<dyn Iterator<Item = Decimal>>,
+        Some(v) if v.code == VrIndex::Poupanca => Box::new(get_normalized_savings_indexes(&*v.backend)) as Box<dyn Iterator<Item = Decimal>>,
+        Some(_) => return Err("Unsupported variable index".to_string()),
+        None => Box::new(std::iter::repeat(ZERO)) as Box<dyn Iterator<Item = Decimal>>,
+    };
+
+    // B. Execute
+    let mut daily_returns = Vec::new();
+    let mut amortization_iter = amortizations.iter();
+    let mut current_amortization = amortization_iter.next().unwrap();
+    let mut next_amortization = amortization_iter.next().unwrap();
+    let mut period = 1;
+    let mut count = 1;
+
+    for ref_date in date_range(amortizations[0].date, amortizations.last().unwrap().date) {
+        let mut f_c = ONE;
+        let mut f_v = ONE;
+        let mut f_s = ONE;
+
+        // B.0. Calculate spread and correction factors
+        match (vir.as_ref(), capitalisation) {
+            (None, Capitalisation::Days360) => {
+                f_s = calculate_interest_factor(apy, ONE / dec!(360), false);
+            },
+            (None, Capitalisation::Days365) => {
+                f_s = calculate_interest_factor(apy, ONE / dec!(365), false);
+            },
+            (None, Capitalisation::Days30360) => {
+                let v01 = calculate_interest_factor(apy, ONE / dec!(12), false) - ONE;
+                let v02 = if period == 1 && ref_date < next_amortization.date {
+                    Decimal::from((amortizations[1].date - amortizations[0].date).num_days())
+                } else if ref_date == next_amortization.date {
+                    Decimal::from(next_amortization.date.days_in_month())
+                } else {
+                    Decimal::from(current_amortization.date.days_in_month())
+                };
+                f_s = calculate_interest_factor(v01, ONE / v02, false);
+            },
+            (Some(v), Capitalisation::Days252) if v.code == VrIndex::CDI => {
+                f_v = idxs.next().unwrap() * Decimal::from(v.percentage) / dec!(100) + ONE;
+                if f_v > ONE {
+                    f_s = calculate_interest_factor(apy, ONE / dec!(252), false);
+                }
+            },
+            (Some(v), Capitalisation::Days360) if v.code == VrIndex::Poupanca => {
+                f_s = calculate_interest_factor(apy, ONE / dec!(360), false);
+                f_v = idxs.next().unwrap() * Decimal::from(v.percentage) / dec!(100) + ONE;
+            },
+            _ => return Err("Unsupported combination of variable interest rate and capitalisation".to_string()),
+        }
+
+        // B.1. Register variations in principal, interest, and monetary correction
+        while ref_date == next_amortization.date {
+            match next_amortization {
+                Amortization { amortization_ratio, amortizes_interest, .. } => {
+                    let adj = (ONE - regs.principal.amortization_ratio.current) / (ONE - regs.principal.amortization_ratio.regular);
+                    gens.principal_tracker_1.send(amortization_ratio * adj);
+                    gens.principal_tracker_2.send(*amortization_ratio);
+                    if *amortizes_interest {
+                        gens.interest_tracker_2.send(regs.interest.current + regs.principal.amortization_ratio.current * regs.interest.deferred);
+                    }
+                    regs.interest.current = ZERO;
+                    period += 1;
+                    count = 1;
+                },
+                Amortization::Bare { value, .. } => {
+                    let plfv = principal * (ONE - regs.principal.amortization_ratio.current) * (f_c - ONE);
+                    let val0 = value.min(&calc_balance(principal, f_c, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total));
+                    let val1 = val0.min(&(regs.interest.accrued - regs.interest.settled.total));
+                    let val2 = (val0 - val1).min(&plfv);
+                    let val3 = val0 - val1 - val2;
+                    gens.principal_tracker_1.send(val3 / principal);
+                    gens.interest_tracker_2.send(val1);
+                    regs.interest.current = ZERO;
+                },
+            }
+            current_amortization = next_amortization;
+            next_amortization = amortization_iter.next().unwrap_or(current_amortization);
+        }
+
+        gens.interest_tracker_1.send(calc_balance(principal, f_c, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total) * (f_s * f_v * f_c - ONE));
+
+        // B.2. Assemble the daily return instance and perform rounding
+        if calc_balance(principal, f_c, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total).round_dp(2) == ZERO {
+            break;
+        }
+
+        let daily_return = DailyReturn {
+            no: count,
+            period,
+            date: ref_date,
+            value: regs.interest.daily.round_dp(2),
+            bal: calc_balance(principal, f_c, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total).round_dp(2),
+            fixed_factor: f_s,
+            variable_factor: f_v * f_c,
+        };
+
+        daily_returns.push(daily_return);
+        count += 1;
+    }
+
+    Ok(daily_returns)
+}
+}
+
 fn calculate_revenue_tax(begin: NaiveDate, end: NaiveDate) -> Decimal {
     if end <= begin {
         panic!("end date should be greater than the begin date");
