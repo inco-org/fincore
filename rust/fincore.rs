@@ -1395,3 +1395,123 @@ pub fn preprocess_livre(
 
     Ok(sched)
 }
+pub fn get_bullet_payments(
+    principal: Decimal,
+    apy: Decimal,
+    zero_date: NaiveDate,
+    term: i32,
+    insertions: Vec<Amortization::Bare>,
+    anniversary_date: Option<NaiveDate>,
+    vir: Option<VariableIndex>,
+    calc_date: Option<CalcDate>,
+    capitalisation: Capitalisation,
+    tax_exempt: Option<bool>,
+    gain_output: GainOutputMode,
+) -> Result<Vec<Payment>, String> {
+    let mut kwa = HashMap::new();
+
+    kwa.insert("principal", principal);
+    kwa.insert("apy", apy);
+    kwa.insert("amortizations", preprocess_bullet(principal, apy, zero_date, term, insertions, anniversary_date, capitalisation, vir.as_ref(), calc_date.as_ref())?);
+
+    kwa.insert("vir", vir);
+    kwa.insert("capitalisation", if let Some(v) = &vir {
+        if v.code == VrIndex::CDI { Capitalisation::Days252 } else { capitalisation }
+    } else {
+        capitalisation
+    });
+
+    kwa.insert("calc_date", calc_date);
+    kwa.insert("tax_exempt", tax_exempt);
+    kwa.insert("gain_output", gain_output);
+
+    get_payments_table(kwa)
+}
+
+pub fn get_jm_payments(
+    principal: Decimal,
+    apy: Decimal,
+    zero_date: NaiveDate,
+    term: i32,
+    insertions: Vec<Amortization::Bare>,
+    anniversary_date: Option<NaiveDate>,
+    vir: Option<VariableIndex>,
+    calc_date: Option<CalcDate>,
+    tax_exempt: Option<bool>,
+    gain_output: GainOutputMode,
+) -> Result<Vec<Payment>, String> {
+    let mut kwa = HashMap::new();
+
+    kwa.insert("principal", principal);
+    kwa.insert("apy", apy);
+    kwa.insert("amortizations", preprocess_jm(principal, apy, zero_date, term, insertions, anniversary_date, vir.as_ref())?);
+
+    kwa.insert("vir", vir);
+    kwa.insert("capitalisation", if let Some(v) = &vir {
+        if v.code == VrIndex::CDI { Capitalisation::Days252 } else { Capitalisation::Days30360 }
+    } else {
+        Capitalisation::Days30360
+    });
+
+    kwa.insert("calc_date", calc_date);
+    kwa.insert("tax_exempt", tax_exempt);
+    kwa.insert("gain_output", gain_output);
+
+    get_payments_table(kwa)
+}
+
+pub fn get_price_payments(
+    principal: Decimal,
+    apy: Decimal,
+    zero_date: NaiveDate,
+    term: i32,
+    insertions: Vec<Amortization::Bare>,
+    anniversary_date: Option<NaiveDate>,
+    calc_date: Option<CalcDate>,
+    tax_exempt: Option<bool>,
+    gain_output: GainOutputMode,
+) -> Result<Vec<Payment>, String> {
+    let mut kwa = HashMap::new();
+
+    kwa.insert("principal", principal);
+    kwa.insert("apy", apy);
+    kwa.insert("amortizations", preprocess_price(principal, apy, zero_date, term, insertions, anniversary_date)?);
+
+    kwa.insert("capitalisation", Capitalisation::Days30360);
+
+    kwa.insert("calc_date", calc_date);
+    kwa.insert("tax_exempt", tax_exempt);
+    kwa.insert("gain_output", gain_output);
+
+    get_payments_table(kwa)
+}
+
+pub fn get_livre_payments(
+    principal: Decimal,
+    apy: Decimal,
+    amortizations: Vec<Amortization>,
+    insertions: Vec<Amortization::Bare>,
+    vir: Option<VariableIndex>,
+    calc_date: Option<CalcDate>,
+    tax_exempt: Option<bool>,
+    gain_output: GainOutputMode,
+) -> Result<Vec<Payment>, String> {
+    let mut kwa = HashMap::new();
+
+    kwa.insert("principal", principal);
+    kwa.insert("apy", apy);
+    kwa.insert("amortizations", preprocess_livre(principal, apy, amortizations, insertions, vir.as_ref())?);
+
+    kwa.insert("vir", vir);
+    kwa.insert("capitalisation", if let Some(v) = &vir {
+        if v.code == VrIndex::CDI { Capitalisation::Days252 } else { Capitalisation::Days30360 }
+    } else {
+        Capitalisation::Days30360
+    });
+
+    kwa.insert("calc_date", calc_date);
+    kwa.insert("tax_exempt", tax_exempt);
+    kwa.insert("gain_output", gain_output);
+
+    get_payments_table(kwa)
+}
