@@ -72,7 +72,6 @@ pub struct Amortization {
     pub date: NaiveDate,
     pub amortization_ratio: Decimal,
     pub amortizes_interest: bool,
-    pub price_level_adjustment: Option<PriceLevelAdjustment>,
     pub dct_override: Option<DctOverride>,
 }
 
@@ -886,14 +885,12 @@ pub fn preprocess_bullet(
             date: zero_date,
             amortization_ratio: ZERO,
             amortizes_interest: false,
-            price_level_adjustment: None,
             dct_override: None,
         });
         sched.push(Amortization {
             date: anniversary_date.unwrap_or(zero_date + Duration::days(term as i64 * 30)),
             amortization_ratio: ONE,
             amortizes_interest: true,
-            price_level_adjustment: None,
             dct_override: if anniversary_date.is_some() {
                 Some(DctOverride {
                     date_from: anniversary_date.unwrap(),
@@ -911,14 +908,12 @@ pub fn preprocess_bullet(
                 date: zero_date,
                 amortization_ratio: ZERO,
                 amortizes_interest: false,
-                price_level_adjustment: None,
                 dct_override: None,
             },
             Amortization {
                 date: anniversary_date.unwrap_or(zero_date + Duration::days(term as i64 * 30)),
                 amortization_ratio: ONE,
                 amortizes_interest: true,
-                price_level_adjustment: None,
                 dct_override: None,
             },
         ];
@@ -940,7 +935,6 @@ pub fn preprocess_bullet(
                             date: i.date,
                             amortization_ratio: ZERO,
                             amortizes_interest: true,
-                            price_level_adjustment: None,
                             dct_override: Some(DctOverride {
                                 date_from: zero_date,
                                 date_to: if anniversary_date.is_some() { anniversary_date.unwrap() } else { zero_date + Duration::days(term as i64 * 30) },
@@ -959,7 +953,6 @@ pub fn preprocess_bullet(
                         date: i.date,
                         amortization_ratio: ZERO,
                         amortizes_interest: true,
-                        price_level_adjustment: None,
                         dct_override: Some(DctOverride {
                             date_from: zero_date,
                             date_to: if anniversary_date.is_some() { anniversary_date.unwrap() } else { zero_date + Duration::days(term as i64 * 30) },
@@ -1035,7 +1028,6 @@ pub fn preprocess_jm(
         date: zero_date,
         amortization_ratio: ZERO,
         amortizes_interest: false,
-        price_level_adjustment: None,
         dct_override: None,
     });
 
@@ -1049,7 +1041,6 @@ pub fn preprocess_jm(
             date: due,
             amortization_ratio: if i == term { ONE } else { ZERO },
             amortizes_interest: true,
-            price_level_adjustment: None,
             dct_override: None,
         };
 
@@ -1082,7 +1073,6 @@ pub fn preprocess_jm(
                             date: i.date,
                             amortization_ratio: ZERO,
                             amortizes_interest: true,
-                            price_level_adjustment: None,
                             dct_override: None,
                         };
                         let prev_date = lst2.last().map_or(zero_date, |a| a.date);
@@ -1104,7 +1094,6 @@ pub fn preprocess_jm(
                         date: i.date,
                         amortization_ratio: ZERO,
                         amortizes_interest: true,
-                        price_level_adjustment: None,
                         dct_override: None,
                     };
                     let prev_date = lst2.last().map_or(zero_date, |a| a.date);
@@ -1178,7 +1167,6 @@ pub fn preprocess_price(
         date: zero_date,
         amortization_ratio: ZERO,
         amortizes_interest: false,
-        price_level_adjustment: None,
         dct_override: None,
     });
 
@@ -1193,7 +1181,6 @@ pub fn preprocess_price(
             date: due,
             amortization_ratio: y,
             amortizes_interest: true,
-            price_level_adjustment: None,
             dct_override: None,
         };
 
@@ -1226,7 +1213,6 @@ pub fn preprocess_price(
                             date: i.date,
                             amortization_ratio: ZERO,
                             amortizes_interest: true,
-                            price_level_adjustment: None,
                             dct_override: None,
                         };
                         let prev_date = lst2.last().map_or(zero_date, |a| a.date);
@@ -1248,7 +1234,6 @@ pub fn preprocess_price(
                         date: i.date,
                         amortization_ratio: ZERO,
                         amortizes_interest: true,
-                        price_level_adjustment: None,
                         dct_override: None,
                     };
                     let prev_date = lst2.last().map_or(zero_date, |a| a.date);
@@ -1343,7 +1328,6 @@ pub fn preprocess_livre(
                             date: i.date,
                             amortization_ratio: ZERO,
                             amortizes_interest: true,
-                            price_level_adjustment: None,
                             dct_override: Some(DctOverride {
                                 date_from: prev_date,
                                 date_to: a.date,
@@ -1364,7 +1348,6 @@ pub fn preprocess_livre(
                         date: i.date,
                         amortization_ratio: ZERO,
                         amortizes_interest: true,
-                        price_level_adjustment: None,
                         dct_override: Some(DctOverride {
                             date_from: prev_date,
                             date_to: i.date,
