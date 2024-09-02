@@ -578,19 +578,6 @@ pub fn get_daily_returns(
             .map(|index| index.value / dec!(100))
     }
 
-    fn get_normalized_savings_indexes(backend: &dyn IndexStorageBackend) -> impl Iterator<Item = Decimal> + '_ {
-        backend.get_savings_indexes(amortizations[0].date, amortizations.last().unwrap().date)
-            .unwrap()
-            .into_iter()
-            .flat_map(|ranged| {
-                let init = amortizations[0].date.max(ranged.begin_date);
-                let ends = amortizations.last().unwrap().date.min(ranged.end_date);
-                let days = (ranged.end_date - ranged.begin_date).num_days() as Decimal;
-                let rate = calculate_interest_factor(ranged.value, ONE / days, false);
-                date_range(init, ends).map(move |_| rate - ONE)
-            })
-    }
-
     fn calc_balance(
         principal: Decimal,
         f_c: Decimal,
@@ -643,7 +630,6 @@ pub fn get_daily_returns(
     // Initialize indexes
     let idxs = match &vir {
         Some(v) if v.code == VrIndex::CDI => Box::new(get_normalized_cdi_indexes(&*v.backend)) as Box<dyn Iterator<Item = Decimal>>,
-        Some(v) if v.code == VrIndex::Poupanca => Box::new(get_normalized_savings_indexes(&*v.backend)) as Box<dyn Iterator<Item = Decimal>>,
         Some(_) => return Err("Unsupported variable index".to_string()),
         None => Box::new(std::iter::repeat(ZERO)) as Box<dyn Iterator<Item = Decimal>>,
     };
