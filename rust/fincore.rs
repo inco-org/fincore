@@ -761,6 +761,24 @@ impl Registers {
     }
 }
 
+struct Generators {
+    principal_tracker_1: Box<dyn Iterator<Item = Decimal>>,
+    principal_tracker_2: Box<dyn Iterator<Item = Decimal>>,
+    interest_tracker_1: Box<dyn Iterator<Item = Decimal>>,
+    interest_tracker_2: Box<dyn Iterator<Item = Decimal>>,
+}
+
+impl Generators {
+    fn new() -> Self {
+        Generators {
+            principal_tracker_1: Box::new(std::iter::empty()),
+            principal_tracker_2: Box::new(std::iter::empty()),
+            interest_tracker_1: Box::new(std::iter::empty()),
+            interest_tracker_2: Box::new(std::iter::empty()),
+        }
+    }
+}
+
 struct InterestRegisters {
     current: Decimal,
     accrued: Decimal,
