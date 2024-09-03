@@ -75,16 +75,14 @@ pub struct Amortization {
     pub dct_override: Option<DctOverride>,
 }
 
-impl Amortization {
-    #[derive(Debug, Clone)]
-    pub struct Bare {
-        pub date: NaiveDate,
-        pub value: Decimal,
-        pub dct_override: Option<DctOverride>,
-    }
+#[derive(Debug, Clone)]
+pub struct AmortizationBare {
+    pub date: NaiveDate,
+    pub value: Decimal,
+    pub dct_override: Option<DctOverride>,
 }
 
-impl Amortization::Bare {
+impl AmortizationBare {
     pub const MAX_VALUE: Decimal = Decimal::MAX;
 }
 
