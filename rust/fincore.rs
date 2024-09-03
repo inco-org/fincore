@@ -1401,9 +1401,9 @@ pub fn get_bullet_payments(
 ) -> Result<Vec<Payment>, String> {
     let mut kwa = HashMap::new();
 
-    kwa.insert("principal", principal);
-    kwa.insert("apy", apy);
-    kwa.insert("amortizations", preprocess_bullet(principal, apy, zero_date, term, insertions, anniversary_date, capitalisation, vir.as_ref(), calc_date.as_ref())?);
+    kwa.insert("principal", serde_json::to_value(principal).unwrap());
+    kwa.insert("apy", serde_json::to_value(apy).unwrap());
+    kwa.insert("amortizations", serde_json::to_value(preprocess_bullet(principal, apy, zero_date, term, insertions, anniversary_date, capitalisation, vir.as_ref(), calc_date.as_ref())?).unwrap());
 
     kwa.insert("vir", vir);
     kwa.insert("capitalisation", if let Some(v) = &vir {
@@ -1433,9 +1433,9 @@ pub fn get_jm_payments(
 ) -> Result<Vec<Payment>, String> {
     let mut kwa = HashMap::new();
 
-    kwa.insert("principal", principal);
-    kwa.insert("apy", apy);
-    kwa.insert("amortizations", preprocess_jm(principal, apy, zero_date, term, insertions, anniversary_date, vir.as_ref())?);
+    kwa.insert("principal", serde_json::to_value(principal).unwrap());
+    kwa.insert("apy", serde_json::to_value(apy).unwrap());
+    kwa.insert("amortizations", serde_json::to_value(preprocess_jm(principal, apy, zero_date, term, insertions, anniversary_date, vir.as_ref())?).unwrap());
 
     kwa.insert("vir", vir);
     kwa.insert("capitalisation", if let Some(v) = &vir {
@@ -1464,9 +1464,9 @@ pub fn get_price_payments(
 ) -> Result<Vec<Payment>, String> {
     let mut kwa = HashMap::new();
 
-    kwa.insert("principal", principal);
-    kwa.insert("apy", apy);
-    kwa.insert("amortizations", preprocess_price(principal, apy, zero_date, term, insertions, anniversary_date)?);
+    kwa.insert("principal", serde_json::to_value(principal).unwrap());
+    kwa.insert("apy", serde_json::to_value(apy).unwrap());
+    kwa.insert("amortizations", serde_json::to_value(preprocess_price(principal, apy, zero_date, term, insertions, anniversary_date)?).unwrap());
 
     kwa.insert("capitalisation", Capitalisation::Days30360);
 
@@ -1489,9 +1489,9 @@ pub fn get_livre_payments(
 ) -> Result<Vec<Payment>, String> {
     let mut kwa = HashMap::new();
 
-    kwa.insert("principal", principal);
-    kwa.insert("apy", apy);
-    kwa.insert("amortizations", preprocess_livre(principal, apy, amortizations, insertions, vir.as_ref())?);
+    kwa.insert("principal", serde_json::to_value(principal).unwrap());
+    kwa.insert("apy", serde_json::to_value(apy).unwrap());
+    kwa.insert("amortizations", serde_json::to_value(preprocess_livre(principal, apy, amortizations, insertions, vir.as_ref())?).unwrap());
 
     kwa.insert("vir", vir);
     kwa.insert("capitalisation", if let Some(v) = &vir {
