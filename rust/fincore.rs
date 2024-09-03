@@ -11,7 +11,7 @@ trait RoundingExt {
 
 impl RoundingExt for Decimal {
     fn round_dp(&self, decimal_places: u32) -> Self {
-        self.round_with_scale(decimal_places)
+        self.round_dp(decimal_places)
     }
 }
 
