@@ -563,13 +563,16 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
     Ok(payments)
 }
 
-pub fn get_daily_returns(
-    principal: Decimal,
-    apy: Decimal,
-    amortizations: Vec<Amortization>,
-    vir: Option<VariableIndex>,
-    capitalisation: Capitalisation,
-) -> Result<Vec<DailyReturn>, String> {
+pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, String> {
+    let principal: Decimal = kwa.get("principal").and_then(|v| v.as_f64()).ok_or("Missing principal")?.try_into().map_err(|e| e.to_string())?;
+    let apy: Decimal = kwa.get("apy").and_then(|v| v.as_f64()).ok_or("Missing apy")?.try_into().map_err(|e| e.to_string())?;
+    let amortizations: Vec<Amortization> = kwa.get("amortizations").and_then(|v| v.as_array()).ok_or("Missing amortizations")?
+        .iter()
+        .map(|a| serde_json::from_value(a.clone()).map_err(|e| e.to_string()))
+        .collect::<Result<Vec<_>, _>>()?;
+    let vir: Option<VariableIndex> = kwa.get("vir").and_then(|v| serde_json::from_value(v.clone()).ok());
+    let capitalisation: Capitalisation = kwa.get("capitalisation").and_then(|v| serde_json::from_value(v.clone()).ok()).ok_or("Missing capitalisation")?;
+
     // Internal functions
     fn get_normalized_cdi_indexes(backend: &dyn IndexStorageBackend, start_date: NaiveDate, end_date: NaiveDate) -> impl Iterator<Item = Decimal> + '_ {
         backend.get_cdi_indexes(start_date, end_date)
