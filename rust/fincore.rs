@@ -568,8 +568,8 @@ pub fn get_daily_returns(
     capitalisation: Capitalisation,
 ) -> Result<Vec<DailyReturn>, String> {
     // Internal functions
-    fn get_normalized_cdi_indexes(backend: &dyn IndexStorageBackend) -> impl Iterator<Item = Decimal> + '_ {
-        backend.get_cdi_indexes(amortizations[0].date, amortizations.last().unwrap().date)
+    fn get_normalized_cdi_indexes(backend: &dyn IndexStorageBackend, start_date: NaiveDate, end_date: NaiveDate) -> impl Iterator<Item = Decimal> + '_ {
+        backend.get_cdi_indexes(start_date, end_date)
             .unwrap()
             .into_iter()
             .map(|index| index.value / dec!(100))
@@ -626,7 +626,7 @@ pub fn get_daily_returns(
 
     // Initialize indexes
     let idxs = match &vir {
-        Some(v) if v.code == VrIndex::CDI => Box::new(get_normalized_cdi_indexes(&*v.backend)) as Box<dyn Iterator<Item = Decimal>>,
+        Some(v) if v.code == VrIndex::CDI => Box::new(get_normalized_cdi_indexes(&*v.backend, amortizations[0].date, amortizations.last().unwrap().date)) as Box<dyn Iterator<Item = Decimal>>,
         Some(_) => return Err("Unsupported variable index".to_string()),
         None => Box::new(std::iter::repeat(ZERO)) as Box<dyn Iterator<Item = Decimal>>,
     };
