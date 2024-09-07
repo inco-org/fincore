@@ -347,6 +347,19 @@ impl IndexStorageBackend for InMemoryBackend {
 
         Ok((factor, count))
     }
+
+    fn clone_box(&self) -> Box<dyn IndexStorageBackend> {
+        Box::new(self.clone())
+    }
+}
+
+impl Clone for InMemoryBackend {
+    fn clone(&self) -> Self {
+        InMemoryBackend {
+            _ignore_cdi: self._ignore_cdi.clone(),
+            _registry_cdi: self._registry_cdi.clone(),
+        }
+    }
 }
 
 // The rest of the implementation (functions, methods, etc.) will follow...
