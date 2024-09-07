@@ -308,7 +308,12 @@ impl InMemoryBackend {
             (NaiveDate::from_ymd_opt(2022, 5, 5).unwrap(), NaiveDate::from_ymd_opt(2022, 6, 15).unwrap(), dec!(0.047279)),
             (NaiveDate::from_ymd_opt(2022, 6, 17).unwrap(), NaiveDate::from_ymd_opt(2022, 8, 3).unwrap(), dec!(0.049037)),
             (NaiveDate::from_ymd_opt(2022, 8, 4).unwrap(), NaiveDate::from_ymd_opt(2022, 11, 14).unwrap(), dec!(0.050788)),
-        ];
+        ]
+        .into_iter()
+        .flat_map(|(start, end, value)| {
+            date_range(start, end).map(move |date| (date, value))
+        })
+        .collect();
     }
 }
 
