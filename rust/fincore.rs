@@ -7,7 +7,14 @@ use std::fmt::Debug;
 use serde::{Serialize, Deserialize};
 use serde::ser::SerializeStruct;
 use serde_json::Value;
-use erased_serde;
+use erased_serde::{self, Deserializer};
+
+pub trait IndexStorageBackend: Debug + erased_serde::Serialize + erased_serde::Deserialize {
+    fn get_cdi_indexes(&self, begin: NaiveDate, end: NaiveDate) -> Result<Vec<DailyIndex>, BackendError>;
+    fn calculate_cdi_factor(&self, begin: NaiveDate, end: NaiveDate, percentage: i32) -> Result<(Decimal, i32), BackendError>;
+    fn clone_box(&self) -> Box<dyn IndexStorageBackend>;
+    fn as_any(&self) -> &dyn std::any::Any;
+}
 
 trait RoundingExt {
     fn round_dp(&self, decimal_places: u32) -> Self;
