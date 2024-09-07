@@ -371,7 +371,7 @@ impl Clone for InMemoryBackend {
 
 pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, String> {
     let principal: Decimal = kwa.get("principal").and_then(|v| v.as_f64()).ok_or("Missing principal")?.try_into().map_err(|e: rust_decimal::Error| e.to_string())?;
-    let apy: Decimal = kwa.get("apy").and_then(|v| v.as_f64()).ok_or("Missing apy")?.try_into().map_err(|e| e.to_string())?;
+    let apy: Decimal = kwa.get("apy").and_then(|v| v.as_f64()).ok_or("Missing apy")?.try_into().map_err(|e: rust_decimal::Error| e.to_string())?;
     let amortizations: Vec<Amortization> = kwa.get("amortizations").and_then(|v| v.as_array()).ok_or("Missing amortizations")?
         .iter()
         .map(|a| serde_json::from_value(a.clone()).map_err(|e| e.to_string()))
