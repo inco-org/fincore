@@ -33,7 +33,7 @@ impl DecimalPow for Decimal {
     }
 }
 
-trait CloseToExt {
+trait CloseToExt: Sized {
     fn is_close_to(&self, other: Self, epsilon: Option<Self>) -> bool;
 }
 
