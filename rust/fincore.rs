@@ -4,6 +4,7 @@ use rust_decimal_macros::dec;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use serde::{Serialize, Deserialize};
 use serde_json::Value;
 
 trait RoundingExt {
@@ -29,7 +30,7 @@ const REVENUE_TAX_BRACKETS: [(i32, i32, Decimal); 4] = [
 ];
 
 // Enums
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum OpModes {
     Bullet,
     JurosMensais,
@@ -37,14 +38,14 @@ pub enum OpModes {
     Livre,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum VrIndex {
     CDI,
     Poupanca,
 }
 
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum Capitalisation {
     Days252,
     Days360,
@@ -52,7 +53,7 @@ pub enum Capitalisation {
     Days30360,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum GainOutputMode {
     Current,
     Deferred,
@@ -61,14 +62,14 @@ pub enum GainOutputMode {
 
 // Structs
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DctOverride {
     pub date_from: NaiveDate,
     pub date_to: NaiveDate,
     pub predates_first_amortization: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Amortization {
     pub date: NaiveDate,
     pub amortization_ratio: Decimal,
@@ -76,7 +77,7 @@ pub struct Amortization {
     pub dct_override: Option<DctOverride>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AmortizationBare {
     pub date: NaiveDate,
     pub value: Decimal,
@@ -87,7 +88,7 @@ impl AmortizationBare {
     pub const MAX_VALUE: Decimal = Decimal::MAX;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Payment {
     pub no: i32,
     pub date: NaiveDate,
@@ -99,7 +100,7 @@ pub struct Payment {
     pub bal: Decimal,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DailyReturn {
     pub no: i32,
     pub period: i32,
@@ -110,7 +111,7 @@ pub struct DailyReturn {
     pub variable_factor: Decimal,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LatePayment {
     pub payment: Payment,
     pub extra_gain: Decimal,
@@ -123,7 +124,7 @@ impl LatePayment {
     pub const FINE_RATE: Decimal = dec!(2);
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CalcDate {
     pub value: NaiveDate,
     pub runaway: bool,
@@ -171,7 +172,7 @@ fn diff_surrounding_dates(base: NaiveDate, day_of_month: u32) -> i32 {
 #[derive(Debug)]
 pub struct BackendError;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DailyIndex {
     pub date: NaiveDate,
     pub value: Decimal,
@@ -189,7 +190,7 @@ impl Clone for Box<dyn IndexStorageBackend> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VariableIndex {
     pub code: VrIndex,
     pub percentage: i32,
