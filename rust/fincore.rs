@@ -685,12 +685,13 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
             payment.net = (payment.raw - payment.tax).round_dp(2);
             payment.bal = payment.bal.round_dp(2);
 
-            payments.push(payment);
-
             // Break if balance is zero
             if payment.bal == ZERO {
+                payments.push(payment);
                 break;
             }
+
+            payments.push(payment);
         }
     }
 
