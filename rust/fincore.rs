@@ -190,7 +190,7 @@ impl Clone for Box<dyn IndexStorageBackend> {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct VariableIndex {
     pub code: VrIndex,
     pub percentage: i32,
