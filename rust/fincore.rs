@@ -447,8 +447,6 @@ impl Clone for InMemoryBackend {
     }
 }
 
-// The rest of the implementation (functions, methods, etc.) will follow...
-
 pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, String> {
     let principal: Decimal = kwa.get("principal").and_then(|v| v.as_f64()).ok_or("Missing principal")?.try_into().map_err(|e: rust_decimal::Error| e.to_string())?;
     let apy: Decimal = kwa.get("apy").and_then(|v| v.as_f64()).ok_or("Missing apy")?.try_into().map_err(|e: rust_decimal::Error| e.to_string())?;
@@ -466,15 +464,11 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
     let calc_date: Option<CalcDate> = kwa.get("calc_date").and_then(|v| serde_json::from_value(v.clone()).ok());
     let tax_exempt: Option<bool> = kwa.get("tax_exempt").and_then(|v| v.as_bool());
     let gain_output: GainOutputMode = kwa.get("gain_output").and_then(|v| serde_json::from_value(v.clone()).ok()).ok_or("Missing gain_output")?;
+    let mut regs = Registers::new();
     let mut aux = ZERO;
 
     // Helper function to calculate balance
-    fn calc_balance(
-        principal: Decimal,
-        interest_accrued: Decimal,
-        principal_amortized_total: Decimal,
-        interest_settled_total: Decimal,
-    ) -> Decimal {
+    fn calc_balance(principal: Decimal, interest_accrued: Decimal, principal_amortized_total: Decimal, interest_settled_total: Decimal) -> Decimal {
         principal + interest_accrued - principal_amortized_total - interest_settled_total
     }
 
@@ -521,11 +515,9 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
         runaway: false,
     });
 
-    // Initialize registers
-    let mut regs = Registers::new();
-
     // Main calculation phases
     let mut payments = Vec::new();
+
     for (num, window) in amortizations.windows(2).enumerate() {
         let (ent0, ent1) = (&window[0], &window[1]);
         let due = min(calc_date.value, match ent1 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date });
