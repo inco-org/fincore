@@ -8,6 +8,7 @@ use serde::{Serialize, Deserialize};
 use serde::ser::SerializeStruct;
 use serde_json::Value;
 use erased_serde::{self, Deserializer};
+use serde::de::DeserializeOwned;
 
 trait RoundingExt {
     fn round_dp(&self, decimal_places: u32) -> Self;
@@ -397,7 +398,15 @@ impl<'de> serde::Deserialize<'de> for InMemoryBackend {
     }
 }
 
-impl erased_serde::Deserialize for InMemoryBackend {}
+impl<'de> Deserialize<'de> for Box<dyn IndexStorageBackend> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let backend = InMemoryBackend::deserialize(deserializer)?;
+        Ok(Box::new(backend) as Box<dyn IndexStorageBackend>)
+    }
+}
 
 impl Clone for InMemoryBackend {
     fn clone(&self) -> Self {
