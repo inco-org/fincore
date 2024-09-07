@@ -851,7 +851,19 @@ fn calculate_revenue_tax(begin: NaiveDate, end: NaiveDate) -> Decimal {
 
 fn calculate_interest_factor(rate: Decimal, period: Decimal, percent: bool) -> Decimal {
     let rate = if percent { rate / Decimal::new(100, 0) } else { rate };
-    (ONE + rate).powf(period)
+    (ONE + rate).pow(period)
+}
+
+trait DecimalPow {
+    fn pow(&self, exp: Decimal) -> Decimal;
+}
+
+impl DecimalPow for Decimal {
+    fn pow(&self, exp: Decimal) -> Decimal {
+        let base = self.to_f64().unwrap();
+        let exponent = exp.to_f64().unwrap();
+        Decimal::from_f64(base.powf(exponent)).unwrap()
+    }
 }
 
 struct Registers {
@@ -1731,7 +1743,7 @@ pub fn amortize_fixed(principal: Decimal, apy: Decimal, term: i32) -> impl Itera
      }
 
      let fac = calculate_interest_factor(apy, ONE / Decimal::from(12), false);
-     let pmt = (principal * (fac - ONE)) / (ONE - fac.powf(Decimal::from(-term)));
+     let pmt = (principal * (fac - ONE)) / (ONE - fac.pow(Decimal::from(-term)));
 
      AmortizationIterator {
          principal,
