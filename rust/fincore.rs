@@ -636,10 +636,12 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
         }
 
         // Phase B.2: Assemble the payment instance and perform rounding
-        if ent0.date < calc_date.value || ent1.date <= calc_date.value || calc_date.runaway {
+        if match ent0 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date } < calc_date.value || 
+           match ent1 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date } <= calc_date.value || 
+           calc_date.runaway {
             let mut payment = Payment {
                 no: num as i32 + 1,
-                date: ent1.date,
+                date: match ent1 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date },
                 raw: ZERO,
                 tax: ZERO,
                 net: ZERO,
@@ -652,7 +654,7 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
             payment.amort = regs.principal.amortized.current;
             payment.gain = match gain_output {
                 GainOutputMode::Deferred => regs.interest.deferred + regs.interest.current,
-                GainOutputMode::Settled => if matches!(ent1, Amortization { amortizes_interest: true, .. }) { regs.interest.settled.current } else { ZERO },
+                GainOutputMode::Settled => if matches!(ent1, AmortizationType::Full(Amortization { amortizes_interest: true, .. })) { regs.interest.settled.current } else { ZERO },
                 GainOutputMode::Current => regs.interest.current,
             };
             payment.bal = calc_balance(principal, f_c, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total);
@@ -660,13 +662,13 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
             // Calculate raw value and tax
             if matches!(ent1, AmortizationType::Full(Amortization { amortizes_interest: true, .. })) {
                 payment.raw = payment.amort + regs.interest.settled.current;
-                payment.tax = regs.interest.settled.current * calculate_revenue_tax(amortizations[0].date, due);
+                payment.tax = regs.interest.settled.current * calculate_revenue_tax(match amortizations[0] { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date }, due);
             } else if payment.amort > ZERO {
                 payment.raw = payment.amort;
                 payment.tax = ZERO;
             } else if matches!(ent1, AmortizationType::Full(Amortization { amortizes_interest: true, .. })) {
                 payment.raw = regs.interest.settled.current;
-                payment.tax = regs.interest.settled.current * calculate_revenue_tax(amortizations[0].date, due);
+                payment.tax = regs.interest.settled.current * calculate_revenue_tax(match amortizations[0] { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date }, due);
             } else {
                 payment.raw = ZERO;
                 payment.tax = ZERO;
