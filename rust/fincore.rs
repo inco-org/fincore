@@ -207,7 +207,7 @@ impl Clone for VariableIndex {
 }
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct InMemoryBackend {
     _ignore_cdi: Vec<NaiveDate>,
     _registry_cdi: HashMap<NaiveDate, Decimal>,
