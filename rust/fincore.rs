@@ -620,7 +620,7 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
                     let plfv = principal * (ONE - regs.principal.amortization_ratio.current) * (f_c - ONE);
                     let val0 = value.min(&calc_balance(principal, f_c, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total));
                     let val1 = val0.min(&(regs.interest.accrued - regs.interest.settled.total));
-                    let val2 = (val0 - val1).min(&plfv);
+                    let val2 = (val0 - val1).min(plfv);
                     let val3 = val0 - val1 - val2;
 
                     // Register principal amortization
@@ -629,7 +629,7 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
                     regs.principal.amortized.total += val3;
 
                     // Register interest to be paid
-                    regs.interest.settled.current = val1;
+                    regs.interest.settled.current = *val1;
                     regs.interest.settled.total += val1;
                 }
             }
