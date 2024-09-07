@@ -452,23 +452,21 @@ impl Clone for InMemoryBackend {
 pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, String> {
     let principal: Decimal = kwa.get("principal").and_then(|v| v.as_f64()).ok_or("Missing principal")?.try_into().map_err(|e: rust_decimal::Error| e.to_string())?;
     let apy: Decimal = kwa.get("apy").and_then(|v| v.as_f64()).ok_or("Missing apy")?.try_into().map_err(|e: rust_decimal::Error| e.to_string())?;
-    let amortizations: Vec<AmortizationType> = kwa.get("amortizations").and_then(|v| v.as_array()).ok_or("Missing amortizations")?
-        .iter()
-        .map(|a| {
-            if let Ok(full) = serde_json::from_value::<Amortization>(a.clone()) {
-                Ok(AmortizationType::Full(full))
-            } else if let Ok(bare) = serde_json::from_value::<AmortizationBare>(a.clone()) {
-                Ok(AmortizationType::Bare(bare))
-            } else {
-                Err("Invalid amortization type".to_string())
-            }
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let amortizations: Vec<AmortizationType> = kwa.get("amortizations").and_then(|v| v.as_array()).ok_or("Missing amortizations")?.iter().map(|a| {
+        if let Ok(full) = serde_json::from_value::<Amortization>(a.clone()) {
+            Ok(AmortizationType::Full(full))
+        } else if let Ok(bare) = serde_json::from_value::<AmortizationBare>(a.clone()) {
+            Ok(AmortizationType::Bare(bare))
+        } else {
+            Err("Invalid amortization type".to_string())
+        }
+    }).collect::<Result<Vec<_>, _>>()?;
     let vir: Option<VariableIndex> = kwa.get("vir").and_then(|v| serde_json::from_value(v.clone()).ok());
     let capitalisation: Capitalisation = kwa.get("capitalisation").and_then(|v| serde_json::from_value(v.clone()).ok()).ok_or("Missing capitalisation")?;
     let calc_date: Option<CalcDate> = kwa.get("calc_date").and_then(|v| serde_json::from_value(v.clone()).ok());
     let tax_exempt: Option<bool> = kwa.get("tax_exempt").and_then(|v| v.as_bool());
     let gain_output: GainOutputMode = kwa.get("gain_output").and_then(|v| serde_json::from_value(v.clone()).ok()).ok_or("Missing gain_output")?;
+    let mut aux = ZERO;
 
     // Helper function to calculate balance
     fn calc_balance(
@@ -504,18 +502,12 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
         }
     }
 
-    let mut aux = ZERO;
-    for (i, x) in amortizations.iter() {
-        aux += match x {
-            AmortizationType::Full(a) => a.amortization_ratio,
-            AmortizationType::Bare(_) => ZERO,
-        };
+    for x in amortizations.iter() {
+        aux += match x { AmortizationType::Full(a) => a.amortization_ratio, AmortizationType::Bare(_) => ZERO };
+    }
 
-        // TODO: Implement price level adjustment check
-
-        if aux > ONE && !CloseToExt::is_close_to(&aux, ONE, Some(dec!(1e-9))) {
-            return Err("the accumulated percentage of the amortizations overflows 1.0".to_string());
-        }
+    if aux > ONE && !CloseToExt::is_close_to(&aux, ONE, Some(dec!(1e-9))) {
+        return Err("the accumulated percentage of the amortizations overflows 1.0".to_string());
     }
 
     if !CloseToExt::is_close_to(&aux, ONE, Some(dec!(1e-9))) {
@@ -537,54 +529,27 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
     let mut payments = Vec::new();
     for (num, window) in amortizations.windows(2).enumerate() {
         let (ent0, ent1) = (&window[0], &window[1]);
-        let due = min(calc_date.value, match ent1 {
-            AmortizationType::Full(a) => a.date,
-            AmortizationType::Bare(a) => a.date,
-        });
+        let due = min(calc_date.value, match ent1 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date });
         let mut f_s = ONE;
         let mut f_c = ONE;
 
         // Phase B.0: Calculate spread and correction factors
-        if match ent0 {
-            AmortizationType::Full(a) => a.date,
-            AmortizationType::Bare(a) => a.date,
-        } < calc_date.value || match ent1 {
-            AmortizationType::Full(a) => a.date,
-            AmortizationType::Bare(a) => a.date,
-        } <= calc_date.value {
+        if match ent0 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date } < calc_date.value || match ent1 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date } <= calc_date.value {
             match (&vir, capitalisation) {
                 (None, Capitalisation::Days360) => {
-                    let days = (due - match ent0 {
-                        AmortizationType::Full(a) => a.date,
-                        AmortizationType::Bare(a) => a.date,
-                    }).num_days() as Decimal;
+                    let days = (due - match ent0 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date }).num_days() as Decimal;
                     f_s = calculate_interest_factor(apy, days / dec!(360), false);
                 },
                 (None, Capitalisation::Days365) => {
-                    let days = (due - match ent0 {
-                        AmortizationType::Full(a) => a.date,
-                        AmortizationType::Bare(a) => a.date,
-                    }).num_days() as Decimal;
+                    let days = (due - match ent0 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date }).num_days() as Decimal;
                     f_s = calculate_interest_factor(apy, days / dec!(365), false);
                 },
                 (None, Capitalisation::Days30360) => {
-                    let mut dcp = (due - match ent0 {
-                        AmortizationType::Full(a) => a.date,
-                        AmortizationType::Bare(a) => a.date,
-                    }).num_days() as Decimal;
-                    let mut dct = (match ent1 {
-                        AmortizationType::Full(a) => a.date,
-                        AmortizationType::Bare(a) => a.date,
-                    } - match ent0 {
-                        AmortizationType::Full(a) => a.date,
-                        AmortizationType::Bare(a) => a.date,
-                    }).num_days() as Decimal;
+                    let mut dcp = (due - match ent0 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date }).num_days() as Decimal;
+                    let mut dct = (match ent1 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date } - match ent0 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date }).num_days() as Decimal;
 
                     // Handle DCT override cases
-                    if let Some(override_data) = match ent1 {
-                        AmortizationType::Full(a) => &a.dct_override,
-                        AmortizationType::Bare(a) => &a.dct_override,
-                    } {
+                    if let Some(override_data) = match ent1 { AmortizationType::Full(a) => &a.dct_override, AmortizationType::Bare(a) => &a.dct_override } {
                         if num == 0 {
                             dct = diff_surrounding_dates(ent0.date, 24) as Decimal;
                         } else {
