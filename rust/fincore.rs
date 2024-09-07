@@ -44,13 +44,6 @@ impl CloseToExt for Decimal {
     }
 }
 
-fn get_amortization_date(amortization: &AmortizationType) -> NaiveDate {
-    match amortization {
-        AmortizationType::Full(a) => a.date,
-        AmortizationType::Bare(a) => a.date,
-    }
-}
-
 // Constants
 const CENTI: Decimal = dec!(0.01);
 const ZERO: Decimal = dec!(0);
@@ -474,7 +467,8 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
     let mut regs = Registers::new();
     let mut aux = ZERO;
 
-    // Helper function to calculate balance
+    fn get_amortization_date(amortization: &AmortizationType) -> NaiveDate { match amortization { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date } }
+
     fn calc_balance(principal: Decimal, interest_accrued: Decimal, principal_amortized_total: Decimal, interest_settled_total: Decimal) -> Decimal {
         principal + interest_accrued - principal_amortized_total - interest_settled_total
     }
