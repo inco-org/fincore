@@ -1,5 +1,5 @@
 use chrono::{Duration, NaiveDate, Datelike};
-use rust_decimal::{Decimal, Error as DecimalError};
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::cmp::min;
 use std::collections::HashMap;
