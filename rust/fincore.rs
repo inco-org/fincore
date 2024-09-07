@@ -190,21 +190,11 @@ impl Clone for Box<dyn IndexStorageBackend> {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VariableIndex {
     pub code: VrIndex,
     pub percentage: i32,
     pub backend: Box<dyn IndexStorageBackend>
-}
-
-impl Clone for VariableIndex {
-    fn clone(&self) -> Self {
-        VariableIndex {
-            code: self.code,
-            percentage: self.percentage,
-            backend: self.backend.clone(),
-        }
-    }
 }
 
 
