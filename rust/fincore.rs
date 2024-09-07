@@ -1,8 +1,9 @@
-use chrono::{Date, Datelike, Duration, NaiveDate, Utc};
+use chrono::{Duration, NaiveDate};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::cmp::min;
 use std::collections::HashMap;
+use std::fmt::Debug;
 use serde_json::Value;
 
 trait RoundingExt {
@@ -130,7 +131,7 @@ pub struct CalcDate {
 
 // Helper functions
 fn delta_months(d1: NaiveDate, d2: NaiveDate) -> i32 {
-    (d1.year() - d2.year()) * 12 + d1.month() as i32 - d2.month() as i32
+    (d1.year_ce().1 - d2.year_ce().1) * 12 + d1.month0() as i32 - d2.month0() as i32
 }
 
 fn date_range(start_date: NaiveDate, end_date: NaiveDate) -> impl Iterator<Item = NaiveDate> {
@@ -144,18 +145,18 @@ fn date_range(start_date: NaiveDate, end_date: NaiveDate) -> impl Iterator<Item 
 }
 
 fn diff_days_to_same_day_on_prev_month(base: NaiveDate) -> i32 {
-    (base - (base - Duration::days(base.day() as i64 - 1) - Duration::days(1))).num_days() as i32
+    (base - (base - Duration::days(base.day0() as i64) - Duration::days(1))).num_days() as i32
 }
 
 fn diff_surrounding_dates(base: NaiveDate, day_of_month: u32) -> i32 {
-    if base.day() >= day_of_month || base >= NaiveDate::from_ymd_opt(1, 2, 1).unwrap() {
-        let d01 = base.with_day(day_of_month).unwrap();
-        let d02 = if base.day() >= day_of_month {
+    if base.day0() >= day_of_month || base >= NaiveDate::from_ymd_opt(1, 2, 1).unwrap() {
+        let d01 = base.with_day0(day_of_month).unwrap();
+        let d02 = if base.day0() >= day_of_month {
             d01 + Duration::days(31)
         } else {
             d01 - Duration::days(31)
         };
-        let dff = if base.day() >= day_of_month {
+        let dff = if base.day0() >= day_of_month {
             d02 - d01
         } else {
             d01 - d02
@@ -176,7 +177,7 @@ pub struct DailyIndex {
     pub value: Decimal,
 }
 
-pub trait IndexStorageBackend {
+pub trait IndexStorageBackend: Debug {
     fn get_cdi_indexes(&self, begin: NaiveDate, end: NaiveDate) -> Result<Vec<DailyIndex>, BackendError>;
     fn calculate_cdi_factor(&self, begin: NaiveDate, end: NaiveDate, percentage: i32) -> Result<(Decimal, i32), BackendError>;
 }
@@ -185,7 +186,7 @@ pub trait IndexStorageBackend {
 pub struct VariableIndex {
     pub code: VrIndex,
     pub percentage: i32,
-    pub backend: Box<dyn IndexStorageBackend>,
+    pub backend: Box<dyn IndexStorageBackend>
 }
 
 pub struct InMemoryBackend {
