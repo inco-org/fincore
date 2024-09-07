@@ -189,6 +189,7 @@ pub struct VariableIndex {
     pub backend: Box<dyn IndexStorageBackend>
 }
 
+#[derive(Debug)]
 pub struct InMemoryBackend {
     _ignore_cdi: Vec<NaiveDate>,
     _registry_cdi: HashMap<NaiveDate, Decimal>,
