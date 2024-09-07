@@ -116,6 +116,12 @@ impl AmortizationBare {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AmortizationType {
+    Full(Amortization),
+    Bare(AmortizationBare),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Payment {
     pub no: i32,
     pub date: NaiveDate,
@@ -446,9 +452,17 @@ impl Clone for InMemoryBackend {
 pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, String> {
     let principal: Decimal = kwa.get("principal").and_then(|v| v.as_f64()).ok_or("Missing principal")?.try_into().map_err(|e: rust_decimal::Error| e.to_string())?;
     let apy: Decimal = kwa.get("apy").and_then(|v| v.as_f64()).ok_or("Missing apy")?.try_into().map_err(|e: rust_decimal::Error| e.to_string())?;
-    let amortizations: Vec<Amortization> = kwa.get("amortizations").and_then(|v| v.as_array()).ok_or("Missing amortizations")?
+    let amortizations: Vec<AmortizationType> = kwa.get("amortizations").and_then(|v| v.as_array()).ok_or("Missing amortizations")?
         .iter()
-        .map(|a| serde_json::from_value(a.clone()).map_err(|e| e.to_string()))
+        .map(|a| {
+            if let Ok(full) = serde_json::from_value::<Amortization>(a.clone()) {
+                Ok(AmortizationType::Full(full))
+            } else if let Ok(bare) = serde_json::from_value::<AmortizationBare>(a.clone()) {
+                Ok(AmortizationType::Bare(bare))
+            } else {
+                Err("Invalid amortization type".to_string())
+            }
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let vir: Option<VariableIndex> = kwa.get("vir").and_then(|v| serde_json::from_value(v.clone()).ok());
     let capitalisation: Capitalisation = kwa.get("capitalisation").and_then(|v| serde_json::from_value(v.clone()).ok()).ok_or("Missing capitalisation")?;
@@ -679,9 +693,17 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
 pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, String> {
     let principal: Decimal = kwa.get("principal").and_then(|v| v.as_f64()).ok_or("Missing principal")?.try_into().map_err(|e| e.to_string())?;
     let apy: Decimal = kwa.get("apy").and_then(|v| v.as_f64()).ok_or("Missing apy")?.try_into().map_err(|e| e.to_string())?;
-    let amortizations: Vec<Amortization> = kwa.get("amortizations").and_then(|v| v.as_array()).ok_or("Missing amortizations")?
+    let amortizations: Vec<AmortizationType> = kwa.get("amortizations").and_then(|v| v.as_array()).ok_or("Missing amortizations")?
         .iter()
-        .map(|a| serde_json::from_value(a.clone()).map_err(|e| e.to_string()))
+        .map(|a| {
+            if let Ok(full) = serde_json::from_value::<Amortization>(a.clone()) {
+                Ok(AmortizationType::Full(full))
+            } else if let Ok(bare) = serde_json::from_value::<AmortizationBare>(a.clone()) {
+                Ok(AmortizationType::Bare(bare))
+            } else {
+                Err("Invalid amortization type".to_string())
+            }
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let vir: Option<VariableIndex> = kwa.get("vir").and_then(|v| serde_json::from_value(v.clone()).ok());
     let capitalisation: Capitalisation = kwa.get("capitalisation").and_then(|v| serde_json::from_value(v.clone()).ok()).ok_or("Missing capitalisation")?;
