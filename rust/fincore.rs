@@ -863,7 +863,7 @@ pub fn preprocess_bullet(
     apy: Decimal,
     zero_date: NaiveDate,
     term: i32,
-    insertions: Vec<Amortization::Bare>,
+    insertions: Vec<AmortizationBare>,
     anniversary_date: Option<NaiveDate>,
     capitalisation: Capitalisation,
     vir: Option<&VariableIndex>,
@@ -1000,7 +1000,7 @@ pub fn preprocess_jm(
     apy: Decimal,
     zero_date: NaiveDate,
     term: i32,
-    insertions: Vec<Amortization::Bare>,
+    insertions: Vec<AmortizationBare>,
     anniversary_date: Option<NaiveDate>,
     vir: Option<&VariableIndex>,
 ) -> Result<Vec<Amortization>, String> {
@@ -1144,7 +1144,7 @@ pub fn preprocess_price(
     apy: Decimal,
     zero_date: NaiveDate,
     term: i32,
-    insertions: Vec<Amortization::Bare>,
+    insertions: Vec<AmortizationBare>,
     anniversary_date: Option<NaiveDate>,
 ) -> Result<Vec<Amortization>, String> {
     let mut lst1 = Vec::new();
@@ -1283,7 +1283,7 @@ pub fn preprocess_livre(
     principal: Decimal,
     apy: Decimal,
     amortizations: Vec<Amortization>,
-    insertions: Vec<Amortization::Bare>,
+    insertions: Vec<AmortizationBare>,
     vir: Option<&VariableIndex>,
 ) -> Result<Vec<Amortization>, String> {
     let mut sched: Vec<Amortization> = Vec::new();
