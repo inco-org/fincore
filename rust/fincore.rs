@@ -19,6 +19,17 @@ impl RoundingExt for Decimal {
     }
 }
 
+trait CloseToExt {
+    fn is_close_to(&self, other: Self, epsilon: Option<Self>) -> bool;
+}
+
+impl CloseToExt for Decimal {
+    fn is_close_to(&self, other: Self, epsilon: Option<Self>) -> bool {
+        let epsilon = epsilon.unwrap_or(Decimal::new(1, 9)); // Default to 1e-9
+        (*self - other).abs() <= epsilon
+    }
+}
+
 // Constants
 const CENTI: Decimal = dec!(0.01);
 const ZERO: Decimal = dec!(0);
@@ -471,12 +482,12 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
 
         // TODO: Implement price level adjustment check
 
-        if aux > ONE && !aux.is_close_to(ONE, Some(dec!(1e-9))) {
+        if aux > ONE && !CloseToExt::is_close_to(&aux, ONE, Some(dec!(1e-9))) {
             return Err("the accumulated percentage of the amortizations overflows 1.0".to_string());
         }
     }
 
-    if !aux.is_close_to(ONE, Some(dec!(1e-9))) {
+    if !CloseToExt::is_close_to(&aux, ONE, Some(dec!(1e-9))) {
         return Err("the accumulated percentage of the amortizations does not reach 1.0".to_string());
     }
 
