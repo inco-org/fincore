@@ -551,19 +551,19 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
                     // Handle DCT override cases
                     if let Some(override_data) = match ent1 { AmortizationType::Full(a) => &a.dct_override, AmortizationType::Bare(a) => &a.dct_override } {
                         if num == 0 {
-                            dct = diff_surrounding_dates(match ent0 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date }, 24) as Decimal;
+                            dct = Decimal::from(diff_surrounding_dates(match ent0 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date }, 24));
                         } else {
-                            dct = (override_data.date_to - override_data.date_from).num_days() as Decimal;
+                            dct = Decimal::from((override_data.date_to - override_data.date_from).num_days());
                             if override_data.predates_first_amortization {
-                                dct = diff_surrounding_dates(override_data.date_from, 24) as Decimal;
+                                dct = Decimal::from(diff_surrounding_dates(override_data.date_from, 24));
                             }
                         }
                     }
 
                     if let Some(override_data) = match ent0 { AmortizationType::Full(a) => &a.dct_override, AmortizationType::Bare(a) => &a.dct_override } {
-                        dct = (match ent1 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date } - override_data.date_from).num_days() as Decimal;
+                        dct = Decimal::from((match ent1 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date } - override_data.date_from).num_days());
                         if override_data.predates_first_amortization {
-                            dct = diff_surrounding_dates(override_data.date_from, 24) as Decimal;
+                            dct = Decimal::from(diff_surrounding_dates(override_data.date_from, 24));
                         }
                     }
 
