@@ -551,7 +551,10 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
                     // Handle DCT override cases
                     if let Some(override_data) = match ent1 { AmortizationType::Full(a) => &a.dct_override, AmortizationType::Bare(a) => &a.dct_override } {
                         if num == 0 {
-                            dct = diff_surrounding_dates(ent0.date, 24) as Decimal;
+                            dct = diff_surrounding_dates(match ent0 {
+                                AmortizationType::Full(a) => a.date,
+                                AmortizationType::Bare(a) => a.date,
+                            }, 24) as Decimal;
                         } else {
                             dct = (override_data.date_to - override_data.date_from).num_days() as Decimal;
                             if override_data.predates_first_amortization {
@@ -564,7 +567,10 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
                         AmortizationType::Full(a) => &a.dct_override,
                         AmortizationType::Bare(a) => &a.dct_override,
                     } {
-                        dct = (ent1.date - override_data.date_from).num_days() as Decimal;
+                        dct = (match ent1 {
+                            AmortizationType::Full(a) => a.date,
+                            AmortizationType::Bare(a) => a.date,
+                        } - override_data.date_from).num_days() as Decimal;
                         if override_data.predates_first_amortization {
                             dct = diff_surrounding_dates(override_data.date_from, 24) as Decimal;
                         }
@@ -573,7 +579,10 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
                     f_s = calculate_interest_factor(apy, dcp / (dec!(12) * dct), false);
                 },
                 (Some(v), Capitalisation::Days252) if v.code == VrIndex::CDI => {
-                    let f_v = v.backend.calculate_cdi_factor(ent0.date, due, v.percentage).unwrap();
+                    let f_v = v.backend.calculate_cdi_factor(match ent0 {
+                        AmortizationType::Full(a) => a.date,
+                        AmortizationType::Bare(a) => a.date,
+                    }, due, v.percentage).unwrap();
                     let f_s_temp = calculate_interest_factor(apy, Decimal::from(f_v.1) / dec!(252), false);
                     f_s = f_s_temp * f_v.0;
                 },
@@ -583,7 +592,13 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
         }
 
         // Phase B.1: Register variations in principal, interest, and monetary correction
-        if ent0.date < calc_date.value || ent1.date <= calc_date.value || calc_date.runaway {
+        if match ent0 {
+            AmortizationType::Full(a) => a.date,
+            AmortizationType::Bare(a) => a.date,
+        } < calc_date.value || match ent1 {
+            AmortizationType::Full(a) => a.date,
+            AmortizationType::Bare(a) => a.date,
+        } <= calc_date.value || calc_date.runaway {
             // Register accrued interest
             regs.interest.current = calc_balance(principal, f_c, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total) * (f_s - ONE);
             regs.interest.accrued += regs.interest.current;
