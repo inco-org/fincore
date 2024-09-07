@@ -471,12 +471,11 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
     // Helper function to calculate balance
     fn calc_balance(
         principal: Decimal,
-        f_c: Decimal,
         interest_accrued: Decimal,
         principal_amortized_total: Decimal,
         interest_settled_total: Decimal,
     ) -> Decimal {
-        principal * f_c + interest_accrued - principal_amortized_total * f_c - interest_settled_total
+        principal + interest_accrued - principal_amortized_total - interest_settled_total
     }
 
     // Validation
@@ -531,7 +530,6 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
         let (ent0, ent1) = (&window[0], &window[1]);
         let due = min(calc_date.value, match ent1 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date });
         let mut f_s = ONE;
-        let mut f_c = ONE;
 
         // Phase B.0: Calculate spread and correction factors
         if match ent0 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date } < calc_date.value || match ent1 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date } <= calc_date.value {
@@ -545,7 +543,7 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
                     f_s = calculate_interest_factor(apy, days / dec!(365), false);
                 },
                 (None, Capitalisation::Days30360) => {
-                    let mut dcp = Decimal::from((due - match ent0 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date }).num_days());
+                    let dcp = Decimal::from((due - match ent0 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date }).num_days());
                     let mut dct = Decimal::from((match ent1 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date } - match ent0 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date }).num_days());
 
                     // Handle DCT override cases
@@ -591,7 +589,7 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
             AmortizationType::Bare(a) => a.date,
         } <= calc_date.value || calc_date.runaway {
             // Register accrued interest
-            regs.interest.current = calc_balance(principal, f_c, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total) * (f_s - ONE);
+            regs.interest.current = calc_balance(principal, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total) * (f_s - ONE);
             regs.interest.accrued += regs.interest.current;
             regs.interest.deferred = regs.interest.accrued - (regs.interest.current + regs.interest.settled.total);
 
@@ -617,11 +615,9 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
                 },
                 AmortizationType::Bare(AmortizationBare { value, .. }) => {
                     // Prepayment (extraordinary amortization)
-                    let plfv = principal * (ONE - regs.principal.amortization_ratio.current) * (f_c - ONE);
-                    let val0 = value.min(&calc_balance(principal, f_c, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total));
+                    let val0 = value.min(&calc_balance(principal, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total));
                     let val1 = val0.min(&(regs.interest.accrued - regs.interest.settled.total));
-                    let val2 = (val0 - val1).min(plfv);
-                    let val3 = val0 - val1 - val2;
+                    let val3 = val0 - val1;
 
                     // Register principal amortization
                     regs.principal.amortization_ratio.current += val3 / principal;
@@ -657,7 +653,7 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
                 GainOutputMode::Settled => if matches!(ent1, AmortizationType::Full(Amortization { amortizes_interest: true, .. })) { regs.interest.settled.current } else { ZERO },
                 GainOutputMode::Current => regs.interest.current,
             };
-            payment.bal = calc_balance(principal, f_c, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total);
+            payment.bal = calc_balance(principal, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total);
 
             // Calculate raw value and tax
             if matches!(ent1, AmortizationType::Full(Amortization { amortizes_interest: true, .. })) {
@@ -727,12 +723,11 @@ pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, 
 
     fn calc_balance(
         principal: Decimal,
-        f_c: Decimal,
         interest_accrued: Decimal,
         principal_amortized_total: Decimal,
         interest_settled_total: Decimal,
     ) -> Decimal {
-        principal * f_c + interest_accrued - principal_amortized_total * f_c - interest_settled_total
+        principal + interest_accrued - principal_amortized_total - interest_settled_total
     }
 
     // A. Validate and prepare for execution
@@ -790,7 +785,6 @@ pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, 
     let mut count = 1;
 
     for ref_date in date_range(amortizations[0].date, amortizations.last().unwrap().date) {
-        let mut f_c = ONE;
         let mut f_v = ONE;
         let mut f_s = ONE;
 
@@ -841,11 +835,9 @@ pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, 
                     count = 1;
                 },
                 AmortizationBare { value, .. } => {
-                    let plfv = principal * (ONE - regs.principal.amortization_ratio.current) * (f_c - ONE);
-                    let val0 = value.min(&calc_balance(principal, f_c, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total));
+                    let val0 = value.min(&calc_balance(principal, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total));
                     let val1 = val0.min(&(regs.interest.accrued - regs.interest.settled.total));
-                    let val2 = (val0 - val1).min(&plfv);
-                    let val3 = val0 - val1 - val2;
+                    let val3 = val0 - val1;
                     gens.principal_tracker_1.send(val3 / principal);
                     gens.interest_tracker_2.send(val1);
                     regs.interest.current = ZERO;
@@ -855,10 +847,10 @@ pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, 
             next_amortization = amortization_iter.next().unwrap_or(current_amortization);
         }
 
-        gens.interest_tracker_1.send(calc_balance(principal, f_c, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total) * (f_s * f_v * f_c - ONE));
+        gens.interest_tracker_1.send(calc_balance(principal, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total) * (f_s * f_v - ONE));
 
         // B.2. Assemble the daily return instance and perform rounding
-        if calc_balance(principal, f_c, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total).round_dp(2) == ZERO {
+        if calc_balance(principal, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total).round_dp(2) == ZERO {
             break;
         }
 
@@ -867,9 +859,9 @@ pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, 
             period,
             date: ref_date,
             value: regs.interest.daily.round_dp(2),
-            bal: calc_balance(principal, f_c, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total).round_dp(2),
+            bal: calc_balance(principal, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total).round_dp(2),
             fixed_factor: f_s,
-            variable_factor: f_v * f_c,
+            variable_factor: f_v,
         };
 
         daily_returns.push(daily_return);
