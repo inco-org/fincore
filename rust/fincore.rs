@@ -660,13 +660,13 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
             // Calculate raw value and tax
             if matches!(ent1, AmortizationType::Full(Amortization { amortizes_interest: true, .. })) {
                 payment.raw = payment.amort + regs.interest.settled.current;
-                payment.tax = regs.interest.settled.current * calculate_revenue_tax(match amortizations[0] { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date }, due);
+                payment.tax = regs.interest.settled.current * calculate_revenue_tax(match &amortizations[0] { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date }, due);
             } else if payment.amort > ZERO {
                 payment.raw = payment.amort;
                 payment.tax = ZERO;
             } else if matches!(ent1, AmortizationType::Full(Amortization { amortizes_interest: true, .. })) {
                 payment.raw = regs.interest.settled.current;
-                payment.tax = regs.interest.settled.current * calculate_revenue_tax(match amortizations[0] { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date }, due);
+                payment.tax = regs.interest.settled.current * calculate_revenue_tax(match &amortizations[0] { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date }, due);
             } else {
                 payment.raw = ZERO;
                 payment.tax = ZERO;
