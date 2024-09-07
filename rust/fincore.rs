@@ -23,9 +23,13 @@ impl RoundingExt for Decimal {
 
 impl DecimalPow for Decimal {
     fn pow(&self, exp: Decimal) -> Decimal {
-        let base = self.to_i64().unwrap();
+        let base = self.to_f64().unwrap();
         let exponent = exp.to_f64().unwrap();
-        Decimal::from_f64(base.powf(exponent)).unwrap()
+        let mut result = 1.0;
+        for _ in 0..exponent as i32 {
+            result *= base;
+        }
+        Decimal::from_f64(result).unwrap()
     }
 }
 
