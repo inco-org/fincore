@@ -9,13 +9,6 @@ use serde::ser::SerializeStruct;
 use serde_json::Value;
 use erased_serde::{self, Deserializer};
 
-pub trait IndexStorageBackend: Debug + erased_serde::Serialize + erased_serde::Deserialize {
-    fn get_cdi_indexes(&self, begin: NaiveDate, end: NaiveDate) -> Result<Vec<DailyIndex>, BackendError>;
-    fn calculate_cdi_factor(&self, begin: NaiveDate, end: NaiveDate, percentage: i32) -> Result<(Decimal, i32), BackendError>;
-    fn clone_box(&self) -> Box<dyn IndexStorageBackend>;
-    fn as_any(&self) -> &dyn std::any::Any;
-}
-
 trait RoundingExt {
     fn round_dp(&self, decimal_places: u32) -> Self;
 }
@@ -970,7 +963,7 @@ pub fn preprocess_bullet(
             return Err(format!("the 'anniversary_date', {}, must be greater than 'zero_date', {}", anniversary, zero_date));
         }
         if (anniversary - (zero_date + Duration::days(term as i64 * 30))).num_days().abs() > 20 {
-            return Err(format!("the 'anniversary_date', {}, is more than 20 days away from the regular payment date, {}", 
+            return Err(format!("the 'anniversary_date', {}, is more than 20 days away from the regular payment date, {}",
                                anniversary, zero_date + Duration::days(term as i64 * 30)));
         }
     }
@@ -1106,7 +1099,7 @@ pub fn preprocess_jm(
             return Err(format!("the 'anniversary_date', {}, must be greater than 'zero_date', {}", anniversary, zero_date));
         }
         if (anniversary - (zero_date + Duration::days(30))).num_days().abs() > 20 {
-            return Err(format!("the 'anniversary_date', {}, is more than 20 days away from the regular payment date, {}", 
+            return Err(format!("the 'anniversary_date', {}, is more than 20 days away from the regular payment date, {}",
                                anniversary, zero_date + Duration::days(30)));
         }
     }
@@ -1249,7 +1242,7 @@ pub fn preprocess_price(
             return Err(format!("the 'anniversary_date', {}, must be greater than 'zero_date', {}", anniversary, zero_date));
         }
         if (anniversary - (zero_date + Duration::days(30))).num_days().abs() > 20 {
-            return Err(format!("the 'anniversary_date', {}, is more than 20 days away from the regular payment date, {}", 
+            return Err(format!("the 'anniversary_date', {}, is more than 20 days away from the regular payment date, {}",
                                anniversary, zero_date + Duration::days(30)));
         }
     }
@@ -1406,7 +1399,7 @@ pub fn preprocess_livre(
     }
 
     if (amortizations[1].date - (amortizations[0].date + Duration::days(30))).num_days().abs() > 20 {
-        return Err(format!("the first payment date, {}, is more than 20 days away from the regular payment date, {}", 
+        return Err(format!("the first payment date, {}, is more than 20 days away from the regular payment date, {}",
                            amortizations[1].date, amortizations[0].date + Duration::days(30)));
     }
 
@@ -1685,3 +1678,49 @@ pub fn get_livre_daily_returns(
 
     get_daily_returns(kwa)
 }
+
+pub fn amortize_fixed(principal: Decimal, apy: Decimal, term: i32) -> impl Iterator<Item = Decimal> {
+     struct AmortizationIterator {
+         principal: Decimal,
+         apy: Decimal,
+         term: i32,
+         fac: Decimal,
+         pmt: Decimal,
+         bal: Decimal,
+         current_term: i32,
+     }
+
+     impl Iterator for AmortizationIterator {
+         type Item = Decimal;
+
+         fn next(&mut self) -> Option<Self::Item> {
+             if self.current_term >= self.term || self.bal <= ZERO {
+                 return None;
+             }
+
+             let amr = if self.bal - self.pmt >= ZERO {
+                 self.pmt - (self.bal * (self.fac - ONE))
+             } else {
+                 self.bal
+             };
+
+             self.bal -= amr;
+             self.current_term += 1;
+
+             Some(amr / self.principal)
+         }
+     }
+
+     let fac = calculate_interest_factor(apy, ONE / Decimal::from(12), false);
+     let pmt = (principal * (fac - ONE)) / (ONE - fac.powf(Decimal::from(-term)));
+
+     AmortizationIterator {
+         principal,
+         apy,
+         term,
+         fac,
+         pmt,
+         bal: principal,
+         current_term: 0,
+     }
+ }
