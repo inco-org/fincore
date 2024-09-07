@@ -4,8 +4,10 @@ use rust_decimal_macros::dec;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use serde::{Serialize, Deserialize};
+use serde::{Serialize, Deserialize, Serializer};
+use serde::ser::SerializeStruct;
 use serde_json::Value;
+use erased_serde;
 
 trait RoundingExt {
     fn round_dp(&self, decimal_places: u32) -> Self;
@@ -178,15 +180,25 @@ pub struct DailyIndex {
     pub value: Decimal,
 }
 
-pub trait IndexStorageBackend: Debug {
+pub trait IndexStorageBackend: Debug + erased_serde::Serialize {
     fn get_cdi_indexes(&self, begin: NaiveDate, end: NaiveDate) -> Result<Vec<DailyIndex>, BackendError>;
     fn calculate_cdi_factor(&self, begin: NaiveDate, end: NaiveDate, percentage: i32) -> Result<(Decimal, i32), BackendError>;
     fn clone_box(&self) -> Box<dyn IndexStorageBackend>;
+    fn as_any(&self) -> &dyn std::any::Any;
 }
 
 impl Clone for Box<dyn IndexStorageBackend> {
     fn clone(&self) -> Self {
         self.clone_box()
+    }
+}
+
+impl serde::Serialize for Box<dyn IndexStorageBackend> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        erased_serde::serialize(self.as_ref(), serializer)
     }
 }
 
@@ -346,6 +358,24 @@ impl IndexStorageBackend for InMemoryBackend {
 
     fn clone_box(&self) -> Box<dyn IndexStorageBackend> {
         Box::new(self.clone())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+impl serde::Serialize for InMemoryBackend {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // Implement serialization for InMemoryBackend
+        // This is a placeholder implementation, you may need to adjust it based on your needs
+        let mut state = serializer.serialize_struct("InMemoryBackend", 2)?;
+        state.serialize_field("_ignore_cdi", &self._ignore_cdi)?;
+        state.serialize_field("_registry_cdi", &self._registry_cdi)?;
+        state.end()
     }
 }
 
