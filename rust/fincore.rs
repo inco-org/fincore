@@ -1,4 +1,4 @@
-use chrono::{Duration, NaiveDate};
+use chrono::{Duration, NaiveDate, Datelike};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::cmp::min;
@@ -131,7 +131,7 @@ pub struct CalcDate {
 
 // Helper functions
 fn delta_months(d1: NaiveDate, d2: NaiveDate) -> i32 {
-    (d1.year_ce().1 - d2.year_ce().1) * 12 + d1.month0() as i32 - d2.month0() as i32
+    (d1.year() - d2.year()) * 12 + d1.month() as i32 - d2.month() as i32
 }
 
 fn date_range(start_date: NaiveDate, end_date: NaiveDate) -> impl Iterator<Item = NaiveDate> {
