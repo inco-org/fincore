@@ -615,8 +615,10 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
                 },
                 AmortizationType::Bare(AmortizationBare { value, .. }) => {
                     // Prepayment (extraordinary amortization)
-                    let val0 = value.min(&calc_balance(principal, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total));
-                    let val1 = val0.min(&(regs.interest.accrued - regs.interest.settled.total));
+                    let balance = calc_balance(principal, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total);
+                    let val0 = value.min(&balance);
+                    let interest_diff = regs.interest.accrued - regs.interest.settled.total;
+                    let val1 = val0.min(&interest_diff);
                     let val3 = val0 - val1;
 
                     // Register principal amortization
