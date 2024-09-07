@@ -515,7 +515,8 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
 
     // Main calculation phases
     let mut payments = Vec::new();
-    for (num, (ent0, ent1)) in amortizations.windows(2).enumerate() {
+    for (num, window) in amortizations.windows(2).enumerate() {
+        let (ent0, ent1) = (&window[0], &window[1]);
         let due = min(calc_date.value, ent1.date);
         let mut f_s = ONE;
         let mut f_c = ONE;
