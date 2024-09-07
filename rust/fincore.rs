@@ -483,7 +483,7 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
                         regs.interest.settled.total += regs.interest.settled.current;
                     }
                 },
-                Amortization::Bare { value, .. } => {
+                AmortizationBare { value, .. } => {
                     // Prepayment (extraordinary amortization)
                     let plfv = principal * (ONE - regs.principal.amortization_ratio.current) * (f_c - ONE);
                     let val0 = value.min(&calc_balance(principal, f_c, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total));
@@ -698,7 +698,7 @@ pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, 
                     period += 1;
                     count = 1;
                 },
-                Amortization::Bare { value, .. } => {
+                AmortizationBare { value, .. } => {
                     let plfv = principal * (ONE - regs.principal.amortization_ratio.current) * (f_c - ONE);
                     let val0 = value.min(&calc_balance(principal, f_c, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total));
                     let val1 = val0.min(&(regs.interest.accrued - regs.interest.settled.total));
