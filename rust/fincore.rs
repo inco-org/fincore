@@ -206,7 +206,8 @@ impl serde::Serialize for Box<dyn IndexStorageBackend> {
 pub struct VariableIndex {
     pub code: VrIndex,
     pub percentage: i32,
-    pub backend: Box<dyn IndexStorageBackend>
+    #[serde(bound(deserialize = "Box<dyn IndexStorageBackend>: Deserialize<'de>"))]
+    pub backend: Box<dyn IndexStorageBackend>,
 }
 
 
@@ -370,14 +371,33 @@ impl serde::Serialize for InMemoryBackend {
     where
         S: serde::Serializer,
     {
-        // Implement serialization for InMemoryBackend
-        // This is a placeholder implementation, you may need to adjust it based on your needs
         let mut state = serializer.serialize_struct("InMemoryBackend", 2)?;
         state.serialize_field("_ignore_cdi", &self._ignore_cdi)?;
         state.serialize_field("_registry_cdi", &self._registry_cdi)?;
         state.end()
     }
 }
+
+impl<'de> serde::Deserialize<'de> for InMemoryBackend {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Helper {
+            _ignore_cdi: Vec<NaiveDate>,
+            _registry_cdi: HashMap<NaiveDate, Decimal>,
+        }
+
+        let helper = Helper::deserialize(deserializer)?;
+        Ok(InMemoryBackend {
+            _ignore_cdi: helper._ignore_cdi,
+            _registry_cdi: helper._registry_cdi,
+        })
+    }
+}
+
+impl erased_serde::Deserialize for InMemoryBackend {}
 
 impl Clone for InMemoryBackend {
     fn clone(&self) -> Self {
