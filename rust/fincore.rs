@@ -537,16 +537,16 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
         if match ent0 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date } < calc_date.value || match ent1 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date } <= calc_date.value {
             match (&vir, capitalisation) {
                 (None, Capitalisation::Days360) => {
-                    let days = (due - match ent0 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date }).num_days() as Decimal;
+                    let days = Decimal::from((due - match ent0 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date }).num_days());
                     f_s = calculate_interest_factor(apy, days / dec!(360), false);
                 },
                 (None, Capitalisation::Days365) => {
-                    let days = (due - match ent0 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date }).num_days() as Decimal;
+                    let days = Decimal::from((due - match ent0 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date }).num_days());
                     f_s = calculate_interest_factor(apy, days / dec!(365), false);
                 },
                 (None, Capitalisation::Days30360) => {
-                    let mut dcp = (due - match ent0 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date }).num_days() as Decimal;
-                    let mut dct = (match ent1 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date } - match ent0 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date }).num_days() as Decimal;
+                    let mut dcp = Decimal::from((due - match ent0 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date }).num_days());
+                    let mut dct = Decimal::from((match ent1 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date } - match ent0 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date }).num_days());
 
                     // Handle DCT override cases
                     if let Some(override_data) = match ent1 { AmortizationType::Full(a) => &a.dct_override, AmortizationType::Bare(a) => &a.dct_override } {
