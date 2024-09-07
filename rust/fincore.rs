@@ -505,8 +505,11 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
     }
 
     let mut aux = ZERO;
-    for (i, x) in amortizations.iter().enumerate() {
-        aux += x.amortization_ratio;
+    for (i, x) in amortizations.iter() {
+        aux += match x {
+            AmortizationType::Full(a) => a.amortization_ratio,
+            AmortizationType::Bare(_) => ZERO,
+        };
 
         // TODO: Implement price level adjustment check
 
@@ -520,7 +523,10 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
     }
 
     let calc_date = calc_date.unwrap_or(CalcDate {
-        value: amortizations.last().unwrap().date,
+        value: match amortizations.last().unwrap() {
+            AmortizationType::Full(a) => a.date,
+            AmortizationType::Bare(a) => a.date,
+        },
         runaway: false,
     });
 
@@ -531,27 +537,54 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
     let mut payments = Vec::new();
     for (num, window) in amortizations.windows(2).enumerate() {
         let (ent0, ent1) = (&window[0], &window[1]);
-        let due = min(calc_date.value, ent1.date);
+        let due = min(calc_date.value, match ent1 {
+            AmortizationType::Full(a) => a.date,
+            AmortizationType::Bare(a) => a.date,
+        });
         let mut f_s = ONE;
         let mut f_c = ONE;
 
         // Phase B.0: Calculate spread and correction factors
-        if ent0.date < calc_date.value || ent1.date <= calc_date.value {
+        if match ent0 {
+            AmortizationType::Full(a) => a.date,
+            AmortizationType::Bare(a) => a.date,
+        } < calc_date.value || match ent1 {
+            AmortizationType::Full(a) => a.date,
+            AmortizationType::Bare(a) => a.date,
+        } <= calc_date.value {
             match (&vir, capitalisation) {
                 (None, Capitalisation::Days360) => {
-                    let days = (due - ent0.date).num_days() as Decimal;
+                    let days = (due - match ent0 {
+                        AmortizationType::Full(a) => a.date,
+                        AmortizationType::Bare(a) => a.date,
+                    }).num_days() as Decimal;
                     f_s = calculate_interest_factor(apy, days / dec!(360), false);
                 },
                 (None, Capitalisation::Days365) => {
-                    let days = (due - ent0.date).num_days() as Decimal;
+                    let days = (due - match ent0 {
+                        AmortizationType::Full(a) => a.date,
+                        AmortizationType::Bare(a) => a.date,
+                    }).num_days() as Decimal;
                     f_s = calculate_interest_factor(apy, days / dec!(365), false);
                 },
                 (None, Capitalisation::Days30360) => {
-                    let mut dcp = (due - ent0.date).num_days() as Decimal;
-                    let mut dct = (ent1.date - ent0.date).num_days() as Decimal;
+                    let mut dcp = (due - match ent0 {
+                        AmortizationType::Full(a) => a.date,
+                        AmortizationType::Bare(a) => a.date,
+                    }).num_days() as Decimal;
+                    let mut dct = (match ent1 {
+                        AmortizationType::Full(a) => a.date,
+                        AmortizationType::Bare(a) => a.date,
+                    } - match ent0 {
+                        AmortizationType::Full(a) => a.date,
+                        AmortizationType::Bare(a) => a.date,
+                    }).num_days() as Decimal;
 
                     // Handle DCT override cases
-                    if let Some(override_data) = &ent1.dct_override {
+                    if let Some(override_data) = match ent1 {
+                        AmortizationType::Full(a) => &a.dct_override,
+                        AmortizationType::Bare(a) => &a.dct_override,
+                    } {
                         if num == 0 {
                             dct = diff_surrounding_dates(ent0.date, 24) as Decimal;
                         } else {
@@ -562,7 +595,10 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
                         }
                     }
 
-                    if let Some(override_data) = &ent0.dct_override {
+                    if let Some(override_data) = match ent0 {
+                        AmortizationType::Full(a) => &a.dct_override,
+                        AmortizationType::Bare(a) => &a.dct_override,
+                    } {
                         dct = (ent1.date - override_data.date_from).num_days() as Decimal;
                         if override_data.predates_first_amortization {
                             dct = diff_surrounding_dates(override_data.date_from, 24) as Decimal;
@@ -589,7 +625,7 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
             regs.interest.deferred = regs.interest.accrued - (regs.interest.current + regs.interest.settled.total);
 
             match ent1 {
-                Amortization { amortization_ratio, amortizes_interest, .. } => {
+                AmortizationType::Full(Amortization { amortization_ratio, amortizes_interest, .. }) => {
                     // Regular amortization
                     let adj = (ONE - regs.principal.amortization_ratio.current) / (ONE - regs.principal.amortization_ratio.regular);
                     let amortization = amortization_ratio * adj;
@@ -608,7 +644,7 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
                         regs.interest.settled.total += regs.interest.settled.current;
                     }
                 },
-                AmortizationBare { value, .. } => {
+                AmortizationType::Bare(AmortizationBare { value, .. }) => {
                     // Prepayment (extraordinary amortization)
                     let plfv = principal * (ONE - regs.principal.amortization_ratio.current) * (f_c - ONE);
                     let val0 = value.min(&calc_balance(principal, f_c, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total));
@@ -651,13 +687,13 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
             payment.bal = calc_balance(principal, f_c, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total);
 
             // Calculate raw value and tax
-            if matches!(ent1, Amortization { amortizes_interest: true, .. }) {
+            if matches!(ent1, AmortizationType::Full(Amortization { amortizes_interest: true, .. })) {
                 payment.raw = payment.amort + regs.interest.settled.current;
                 payment.tax = regs.interest.settled.current * calculate_revenue_tax(amortizations[0].date, due);
             } else if payment.amort > ZERO {
                 payment.raw = payment.amort;
                 payment.tax = ZERO;
-            } else if matches!(ent1, Amortization { amortizes_interest: true, .. }) {
+            } else if matches!(ent1, AmortizationType::Full(Amortization { amortizes_interest: true, .. })) {
                 payment.raw = regs.interest.settled.current;
                 payment.tax = regs.interest.settled.current * calculate_revenue_tax(amortizations[0].date, due);
             } else {
