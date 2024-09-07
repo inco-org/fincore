@@ -784,6 +784,11 @@ fn calculate_revenue_tax(begin: NaiveDate, end: NaiveDate) -> Decimal {
     panic!("No matching tax bracket found");
 }
 
+fn calculate_interest_factor(rate: Decimal, period: Decimal, percent: bool) -> Decimal {
+    let rate = if percent { rate / Decimal::new(100, 0) } else { rate };
+    (ONE + rate).powf(period)
+}
+
 struct Registers {
     interest: InterestRegisters,
     principal: PrincipalRegisters,
