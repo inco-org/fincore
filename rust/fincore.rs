@@ -1,4 +1,6 @@
-use chrono::{Duration, NaiveDate, Datelike};
+use rust_decimal::prelude::FromPrimitive;
+use rust_decimal::prelude::ToPrimitive;
+use chrono::{Datelike, Duration, NaiveDate};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::cmp::min;
@@ -16,6 +18,14 @@ trait RoundingExt {
 impl RoundingExt for Decimal {
     fn round_dp(&self, decimal_places: u32) -> Self {
         self.round_dp(decimal_places)
+    }
+}
+
+impl DecimalPow for Decimal {
+    fn pow(&self, exp: Decimal) -> Decimal {
+        let base = self.to_i64().unwrap();
+        let exponent = exp.to_f64().unwrap();
+        Decimal::from_f64(base.powf(exponent)).unwrap()
     }
 }
 
@@ -856,14 +866,6 @@ fn calculate_interest_factor(rate: Decimal, period: Decimal, percent: bool) -> D
 
 trait DecimalPow {
     fn pow(&self, exp: Decimal) -> Decimal;
-}
-
-impl DecimalPow for Decimal {
-    fn pow(&self, exp: Decimal) -> Decimal {
-        let base = self.to_f64().unwrap();
-        let exponent = exp.to_f64().unwrap();
-        Decimal::from_f64(base.powf(exponent)).unwrap()
-    }
 }
 
 struct Registers {
