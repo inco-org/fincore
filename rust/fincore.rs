@@ -177,19 +177,42 @@ pub struct DailyIndex {
     pub value: Decimal,
 }
 
-pub trait IndexStorageBackend: Debug {
+pub trait IndexStorageBackend: Debug + CloneableIndexStorageBackend {
     fn get_cdi_indexes(&self, begin: NaiveDate, end: NaiveDate) -> Result<Vec<DailyIndex>, BackendError>;
     fn calculate_cdi_factor(&self, begin: NaiveDate, end: NaiveDate, percentage: i32) -> Result<(Decimal, i32), BackendError>;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct VariableIndex {
     pub code: VrIndex,
     pub percentage: i32,
     pub backend: Box<dyn IndexStorageBackend>
 }
 
-#[derive(Debug)]
+impl Clone for VariableIndex {
+    fn clone(&self) -> Self {
+        VariableIndex {
+            code: self.code,
+            percentage: self.percentage,
+            backend: self.backend.box_clone(),
+        }
+    }
+}
+
+trait CloneableIndexStorageBackend: IndexStorageBackend {
+    fn box_clone(&self) -> Box<dyn IndexStorageBackend>;
+}
+
+impl<T> CloneableIndexStorageBackend for T
+where
+    T: 'static + IndexStorageBackend + Clone,
+{
+    fn box_clone(&self) -> Box<dyn IndexStorageBackend> {
+        Box::new(self.clone())
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct InMemoryBackend {
     _ignore_cdi: Vec<NaiveDate>,
     _registry_cdi: HashMap<NaiveDate, Decimal>,
