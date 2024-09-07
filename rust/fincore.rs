@@ -1698,3 +1698,48 @@ pub fn get_livre_daily_returns(
     get_daily_returns(kwa)
 }
 
+pub fn amortize_fixed(principal: Decimal, apy: Decimal, term: i32) -> impl Iterator<Item = Decimal> {
+     struct AmortizationIterator {
+         principal: Decimal,
+         apy: Decimal,
+         term: i32,
+         fac: Decimal,
+         pmt: Decimal,
+         bal: Decimal,
+         current_term: i32,
+     }
+
+     impl Iterator for AmortizationIterator {
+         type Item = Decimal;
+
+         fn next(&mut self) -> Option<Self::Item> {
+             if self.current_term >= self.term || self.bal <= ZERO {
+                 return None;
+             }
+
+             let amr = if self.bal - self.pmt >= ZERO {
+                 self.pmt - (self.bal * (self.fac - ONE))
+             } else {
+                 self.bal
+             };
+
+             self.bal -= amr;
+             self.current_term += 1;
+
+             Some(amr / self.principal)
+         }
+     }
+
+     let fac = calculate_interest_factor(apy, ONE / Decimal::from(12), false);
+     let pmt = (principal * (fac - ONE)) / (ONE - fac.powf(Decimal::from(-term)));
+
+     AmortizationIterator {
+         principal,
+         apy,
+         term,
+         fac,
+         pmt,
+         bal: principal,
+         current_term: 0,
+     }
+ }
