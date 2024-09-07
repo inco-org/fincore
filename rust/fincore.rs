@@ -44,6 +44,13 @@ impl CloseToExt for Decimal {
     }
 }
 
+fn get_amortization_date(amortization: &AmortizationType) -> NaiveDate {
+    match amortization {
+        AmortizationType::Full(a) => a.date,
+        AmortizationType::Bare(a) => a.date,
+    }
+}
+
 // Constants
 const CENTI: Decimal = dec!(0.01);
 const ZERO: Decimal = dec!(0);
@@ -520,11 +527,11 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
 
     for (num, window) in amortizations.windows(2).enumerate() {
         let (ent0, ent1) = (&window[0], &window[1]);
-        let due = min(calc_date.value, match ent1 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date });
+        let due = min(calc_date.value, get_amortization_date(ent1));
         let mut f_s = ONE;
 
         // Phase B.0: Calculate spread and correction factors
-        if match ent0 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date } < calc_date.value || match ent1 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date } <= calc_date.value {
+        if get_amortization_date(ent0) < calc_date.value || get_amortization_date(ent1) <= calc_date.value {
             match (&vir, capitalisation) {
                 (None, Capitalisation::Days360) => {
                     let days = Decimal::from((due - match ent0 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date }).num_days());
