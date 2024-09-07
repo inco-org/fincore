@@ -467,7 +467,7 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
     let mut regs = Registers::new();
     let mut aux = ZERO;
 
-    fn get_amortization_date(amortization: &AmortizationType) -> NaiveDate { match amortization { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date } }
+    fn get_date(amortization: &AmortizationType) -> NaiveDate { match amortization { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date } }
 
     fn calc_balance(principal: Decimal, interest_accrued: Decimal, principal_amortized_total: Decimal, interest_settled_total: Decimal) -> Decimal {
         principal + interest_accrued - principal_amortized_total - interest_settled_total
@@ -509,10 +509,7 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
     }
 
     let calc_date = calc_date.unwrap_or(CalcDate {
-        value: match amortizations.last().unwrap() {
-            AmortizationType::Full(a) => a.date,
-            AmortizationType::Bare(a) => a.date,
-        },
+        value: get_date(amortizations.last().unwrap()),
         runaway: false,
     });
 
@@ -521,30 +518,36 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
 
     for (num, window) in amortizations.windows(2).enumerate() {
         let (ent0, ent1) = (&window[0], &window[1]);
-        let due = min(calc_date.value, get_amortization_date(ent1));
+        let due = min(calc_date.value, get_date(ent1));
         let mut f_s = ONE;
 
         // Phase B.0: Calculate spread and correction factors
-        if get_amortization_date(ent0) < calc_date.value || get_amortization_date(ent1) <= calc_date.value {
+        if get_date(ent0) < calc_date.value || get_date(ent1) <= calc_date.value {
             match (&vir, capitalisation) {
                 (None, Capitalisation::Days360) => {
-                    let days = Decimal::from((due - get_amortization_date(ent0)).num_days());
+                    let days = Decimal::from((due - get_date(ent0)).num_days());
+
                     f_s = calculate_interest_factor(apy, days / dec!(360), false);
                 },
+
                 (None, Capitalisation::Days365) => {
-                    let days = Decimal::from((due - get_amortization_date(ent0)).num_days());
+                    let days = Decimal::from((due - get_date(ent0)).num_days());
+
                     f_s = calculate_interest_factor(apy, days / dec!(365), false);
                 },
+
                 (None, Capitalisation::Days30360) => {
-                    let dcp = Decimal::from((due - get_amortization_date(ent0)).num_days());
-                    let mut dct = Decimal::from((get_amortization_date(ent1) - get_amortization_date(ent0)).num_days());
+                    let dcp = Decimal::from((due - get_date(ent0)).num_days());
+                    let mut dct = Decimal::from((get_date(ent1) - get_date(ent0)).num_days());
 
                     // Handle DCT override cases
                     if let Some(override_data) = match ent1 { AmortizationType::Full(a) => &a.dct_override, AmortizationType::Bare(a) => &a.dct_override } {
                         if num == 0 {
-                            dct = Decimal::from(diff_surrounding_dates(get_amortization_date(ent0), 24));
+                            dct = Decimal::from(diff_surrounding_dates(get_date(ent0), 24));
+
                         } else {
                             dct = Decimal::from((override_data.date_to - override_data.date_from).num_days());
+
                             if override_data.predates_first_amortization {
                                 dct = Decimal::from(diff_surrounding_dates(override_data.date_from, 24));
                             }
@@ -552,7 +555,8 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
                     }
 
                     if let Some(override_data) = match ent0 { AmortizationType::Full(a) => &a.dct_override, AmortizationType::Bare(a) => &a.dct_override } {
-                        dct = Decimal::from((get_amortization_date(ent1) - override_data.date_from).num_days());
+                        dct = Decimal::from((get_date(ent1) - override_data.date_from).num_days());
+
                         if override_data.predates_first_amortization {
                             dct = Decimal::from(diff_surrounding_dates(override_data.date_from, 24));
                         }
@@ -560,18 +564,20 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
 
                     f_s = calculate_interest_factor(apy, dcp / (dec!(12) * dct), false);
                 },
+
                 (Some(v), Capitalisation::Days252) if v.code == VrIndex::CDI => {
-                    let f_v = v.backend.calculate_cdi_factor(get_amortization_date(ent0), due, v.percentage).unwrap();
+                    let f_v = v.backend.calculate_cdi_factor(get_date(ent0), due, v.percentage).unwrap();
                     let f_s_temp = calculate_interest_factor(apy, Decimal::from(f_v.1) / dec!(252), false);
                     f_s = f_s_temp * f_v.0;
                 },
+
                 // Add other cases here as needed
                 _ => return Err("Unsupported combination of variable interest rate and capitalisation".to_string()),
             }
         }
 
         // Phase B.1: Register variations in principal, interest, and monetary correction
-        if get_amortization_date(ent0) < calc_date.value || get_amortization_date(ent1) <= calc_date.value || calc_date.runaway {
+        if get_date(ent0) < calc_date.value || get_date(ent1) <= calc_date.value || calc_date.runaway {
             // Register accrued interest
             regs.interest.current = calc_balance(principal, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total) * (f_s - ONE);
             regs.interest.accrued += regs.interest.current;
@@ -618,9 +624,7 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
         }
 
         // Phase B.2: Assemble the payment instance and perform rounding
-        if get_amortization_date(ent0) < calc_date.value || 
-           get_amortization_date(ent1) <= calc_date.value || 
-           calc_date.runaway {
+        if get_date(ent0) < calc_date.value || get_date(ent1) <= calc_date.value || calc_date.runaway {
             let mut payment = Payment {
                 no: num as i32 + 1,
                 date: match ent1 { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date },
