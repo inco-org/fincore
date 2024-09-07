@@ -1,5 +1,5 @@
 use chrono::{Duration, NaiveDate, Datelike};
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, Error as DecimalError};
 use rust_decimal_macros::dec;
 use std::cmp::min;
 use std::collections::HashMap;
@@ -370,7 +370,7 @@ impl Clone for InMemoryBackend {
 // The rest of the implementation (functions, methods, etc.) will follow...
 
 pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, String> {
-    let principal: Decimal = kwa.get("principal").and_then(|v| v.as_f64()).ok_or("Missing principal")?.try_into().map_err(|e: std::num::TryFromFloatError| e.to_string())?;
+    let principal: Decimal = kwa.get("principal").and_then(|v| v.as_f64()).ok_or("Missing principal")?.try_into().map_err(|e: rust_decimal::Error| e.to_string())?;
     let apy: Decimal = kwa.get("apy").and_then(|v| v.as_f64()).ok_or("Missing apy")?.try_into().map_err(|e| e.to_string())?;
     let amortizations: Vec<Amortization> = kwa.get("amortizations").and_then(|v| v.as_array()).ok_or("Missing amortizations")?
         .iter()
