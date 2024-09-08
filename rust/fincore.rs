@@ -829,7 +829,7 @@ pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, 
                     let val1 = val0.min(&(gens.interest_tracker_1.accrued - gens.interest_tracker_2.settled_total));
                     let val3 = val0 - val1;
                     gens.principal_tracker_1.send(val3 / principal);
-                    gens.interest_tracker_2.send(val1);
+                    gens.interest_tracker_2.send(*val1);
                     gens.interest_tracker_1.current = ZERO;
                 },
             }
