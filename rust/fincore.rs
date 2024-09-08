@@ -751,7 +751,7 @@ pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, 
 
     // Initialize indexes
     let idxs = match &vir {
-        Some(v) if v.code == VrIndex::CDI => Box::new(get_normalized_cdi_indexes(&*v.backend, amortizations[0].date, amortizations.last().unwrap().date)) as Box<dyn Iterator<Item = Decimal>>,
+        Some(v) if v.code == VrIndex::CDI => Box::new(get_normalized_cdi_indexes(&*v.backend, get_date(&amortizations[0]), get_date(amortizations.last().unwrap()))) as Box<dyn Iterator<Item = Decimal>>,
         Some(_) => return Err("Unsupported variable index".to_string()),
         None => Box::new(std::iter::repeat(ZERO)) as Box<dyn Iterator<Item = Decimal>>,
     };
@@ -764,7 +764,7 @@ pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, 
     let mut period = 1;
     let mut count = 1;
 
-    for ref_date in date_range(amortizations[0].date, amortizations.last().unwrap().date) {
+    for ref_date in date_range(get_date(&amortizations[0]), get_date(amortizations.last().unwrap())) {
         let mut f_v = ONE;
         let mut f_s = ONE;
 
@@ -778,12 +778,12 @@ pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, 
             },
             (None, Capitalisation::Days30360) => {
                 let v01 = calculate_interest_factor(apy, ONE / dec!(12), false) - ONE;
-                let v02 = if period == 1 && ref_date < next_amortization.date {
-                    Decimal::from((amortizations[1].date - amortizations[0].date).num_days())
-                } else if ref_date == next_amortization.date {
-                    Decimal::from(next_amortization.date.days_in_month())
+                let v02 = if period == 1 && ref_date < get_date(next_amortization) {
+                    Decimal::from((get_date(&amortizations[1]) - get_date(&amortizations[0])).num_days())
+                } else if ref_date == get_date(next_amortization) {
+                    Decimal::from(get_date(next_amortization).days_in_month())
                 } else {
-                    Decimal::from(current_amortization.date.days_in_month())
+                    Decimal::from(get_date(current_amortization).days_in_month())
                 };
                 f_s = calculate_interest_factor(v01, ONE / v02, false);
             },
@@ -801,9 +801,9 @@ pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, 
         }
 
         // B.1. Register variations in principal, interest, and monetary correction
-        while ref_date == next_amortization.date {
+        while ref_date == get_date(next_amortization) {
             match next_amortization {
-                Amortization { amortization_ratio, amortizes_interest, .. } => {
+                AmortizationType::Full(Amortization { amortization_ratio, amortizes_interest, .. }) => {
                     let adj = (ONE - regs.principal.amortization_ratio.current) / (ONE - regs.principal.amortization_ratio.regular);
                     gens.principal_tracker_1.send(amortization_ratio * adj);
                     gens.principal_tracker_2.send(*amortization_ratio);
@@ -814,7 +814,7 @@ pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, 
                     period += 1;
                     count = 1;
                 },
-                AmortizationBare { value, .. } => {
+                AmortizationType::Bare(AmortizationBare { value, .. }) => {
                     let val0 = value.min(&calc_balance(principal, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total));
                     let val1 = val0.min(&(regs.interest.accrued - regs.interest.settled.total));
                     let val3 = val0 - val1;
