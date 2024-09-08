@@ -63,7 +63,7 @@ const REVENUE_TAX_BRACKETS: [(i64, i64, Decimal); 4] = [
     (0, 180, dec!(0.225)),
     (180, 360, dec!(0.2)),
     (360, 720, dec!(0.175)),
-    (720, i32::MAX, dec!(0.15)),
+    (720, i64::MAX, dec!(0.15)),
 ];
 
 // Enums
@@ -1092,15 +1092,12 @@ impl AmortizedPrincipal {
     }
 }
 pub fn preprocess_bullet(
-    principal: Decimal,
-    apy: Decimal,
     zero_date: NaiveDate,
     term: i32,
     insertions: Vec<AmortizationBare>,
     anniversary_date: Option<NaiveDate>,
     capitalisation: Capitalisation,
-    vir: Option<&VariableIndex>,
-    calc_date: Option<&CalcDate>,
+    vir: Option<&VariableIndex>
 ) -> Result<Vec<Amortization>, String> {
     let mut sched: Vec<Amortization> = Vec::new();
 
@@ -1229,8 +1226,6 @@ pub fn preprocess_bullet(
 }
 
 pub fn preprocess_jm(
-    principal: Decimal,
-    apy: Decimal,
     zero_date: NaiveDate,
     term: i32,
     insertions: Vec<AmortizationBare>,
@@ -1513,8 +1508,6 @@ pub fn preprocess_price(
 }
 
 pub fn preprocess_livre(
-    principal: Decimal,
-    apy: Decimal,
     amortizations: Vec<Amortization>,
     insertions: Vec<AmortizationBare>,
     vir: Option<&VariableIndex>,
@@ -1531,7 +1524,7 @@ pub fn preprocess_livre(
         return Err("'Poupança' is currently unsupported".to_string());
     }
 
-    for (i, x) in amortizations.iter().enumerate() {
+    for x in amortizations.iter() {
         aux += x.amortization_ratio;
 
         // TODO: Implement price level adjustment check
@@ -1638,7 +1631,7 @@ pub fn get_bullet_payments(
 
     kwa.insert("principal", serde_json::to_value(principal).unwrap());
     kwa.insert("apy", serde_json::to_value(apy).unwrap());
-    kwa.insert("amortizations", serde_json::to_value(preprocess_bullet(principal, apy, zero_date, term, insertions, anniversary_date, capitalisation, vir.as_ref(), calc_date.as_ref())?).unwrap());
+    kwa.insert("amortizations", serde_json::to_value(preprocess_bullet(zero_date, term, insertions, anniversary_date, capitalisation, vir.as_ref())?).unwrap());
 
     kwa.insert("vir", vir);
     kwa.insert("capitalisation", if let Some(v) = &vir {
@@ -1670,7 +1663,7 @@ pub fn get_jm_payments(
 
     kwa.insert("principal", serde_json::to_value(principal).unwrap());
     kwa.insert("apy", serde_json::to_value(apy).unwrap());
-    kwa.insert("amortizations", serde_json::to_value(preprocess_jm(principal, apy, zero_date, term, insertions, anniversary_date, vir.as_ref())?).unwrap());
+    kwa.insert("amortizations", serde_json::to_value(preprocess_jm(zero_date, term, insertions, anniversary_date, vir.as_ref())?).unwrap());
 
     kwa.insert("vir", vir);
     kwa.insert("capitalisation", if let Some(v) = &vir {
@@ -1726,7 +1719,7 @@ pub fn get_livre_payments(
 
     kwa.insert("principal", serde_json::to_value(principal).unwrap());
     kwa.insert("apy", serde_json::to_value(apy).unwrap());
-    kwa.insert("amortizations", serde_json::to_value(preprocess_livre(principal, apy, amortizations, insertions, vir.as_ref())?).unwrap());
+    kwa.insert("amortizations", serde_json::to_value(preprocess_livre(amortizations, insertions, vir.as_ref())?).unwrap());
 
     kwa.insert("vir", vir);
     kwa.insert("capitalisation", if let Some(v) = &vir {
@@ -1755,7 +1748,7 @@ pub fn get_bullet_daily_returns(
 
     kwa.insert("principal", principal);
     kwa.insert("apy", apy);
-    kwa.insert("amortizations", preprocess_bullet(principal, apy, zero_date, term, insertions, anniversary_date, capitalisation, vir.as_ref(), None)?);
+    kwa.insert("amortizations", preprocess_bullet(zero_date, term, insertions, anniversary_date, capitalisation, vir.as_ref())?);
     kwa.insert("vir", vir);
     kwa.insert("capitalisation", if let Some(v) = &vir {
         if v.code == VrIndex::CDI { Capitalisation::Days252 } else { capitalisation }
@@ -1779,7 +1772,7 @@ pub fn get_jm_daily_returns(
 
     kwa.insert("principal", principal);
     kwa.insert("apy", apy);
-    kwa.insert("amortizations", preprocess_jm(principal, apy, zero_date, term, insertions, anniversary_date, vir.as_ref())?);
+    kwa.insert("amortizations", preprocess_jm(zero_date, term, insertions, anniversary_date, vir.as_ref())?);
     kwa.insert("vir", vir);
     kwa.insert("capitalisation", if let Some(v) = &vir {
         if v.code == VrIndex::CDI { Capitalisation::Days252 } else { Capitalisation::Days30360 }
