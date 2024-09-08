@@ -687,35 +687,29 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
 pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, String> {
     let principal: Decimal = kwa.get("principal").and_then(|v| v.as_f64()).ok_or("Missing principal")?.try_into().map_err(|e: rust_decimal::Error| e.to_string())?;
     let apy: Decimal = kwa.get("apy").and_then(|v| v.as_f64()).ok_or("Missing apy")?.try_into().map_err(|e: rust_decimal::Error| e.to_string())?;
-    let amortizations: Vec<AmortizationType> = kwa.get("amortizations").and_then(|v| v.as_array()).ok_or("Missing amortizations")?
-        .iter()
-        .map(|a| {
-            if let Ok(full) = serde_json::from_value::<Amortization>(a.clone()) {
-                Ok(AmortizationType::Full(full))
-            } else if let Ok(bare) = serde_json::from_value::<AmortizationBare>(a.clone()) {
-                Ok(AmortizationType::Bare(bare))
-            } else {
-                Err("Invalid amortization type".to_string())
-            }
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let amortizations: Vec<AmortizationType> = kwa.get("amortizations").and_then(|v| v.as_array()).ok_or("Missing amortizations")?.iter().map(|a| {
+        if let Ok(full) = serde_json::from_value::<Amortization>(a.clone()) {
+            Ok(AmortizationType::Full(full))
+        } else if let Ok(bare) = serde_json::from_value::<AmortizationBare>(a.clone()) {
+            Ok(AmortizationType::Bare(bare))
+        } else {
+            Err("Invalid amortization type".to_string())
+        }
+    })
+    .collect::<Result<Vec<_>, _>>()?;
     let vir: Option<VariableIndex> = kwa.get("vir").and_then(|v| serde_json::from_value(v.clone()).ok());
     let capitalisation: Capitalisation = kwa.get("capitalisation").and_then(|v| serde_json::from_value(v.clone()).ok()).ok_or("Missing capitalisation")?;
+    let mut regs = Registers::new();
+    let mut gens = Generators::new();
+    let mut aux = ZERO;
 
-    // Internal functions
+    fn get_date(amortization: &AmortizationType) -> NaiveDate { match amortization { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date } }
+
     fn get_normalized_cdi_indexes(backend: &dyn IndexStorageBackend, start_date: NaiveDate, end_date: NaiveDate) -> impl Iterator<Item = Decimal> + '_ {
-        backend.get_cdi_indexes(start_date, end_date)
-            .unwrap()
-            .into_iter()
-            .map(|index| index.value / dec!(100))
+        backend.get_cdi_indexes(start_date, end_date).unwrap().into_iter().map(|index| index.value / dec!(100))
     }
 
-    fn calc_balance(
-        principal: Decimal,
-        interest_accrued: Decimal,
-        principal_amortized_total: Decimal,
-        interest_settled_total: Decimal,
-    ) -> Decimal {
+    fn calc_balance( principal: Decimal, interest_accrued: Decimal, principal_amortized_total: Decimal, interest_settled_total: Decimal) -> Decimal {
         principal + interest_accrued - principal_amortized_total - interest_settled_total
     }
 
@@ -742,21 +736,18 @@ pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, 
         }
     }
 
-    let mut aux = ZERO;
     for (i, x) in amortizations.iter().enumerate() {
-        aux += x.amortization_ratio;
-        // TODO: Implement price level adjustment check
-        if aux > ONE && !aux.is_close_to(ONE, Some(dec!(1e-9))) {
-            return Err("the accumulated percentage of the amortizations overflows 1.0".to_string());
-        }
+        aux += match x { AmortizationType::Full(a) => a.amortization_ratio, AmortizationType::Bare(_) => ZERO };
+    }
+
+    // TODO: Implement price level adjustment check
+    if aux > ONE && !aux.is_close_to(ONE, Some(dec!(1e-9))) {
+        return Err("the accumulated percentage of the amortizations overflows 1.0".to_string());
     }
 
     if !aux.is_close_to(ONE, Some(dec!(1e-9))) {
         return Err("the accumulated percentage of the amortizations does not reach 1.0".to_string());
     }
-
-    let mut regs = Registers::new();
-    let mut gens = Generators::new();
 
     // Initialize indexes
     let idxs = match &vir {
