@@ -687,21 +687,13 @@ pub fn get_payments_table(
     Ok(payments)
 }
 
-pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, String> {
-    let principal: Decimal = kwa.get("principal").and_then(|v| v.as_f64()).ok_or("Missing principal")?.try_into().map_err(|e: rust_decimal::Error| e.to_string())?;
-    let apy: Decimal = kwa.get("apy").and_then(|v| v.as_f64()).ok_or("Missing apy")?.try_into().map_err(|e: rust_decimal::Error| e.to_string())?;
-    let amortizations: Vec<AmortizationType> = kwa.get("amortizations").and_then(|v| v.as_array()).ok_or("Missing amortizations")?.iter().map(|a| {
-        if let Ok(full) = serde_json::from_value::<Amortization>(a.clone()) {
-            Ok(AmortizationType::Full(full))
-        } else if let Ok(bare) = serde_json::from_value::<AmortizationBare>(a.clone()) {
-            Ok(AmortizationType::Bare(bare))
-        } else {
-            Err("Invalid amortization type".to_string())
-        }
-    })
-    .collect::<Result<Vec<_>, _>>()?;
-    let vir: Option<VariableIndex> = kwa.get("vir").and_then(|v| serde_json::from_value(v.clone()).ok());
-    let capitalisation: Capitalisation = kwa.get("capitalisation").and_then(|v| serde_json::from_value(v.clone()).ok()).ok_or("Missing capitalisation")?;
+pub fn get_daily_returns(
+    principal: Decimal,
+    apy: Decimal,
+    amortizations: Vec<AmortizationType>,
+    vir: Option<VariableIndex>,
+    capitalisation: Capitalisation
+) -> Result<Vec<DailyReturn>, String> {
     let mut gens = Generators::new(principal);
     let mut aux = ZERO;
 
@@ -1736,19 +1728,14 @@ pub fn get_bullet_daily_returns(
     vir: Option<VariableIndex>,
     capitalisation: Capitalisation,
 ) -> Result<Vec<DailyReturn>, String> {
-    let mut kwa = HashMap::new();
-
-    kwa.insert("principal", principal);
-    kwa.insert("apy", apy);
-    kwa.insert("amortizations", preprocess_bullet(zero_date, term, insertions, anniversary_date, capitalisation, vir.as_ref())?);
-    kwa.insert("vir", vir);
-    kwa.insert("capitalisation", if let Some(v) = &vir {
+    let amortizations = preprocess_bullet(zero_date, term, insertions, anniversary_date, capitalisation, vir.as_ref())?;
+    let capitalisation = if let Some(v) = &vir {
         if v.code == VrIndex::CDI { Capitalisation::Days252 } else { capitalisation }
     } else {
         capitalisation
-    });
+    };
 
-    get_daily_returns(kwa)
+    get_daily_returns(principal, apy, amortizations, vir, capitalisation)
 }
 
 pub fn get_jm_daily_returns(
@@ -1760,19 +1747,14 @@ pub fn get_jm_daily_returns(
     anniversary_date: Option<NaiveDate>,
     vir: Option<VariableIndex>,
 ) -> Result<Vec<DailyReturn>, String> {
-    let mut kwa = HashMap::new();
-
-    kwa.insert("principal", principal);
-    kwa.insert("apy", apy);
-    kwa.insert("amortizations", preprocess_jm(zero_date, term, insertions, anniversary_date, vir.as_ref())?);
-    kwa.insert("vir", vir);
-    kwa.insert("capitalisation", if let Some(v) = &vir {
+    let amortizations = preprocess_jm(zero_date, term, insertions, anniversary_date, vir.as_ref())?;
+    let capitalisation = if let Some(v) = &vir {
         if v.code == VrIndex::CDI { Capitalisation::Days252 } else { Capitalisation::Days30360 }
     } else {
         Capitalisation::Days30360
-    });
+    };
 
-    get_daily_returns(kwa)
+    get_daily_returns(principal, apy, amortizations, vir, capitalisation)
 }
 
 pub fn get_price_daily_returns(
@@ -1783,14 +1765,10 @@ pub fn get_price_daily_returns(
     insertions: Vec<AmortizationBare>,
     anniversary_date: Option<NaiveDate>,
 ) -> Result<Vec<DailyReturn>, String> {
-    let mut kwa = HashMap::new();
+    let amortizations = preprocess_price(principal, apy, zero_date, term, insertions, anniversary_date)?;
+    let capitalisation = Capitalisation::Days30360;
 
-    kwa.insert("principal", principal);
-    kwa.insert("apy", apy);
-    kwa.insert("amortizations", preprocess_price(principal, apy, zero_date, term, insertions, anniversary_date)?);
-    kwa.insert("capitalisation", Capitalisation::Days30360);
-
-    get_daily_returns(kwa)
+    get_daily_returns(principal, apy, amortizations, None, capitalisation)
 }
 
 pub fn get_livre_daily_returns(
@@ -1800,19 +1778,14 @@ pub fn get_livre_daily_returns(
     insertions: Vec<AmortizationBare>,
     vir: Option<VariableIndex>,
 ) -> Result<Vec<DailyReturn>, String> {
-    let mut kwa = HashMap::new();
-
-    kwa.insert("principal", principal);
-    kwa.insert("apy", apy);
-    kwa.insert("vir", vir);
-    kwa.insert("amortizations", preprocess_livre(principal, apy, amortizations, insertions, vir.as_ref())?);
-    kwa.insert("capitalisation", if let Some(v) = &vir {
+    let processed_amortizations = preprocess_livre(amortizations, insertions, vir.as_ref())?;
+    let capitalisation = if let Some(v) = &vir {
         if v.code == VrIndex::CDI { Capitalisation::Days252 } else { Capitalisation::Days30360 }
     } else {
         Capitalisation::Days30360
-    });
+    };
 
-    get_daily_returns(kwa)
+    get_daily_returns(principal, apy, processed_amortizations, vir, capitalisation)
 }
 
 pub fn amortize_fixed(principal: Decimal, apy: Decimal, term: i32) -> impl Iterator<Item = Decimal> {
