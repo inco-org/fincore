@@ -508,12 +508,8 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
         return Err("the accumulated percentage of the amortizations does not reach 1.0".to_string());
     }
 
-    let calc_date = calc_date.unwrap_or(CalcDate {
-        value: get_date(amortizations.last().unwrap()),
-        runaway: false,
-    });
-
     // Main calculation phases
+    let calc_date = calc_date.unwrap_or(CalcDate { value: get_date(amortizations.last().unwrap()), runaway: false });
     let mut payments = Vec::new();
 
     for (num, window) in amortizations.windows(2).enumerate() {
@@ -568,6 +564,7 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
                 (Some(v), Capitalisation::Days252) if v.code == VrIndex::CDI => {
                     let f_v = v.backend.calculate_cdi_factor(get_date(ent0), due, v.percentage).unwrap();
                     let f_s_temp = calculate_interest_factor(apy, Decimal::from(f_v.1) / dec!(252), false);
+
                     f_s = f_s_temp * f_v.0;
                 },
 
@@ -603,6 +600,7 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
                         regs.interest.settled.total += regs.interest.settled.current;
                     }
                 },
+
                 AmortizationType::Bare(AmortizationBare { value, .. }) => {
                     // Prepayment (extraordinary amortization)
                     let balance = calc_balance(principal, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total);
