@@ -1618,6 +1618,8 @@ pub fn get_bullet_payments(
         capitalisation
     };
 
+    let amortizations: Vec<AmortizationType> = amortizations.into_iter().map(AmortizationType::Full).collect();
+
     get_payments_table(
         principal,
         apy,
