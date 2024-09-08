@@ -685,8 +685,8 @@ pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, Str
 }
 
 pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, String> {
-    let principal: Decimal = kwa.get("principal").and_then(|v| v.as_f64()).ok_or("Missing principal")?.try_into().map_err(|e| e.to_string())?;
-    let apy: Decimal = kwa.get("apy").and_then(|v| v.as_f64()).ok_or("Missing apy")?.try_into().map_err(|e| e.to_string())?;
+    let principal: Decimal = kwa.get("principal").and_then(|v| v.as_f64()).ok_or("Missing principal")?.try_into().map_err(|e: rust_decimal::Error| e.to_string())?;
+    let apy: Decimal = kwa.get("apy").and_then(|v| v.as_f64()).ok_or("Missing apy")?.try_into().map_err(|e: rust_decimal::Error| e.to_string())?;
     let amortizations: Vec<AmortizationType> = kwa.get("amortizations").and_then(|v| v.as_array()).ok_or("Missing amortizations")?
         .iter()
         .map(|a| {
