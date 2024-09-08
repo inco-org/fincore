@@ -759,7 +759,7 @@ pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, 
     }
 
     // Initialize indexes
-    let idxs = match &vir {
+    let mut idxs = match &vir {
         Some(v) if v.code == VrIndex::CDI => Box::new(get_normalized_cdi_indexes(&*v.backend, get_date(&amortizations[0]), get_date(amortizations.last().unwrap()))) as Box<dyn Iterator<Item = Decimal>>,
         Some(_) => return Err("Unsupported variable index".to_string()),
         None => Box::new(std::iter::repeat(ZERO)) as Box<dyn Iterator<Item = Decimal>>,
