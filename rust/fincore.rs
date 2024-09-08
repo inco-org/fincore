@@ -34,11 +34,7 @@ impl DecimalPow for Decimal {
     fn pow(&self, exp: Decimal) -> Decimal {
         let base = self.to_f64().unwrap();
         let exponent = exp.to_f64().unwrap();
-        let mut result = 1.0;
-        for _ in 0..exponent as i32 {
-            result *= base;
-        }
-        Decimal::from_f64(result).unwrap()
+        Decimal::from_f64(base.powf(exponent)).unwrap()
     }
 }
 
@@ -48,7 +44,7 @@ trait CloseToExt: Sized {
 
 impl CloseToExt for Decimal {
     fn is_close_to(&self, other: Self, epsilon: Option<Self>) -> bool {
-        let epsilon = epsilon.unwrap_or(Decimal::new(1, 9)); // Default to 1e-9
+        let epsilon = epsilon.unwrap_or_else(|| Decimal::new(1, 9)); // Default to 1e-9
         (*self - other).abs() <= epsilon
     }
 }
@@ -466,10 +462,16 @@ pub fn get_payments_table(
     tax_exempt: Option<bool>,
     gain_output: GainOutputMode,
 ) -> Result<Vec<Payment>, String> {
+    use std::cmp::Ordering;
     let mut regs = Registers::new();
     let mut aux = ZERO;
 
-    fn get_date(amortization: &AmortizationType) -> NaiveDate { match amortization { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date } }
+    fn get_date(amortization: &AmortizationType) -> NaiveDate {
+        match amortization {
+            AmortizationType::Full(a) => a.date,
+            AmortizationType::Bare(a) => a.date,
+        }
+    }
 
     fn calc_balance(principal: Decimal, interest_accrued: Decimal, principal_amortized_total: Decimal, interest_settled_total: Decimal) -> Decimal {
         principal + interest_accrued - principal_amortized_total - interest_settled_total
@@ -499,15 +501,18 @@ pub fn get_payments_table(
     }
 
     for x in amortizations.iter() {
-        aux += match x { AmortizationType::Full(a) => a.amortization_ratio, AmortizationType::Bare(_) => ZERO };
+        aux += match x {
+            AmortizationType::Full(a) => a.amortization_ratio,
+            AmortizationType::Bare(_) => ZERO,
+        };
     }
 
-    if aux > ONE && !CloseToExt::is_close_to(&aux, ONE, Some(dec!(1e-9))) {
-        return Err("the accumulated percentage of the amortizations overflows 1.0".to_string());
-    }
-
-    if !CloseToExt::is_close_to(&aux, ONE, Some(dec!(1e-9))) {
-        return Err("the accumulated percentage of the amortizations does not reach 1.0".to_string());
+    if !aux.is_close_to(ONE, Some(dec!(1e-9))) {
+        if aux > ONE {
+            return Err("the accumulated percentage of the amortizations overflows 1.0".to_string());
+        } else {
+            return Err("the accumulated percentage of the amortizations does not reach 1.0".to_string());
+        }
     }
 
     // Main calculation phases
