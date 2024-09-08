@@ -1644,24 +1644,23 @@ pub fn get_jm_payments(
     tax_exempt: Option<bool>,
     gain_output: GainOutputMode,
 ) -> Result<Vec<Payment>, String> {
-    let mut kwa = HashMap::new();
-
-    kwa.insert("principal", serde_json::to_value(principal).unwrap());
-    kwa.insert("apy", serde_json::to_value(apy).unwrap());
-    kwa.insert("amortizations", serde_json::to_value(preprocess_jm(zero_date, term, insertions, anniversary_date, vir.as_ref())?).unwrap());
-
-    kwa.insert("vir", vir);
-    kwa.insert("capitalisation", if let Some(v) = &vir {
+    let amortizations = preprocess_jm(zero_date, term, insertions, anniversary_date, vir.as_ref())?;
+    let capitalisation = if let Some(v) = &vir {
         if v.code == VrIndex::CDI { Capitalisation::Days252 } else { Capitalisation::Days30360 }
     } else {
         Capitalisation::Days30360
-    });
+    };
 
-    kwa.insert("calc_date", calc_date);
-    kwa.insert("tax_exempt", tax_exempt);
-    kwa.insert("gain_output", gain_output);
-
-    get_payments_table(kwa)
+    get_payments_table(
+        principal,
+        apy,
+        amortizations.into_iter().map(AmortizationType::Full).collect(),
+        vir,
+        capitalisation,
+        calc_date,
+        tax_exempt,
+        gain_output,
+    )
 }
 
 pub fn get_price_payments(
