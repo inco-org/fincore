@@ -457,23 +457,16 @@ impl Clone for InMemoryBackend {
     }
 }
 
-pub fn get_payments_table(kwa: HashMap<&str, Value>) -> Result<Vec<Payment>, String> {
-    let principal: Decimal = kwa.get("principal").and_then(|v| v.as_f64()).ok_or("Missing principal")?.try_into().map_err(|e: rust_decimal::Error| e.to_string())?;
-    let apy: Decimal = kwa.get("apy").and_then(|v| v.as_f64()).ok_or("Missing apy")?.try_into().map_err(|e: rust_decimal::Error| e.to_string())?;
-    let amortizations: Vec<AmortizationType> = kwa.get("amortizations").and_then(|v| v.as_array()).ok_or("Missing amortizations")?.iter().map(|a| {
-        if let Ok(full) = serde_json::from_value::<Amortization>(a.clone()) {
-            Ok(AmortizationType::Full(full))
-        } else if let Ok(bare) = serde_json::from_value::<AmortizationBare>(a.clone()) {
-            Ok(AmortizationType::Bare(bare))
-        } else {
-            Err("Invalid amortization type".to_string())
-        }
-    }).collect::<Result<Vec<_>, _>>()?;
-    let vir: Option<VariableIndex> = kwa.get("vir").and_then(|v| serde_json::from_value(v.clone()).ok());
-    let capitalisation: Capitalisation = kwa.get("capitalisation").and_then(|v| serde_json::from_value(v.clone()).ok()).ok_or("Missing capitalisation")?;
-    let calc_date: Option<CalcDate> = kwa.get("calc_date").and_then(|v| serde_json::from_value(v.clone()).ok());
-    let tax_exempt: Option<bool> = kwa.get("tax_exempt").and_then(|v| v.as_bool());
-    let gain_output: GainOutputMode = kwa.get("gain_output").and_then(|v| serde_json::from_value(v.clone()).ok()).ok_or("Missing gain_output")?;
+pub fn get_payments_table(
+    principal: Decimal,
+    apy: Decimal,
+    amortizations: Vec<AmortizationType>,
+    vir: Option<VariableIndex>,
+    capitalisation: Capitalisation,
+    calc_date: Option<CalcDate>,
+    tax_exempt: Option<bool>,
+    gain_output: GainOutputMode,
+) -> Result<Vec<Payment>, String> {
     let mut regs = Registers::new();
     let mut aux = ZERO;
 
@@ -1644,7 +1637,16 @@ pub fn get_bullet_payments(
     kwa.insert("tax_exempt", tax_exempt);
     kwa.insert("gain_output", gain_output);
 
-    get_payments_table(kwa)
+    get_payments_table(
+        principal,
+        apy,
+        amortizations,
+        vir,
+        capitalisation,
+        calc_date,
+        tax_exempt,
+        gain_output,
+    )
 }
 
 pub fn get_jm_payments(
