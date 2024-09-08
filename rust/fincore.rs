@@ -825,8 +825,10 @@ pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, 
                     count = 1;
                 },
                 AmortizationType::Bare(AmortizationBare { value, .. }) => {
-                    let val0 = value.min(&calc_balance(principal, gens.interest_tracker_1.accrued, gens.principal_tracker_1.amortized_total, gens.interest_tracker_2.settled_total));
-                    let val1 = val0.min(&(gens.interest_tracker_1.accrued - gens.interest_tracker_2.settled_total));
+                    let balance = calc_balance(principal, gens.interest_tracker_1.accrued, gens.principal_tracker_1.amortized_total, gens.interest_tracker_2.settled_total);
+                    let val0 = value.min(&balance);
+                    let interest_diff = gens.interest_tracker_1.accrued - gens.interest_tracker_2.settled_total;
+                    let val1 = val0.min(&interest_diff);
                     let val3 = val0 - val1;
                     gens.principal_tracker_1.send(val3 / principal);
                     gens.interest_tracker_2.send(*val1);
