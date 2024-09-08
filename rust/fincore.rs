@@ -462,7 +462,6 @@ pub fn get_payments_table(
     tax_exempt: Option<bool>,
     gain_output: GainOutputMode,
 ) -> Result<Vec<Payment>, String> {
-    use std::cmp::Ordering;
     let mut regs = Registers::new();
     let mut aux = ZERO;
 
@@ -1168,7 +1167,7 @@ pub fn preprocess_bullet(
         let mut next_insertion = insertions_iter.next();
 
         while next_lst.is_some() || next_insertion.is_some() {
-            match (next_lst, next_insertion) {
+            match (&next_lst, &next_insertion) {
                 (Some(l), Some(i)) => {
                     if l.date <= i.date {
                         merged.push(l);
@@ -1304,7 +1303,7 @@ pub fn preprocess_jm(
         let mut next_insertion = insertions_iter.next();
 
         while next_lst1.is_some() || next_insertion.is_some() {
-            match (next_lst1, next_insertion) {
+            match (&next_lst1, &next_insertion) {
                 (Some(l), Some(i)) => {
                     if l.date <= i.date {
                         lst2.push(l);
@@ -1444,7 +1443,7 @@ pub fn preprocess_price(
         let mut next_insertion = insertions_iter.next();
 
         while next_lst1.is_some() || next_insertion.is_some() {
-            match (next_lst1, next_insertion) {
+            match (&next_lst1, &next_insertion) {
                 (Some(l), Some(i)) => {
                     if l.date <= i.date {
                         lst2.push(l);
@@ -1513,7 +1512,7 @@ pub fn preprocess_livre(
         return Err("'Poupança' is currently unsupported".to_string());
     }
 
-    for x in amortizations.iter() {
+    for x in &amortizations {
         aux += x.amortization_ratio;
 
         // TODO: Implement price level adjustment check
@@ -1550,8 +1549,8 @@ pub fn preprocess_livre(
         sched.extend(amortizations);
     } else {
         // Extraordinary flow, with insertions
-        let mut amortizations_iter = amortizations.into_iter();
-        let mut insertions_iter = insertions.into_iter();
+        let mut amortizations_iter = amortizations.iter();
+        let mut insertions_iter = insertions.iter();
         let mut next_amortization = amortizations_iter.next();
         let mut next_insertion = insertions_iter.next();
 
