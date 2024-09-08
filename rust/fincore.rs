@@ -1170,7 +1170,7 @@ pub fn preprocess_bullet(
             match (&next_lst, &next_insertion) {
                 (Some(l), Some(i)) => {
                     if l.date <= i.date {
-                        merged.push(l);
+                        merged.push(l.clone());
                         next_lst = lst_iter.next();
                     } else {
                         merged.push(Amortization {
@@ -1187,7 +1187,7 @@ pub fn preprocess_bullet(
                     }
                 },
                 (Some(l), None) => {
-                    merged.push(l);
+                    merged.push(l.clone());
                     next_lst = lst_iter.next();
                 },
                 (None, Some(i)) => {
@@ -1306,7 +1306,7 @@ pub fn preprocess_jm(
             match (&next_lst1, &next_insertion) {
                 (Some(l), Some(i)) => {
                     if l.date <= i.date {
-                        lst2.push(l);
+                        lst2.push(l.clone());
                         next_lst1 = lst1_iter.next();
                     } else {
                         let mut new_amort = Amortization {
@@ -1326,7 +1326,7 @@ pub fn preprocess_jm(
                     }
                 },
                 (Some(l), None) => {
-                    lst2.push(l);
+                    lst2.push(l.clone());
                     next_lst1 = lst1_iter.next();
                 },
                 (None, Some(i)) => {
@@ -1446,7 +1446,7 @@ pub fn preprocess_price(
             match (&next_lst1, &next_insertion) {
                 (Some(l), Some(i)) => {
                     if l.date <= i.date {
-                        lst2.push(l);
+                        lst2.push(l.clone());
                         next_lst1 = lst1_iter.next();
                     } else {
                         let mut new_amort = Amortization {
@@ -1466,7 +1466,7 @@ pub fn preprocess_price(
                     }
                 },
                 (Some(l), None) => {
-                    lst2.push(l);
+                    lst2.push(l.clone());
                     next_lst1 = lst1_iter.next();
                 },
                 (None, Some(i)) => {
@@ -1558,7 +1558,7 @@ pub fn preprocess_livre(
             match (next_amortization, next_insertion) {
                 (Some(a), Some(i)) => {
                     if a.date <= i.date {
-                        sched.push(a);
+                        sched.push(a.clone());
                         next_amortization = amortizations_iter.next();
                     } else {
                         let prev_date = sched.last().map_or(a.date, |last| last.date);
@@ -1577,7 +1577,7 @@ pub fn preprocess_livre(
                     }
                 },
                 (Some(a), None) => {
-                    sched.push(a);
+                    sched.push(a.clone());
                     next_amortization = amortizations_iter.next();
                 },
                 (None, Some(i)) => {
