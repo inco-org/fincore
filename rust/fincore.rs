@@ -710,7 +710,7 @@ pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, 
     let vir: Option<VariableIndex> = kwa.get("vir").and_then(|v| serde_json::from_value(v.clone()).ok());
     let capitalisation: Capitalisation = kwa.get("capitalisation").and_then(|v| serde_json::from_value(v.clone()).ok()).ok_or("Missing capitalisation")?;
     let mut regs = Registers::new();
-    let mut gens = Generators::new();
+    let mut gens = Generators::new(principal);
     let mut aux = ZERO;
 
     fn get_date(amortization: &AmortizationType) -> NaiveDate { match amortization { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date } }
@@ -719,7 +719,7 @@ pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, 
         backend.get_cdi_indexes(start_date, end_date).unwrap().into_iter().map(|index| index.value / dec!(100))
     }
 
-    fn calc_balance( principal: Decimal, interest_accrued: Decimal, principal_amortized_total: Decimal, interest_settled_total: Decimal) -> Decimal {
+    fn calc_balance(principal: Decimal, interest_accrued: Decimal, principal_amortized_total: Decimal, interest_settled_total: Decimal) -> Decimal {
         principal + interest_accrued - principal_amortized_total - interest_settled_total
     }
 
@@ -814,33 +814,33 @@ pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, 
         while ref_date == get_date(next_amortization) {
             match next_amortization {
                 AmortizationType::Full(Amortization { amortization_ratio, amortizes_interest, .. }) => {
-                    let adj = (ONE - regs.principal.amortization_ratio.current) / (ONE - regs.principal.amortization_ratio.regular);
-                    gens.principal_tracker_1.send(amortization_ratio * adj);
+                    let adj = (ONE - gens.principal_tracker_1.amortization_ratio_current) / (ONE - gens.principal_tracker_2.amortization_ratio_regular);
+                    gens.principal_tracker_1.send(*amortization_ratio * adj);
                     gens.principal_tracker_2.send(*amortization_ratio);
                     if *amortizes_interest {
-                        gens.interest_tracker_2.send(regs.interest.current + regs.principal.amortization_ratio.current * regs.interest.deferred);
+                        gens.interest_tracker_2.send(gens.interest_tracker_1.current + gens.principal_tracker_1.amortization_ratio_current * gens.interest_tracker_1.deferred);
                     }
-                    regs.interest.current = ZERO;
+                    gens.interest_tracker_1.current = ZERO;
                     period += 1;
                     count = 1;
                 },
                 AmortizationType::Bare(AmortizationBare { value, .. }) => {
-                    let val0 = value.min(&calc_balance(principal, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total));
-                    let val1 = val0.min(&(regs.interest.accrued - regs.interest.settled.total));
+                    let val0 = value.min(&calc_balance(principal, gens.interest_tracker_1.accrued, gens.principal_tracker_1.amortized_total, gens.interest_tracker_2.settled_total));
+                    let val1 = val0.min(&(gens.interest_tracker_1.accrued - gens.interest_tracker_2.settled_total));
                     let val3 = val0 - val1;
                     gens.principal_tracker_1.send(val3 / principal);
                     gens.interest_tracker_2.send(val1);
-                    regs.interest.current = ZERO;
+                    gens.interest_tracker_1.current = ZERO;
                 },
             }
             current_amortization = next_amortization;
             next_amortization = amortization_iter.next().unwrap_or(current_amortization);
         }
 
-        gens.interest_tracker_1.send(calc_balance(principal, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total) * (f_s * f_v - ONE));
+        gens.interest_tracker_1.send(calc_balance(principal, gens.interest_tracker_1.accrued, gens.principal_tracker_1.amortized_total, gens.interest_tracker_2.settled_total) * (f_s * f_v - ONE));
 
         // B.2. Assemble the daily return instance and perform rounding
-        if calc_balance(principal, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total).round_dp(2) == ZERO {
+        if calc_balance(principal, gens.interest_tracker_1.accrued, gens.principal_tracker_1.amortized_total, gens.interest_tracker_2.settled_total).round_dp(2) == ZERO {
             break;
         }
 
@@ -848,8 +848,8 @@ pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, 
             no: count,
             period,
             date: ref_date,
-            value: regs.interest.daily.round_dp(2),
-            bal: calc_balance(principal, regs.interest.accrued, regs.principal.amortized.total, regs.interest.settled.total).round_dp(2),
+            value: gens.interest_tracker_1.daily.round_dp(2),
+            bal: calc_balance(principal, gens.interest_tracker_1.accrued, gens.principal_tracker_1.amortized_total, gens.interest_tracker_2.settled_total).round_dp(2),
             fixed_factor: f_s,
             variable_factor: f_v,
         };
@@ -901,20 +901,119 @@ impl Registers {
 }
 
 struct Generators {
-    principal_tracker_1: Box<dyn Iterator<Item = Decimal>>,
-    principal_tracker_2: Box<dyn Iterator<Item = Decimal>>,
-    interest_tracker_1: Box<dyn Iterator<Item = Decimal>>,
-    interest_tracker_2: Box<dyn Iterator<Item = Decimal>>,
+    principal_tracker_1: PrincipalTracker1,
+    principal_tracker_2: PrincipalTracker2,
+    interest_tracker_1: InterestTracker1,
+    interest_tracker_2: InterestTracker2,
 }
 
 impl Generators {
-    fn new() -> Self {
+    fn new(principal: Decimal) -> Self {
         Generators {
-            principal_tracker_1: Box::new(std::iter::empty()),
-            principal_tracker_2: Box::new(std::iter::empty()),
-            interest_tracker_1: Box::new(std::iter::empty()),
-            interest_tracker_2: Box::new(std::iter::empty()),
+            principal_tracker_1: PrincipalTracker1::new(principal),
+            principal_tracker_2: PrincipalTracker2::new(),
+            interest_tracker_1: InterestTracker1::new(),
+            interest_tracker_2: InterestTracker2::new(),
         }
+    }
+}
+
+struct PrincipalTracker1 {
+    principal: Decimal,
+    amortization_ratio_current: Decimal,
+    amortized_current: Decimal,
+    amortized_total: Decimal,
+}
+
+impl PrincipalTracker1 {
+    fn new(principal: Decimal) -> Self {
+        PrincipalTracker1 {
+            principal,
+            amortization_ratio_current: ZERO,
+            amortized_current: ZERO,
+            amortized_total: ZERO,
+        }
+    }
+
+    fn send(&mut self, ratio: Decimal) {
+        if self.amortization_ratio_current + ratio > ONE {
+            let ratio = ONE - self.amortization_ratio_current;
+            self.amortization_ratio_current += ratio;
+            self.amortized_current = ratio * self.principal;
+            self.amortized_total = self.amortization_ratio_current * self.principal;
+        } else if ratio > ZERO {
+            self.amortization_ratio_current += ratio;
+            self.amortized_current = ratio * self.principal;
+            self.amortized_total = self.amortization_ratio_current * self.principal;
+        } else {
+            self.amortized_current = ZERO;
+        }
+    }
+}
+
+struct PrincipalTracker2 {
+    amortization_ratio_regular: Decimal,
+}
+
+impl PrincipalTracker2 {
+    fn new() -> Self {
+        PrincipalTracker2 {
+            amortization_ratio_regular: ZERO,
+        }
+    }
+
+    fn send(&mut self, ratio: Decimal) {
+        if self.amortization_ratio_regular + ratio > ONE {
+            self.amortization_ratio_regular = ONE;
+        } else if ratio > ZERO {
+            self.amortization_ratio_regular += ratio;
+        }
+    }
+}
+
+struct InterestTracker1 {
+    daily: Decimal,
+    current: Decimal,
+    accrued: Decimal,
+    deferred: Decimal,
+    settled_total: Decimal,
+}
+
+impl InterestTracker1 {
+    fn new() -> Self {
+        InterestTracker1 {
+            daily: ZERO,
+            current: ZERO,
+            accrued: ZERO,
+            deferred: ZERO,
+            settled_total: ZERO,
+        }
+    }
+
+    fn send(&mut self, daily: Decimal) {
+        self.daily = daily;
+        self.current += daily;
+        self.accrued += daily;
+        self.deferred = self.accrued - (self.current + self.settled_total);
+    }
+}
+
+struct InterestTracker2 {
+    settled_current: Decimal,
+    settled_total: Decimal,
+}
+
+impl InterestTracker2 {
+    fn new() -> Self {
+        InterestTracker2 {
+            settled_current: ZERO,
+            settled_total: ZERO,
+        }
+    }
+
+    fn send(&mut self, settled_current: Decimal) {
+        self.settled_current = settled_current;
+        self.settled_total += settled_current;
     }
 }
 
