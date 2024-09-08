@@ -1141,7 +1141,7 @@ pub fn preprocess_bullet(
         });
     } else {
         // 2.3. Create amortizations. Make insertions in the regular flow. Slow.
-        let mut lst = vec![
+        let lst = vec![
             Amortization {
                 date: zero_date,
                 amortization_ratio: ZERO,
