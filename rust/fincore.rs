@@ -1637,11 +1637,6 @@ pub fn get_bullet_payments(
         tax_exempt,
         gain_output,
     )
-        capitalisation,
-        calc_date,
-        tax_exempt,
-        gain_output,
-    )
 }
 
 pub fn get_jm_payments(
