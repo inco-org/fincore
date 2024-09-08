@@ -1734,7 +1734,7 @@ pub fn get_bullet_daily_returns(
         capitalisation
     };
 
-    get_daily_returns(principal, apy, amortizations, vir, capitalisation)
+    get_daily_returns(principal, apy, amortizations.into_iter().map(AmortizationType::Full).collect(), vir, capitalisation)
 }
 
 pub fn get_jm_daily_returns(
@@ -1753,7 +1753,7 @@ pub fn get_jm_daily_returns(
         Capitalisation::Days30360
     };
 
-    get_daily_returns(principal, apy, amortizations, vir, capitalisation)
+    get_daily_returns(principal, apy, amortizations.into_iter().map(AmortizationType::Full).collect(), vir, capitalisation)
 }
 
 pub fn get_price_daily_returns(
@@ -1767,7 +1767,7 @@ pub fn get_price_daily_returns(
     let amortizations = preprocess_price(principal, apy, zero_date, term, insertions, anniversary_date)?;
     let capitalisation = Capitalisation::Days30360;
 
-    get_daily_returns(principal, apy, amortizations, None, capitalisation)
+    get_daily_returns(principal, apy, amortizations.into_iter().map(AmortizationType::Full).collect(), None, capitalisation)
 }
 
 pub fn get_livre_daily_returns(
@@ -1784,7 +1784,7 @@ pub fn get_livre_daily_returns(
         Capitalisation::Days30360
     };
 
-    get_daily_returns(principal, apy, processed_amortizations, vir, capitalisation)
+    get_daily_returns(principal, apy, processed_amortizations.into_iter().map(AmortizationType::Full).collect(), vir, capitalisation)
 }
 
 pub fn amortize_fixed(principal: Decimal, apy: Decimal, term: i32) -> impl Iterator<Item = Decimal> {
