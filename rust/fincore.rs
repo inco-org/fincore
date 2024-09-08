@@ -709,7 +709,6 @@ pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, 
     .collect::<Result<Vec<_>, _>>()?;
     let vir: Option<VariableIndex> = kwa.get("vir").and_then(|v| serde_json::from_value(v.clone()).ok());
     let capitalisation: Capitalisation = kwa.get("capitalisation").and_then(|v| serde_json::from_value(v.clone()).ok()).ok_or("Missing capitalisation")?;
-    let mut regs = Registers::new();
     let mut gens = Generators::new(principal);
     let mut aux = ZERO;
 
@@ -746,7 +745,7 @@ pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, 
         }
     }
 
-    for (i, x) in amortizations.iter().enumerate() {
+    for x in amortizations.iter() {
         aux += match x { AmortizationType::Full(a) => a.amortization_ratio, AmortizationType::Bare(_) => ZERO };
     }
 
