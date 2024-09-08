@@ -11,6 +11,16 @@ use serde::ser::SerializeStruct;
 use serde_json::Value;
 use erased_serde;
 
+fn days_in_month(date: NaiveDate) -> u32 {
+    let (year, month) = (date.year(), date.month());
+    let next_month = if month == 12 {
+        NaiveDate::from_ymd_opt(year + 1, 1, 1).unwrap()
+    } else {
+        NaiveDate::from_ymd_opt(year, month + 1, 1).unwrap()
+    };
+    (next_month - date).num_days() as u32
+}
+
 trait RoundingExt {
     fn round_dp(&self, decimal_places: u32) -> Self;
 }
@@ -781,9 +791,9 @@ pub fn get_daily_returns(kwa: HashMap<&str, Value>) -> Result<Vec<DailyReturn>, 
                 let v02 = if period == 1 && ref_date < get_date(next_amortization) {
                     Decimal::from((get_date(&amortizations[1]) - get_date(&amortizations[0])).num_days())
                 } else if ref_date == get_date(next_amortization) {
-                    Decimal::from(get_date(next_amortization).days_in_month())
+                    Decimal::from(days_in_month(get_date(next_amortization)))
                 } else {
-                    Decimal::from(get_date(current_amortization).days_in_month())
+                    Decimal::from(days_in_month(get_date(current_amortization)))
                 };
                 f_s = calculate_interest_factor(v01, ONE / v02, false);
             },
