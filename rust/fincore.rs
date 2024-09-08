@@ -59,7 +59,7 @@ const CENTI: Decimal = dec!(0.01);
 const ZERO: Decimal = dec!(0);
 const ONE: Decimal = dec!(1);
 
-const REVENUE_TAX_BRACKETS: [(i32, i32, Decimal); 4] = [
+const REVENUE_TAX_BRACKETS: [(i64, i64, Decimal); 4] = [
     (0, 180, dec!(0.225)),
     (180, 360, dec!(0.2)),
     (360, 720, dec!(0.175)),
@@ -870,7 +870,7 @@ fn calculate_revenue_tax(begin: NaiveDate, end: NaiveDate) -> Decimal {
     let diff = (end - begin).num_days();
 
     for &(minimum, maximum, rate) in REVENUE_TAX_BRACKETS.iter() {
-        if minimum < diff && diff <= maximum {
+        if i64::from(minimum) < diff && diff <= i64::from(maximum) {
             return rate;
         }
     }
