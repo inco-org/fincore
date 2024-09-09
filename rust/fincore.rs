@@ -390,9 +390,6 @@ fn diff_surrounding_dates(base: NaiveDate, day_of_month: u32) -> i32 {
 // }}}
 
 // Public API. Variable index, and storage backend classes. {{{
-#[derive(Debug)]
-pub struct BackendError;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DailyIndex {
     pub date: NaiveDate,
@@ -400,8 +397,8 @@ pub struct DailyIndex {
 }
 
 pub trait IndexStorageBackend: Debug + erased_serde::Serialize {
-    fn get_cdi_indexes(&self, begin: NaiveDate, end: NaiveDate) -> Result<Vec<DailyIndex>, BackendError>;
-    fn calculate_cdi_factor(&self, begin: NaiveDate, end: NaiveDate, percentage: i32) -> Result<(Decimal, i32), BackendError>;
+    fn get_cdi_indexes(&self, begin: NaiveDate, end: NaiveDate) -> Vec<DailyIndex>;
+    fn calculate_cdi_factor(&self, begin: NaiveDate, end: NaiveDate, percentage: i32) -> (Decimal, i32);
     fn clone_box(&self) -> Box<dyn IndexStorageBackend>;
     fn as_any(&self) -> &dyn std::any::Any;
 }
@@ -541,7 +538,7 @@ impl InMemoryBackend {
 }
 
 impl IndexStorageBackend for InMemoryBackend {
-    fn get_cdi_indexes(&self, begin: NaiveDate, end: NaiveDate) -> Result<Vec<DailyIndex>, BackendError> {
+    fn get_cdi_indexes(&self, begin: NaiveDate, end: NaiveDate) -> Vec<DailyIndex> {
         let mut result = Vec::new();
         for date in date_range(begin, end) {
             if !self._ignore_cdi.contains(&date) {
@@ -558,11 +555,11 @@ impl IndexStorageBackend for InMemoryBackend {
                 }
             }
         }
-        Ok(result)
+        result
     }
 
-    fn calculate_cdi_factor(&self, begin: NaiveDate, end: NaiveDate, percentage: i32) -> Result<(Decimal, i32), BackendError> {
-        let indexes = self.get_cdi_indexes(begin, end)?;
+    fn calculate_cdi_factor(&self, begin: NaiveDate, end: NaiveDate, percentage: i32) -> (Decimal, i32) {
+        let indexes = self.get_cdi_indexes(begin, end);
         let mut factor = ONE;
         let mut count = 0;
 
@@ -573,7 +570,7 @@ impl IndexStorageBackend for InMemoryBackend {
             }
         }
 
-        Ok((factor, count))
+        (factor, count)
     }
 
     fn clone_box(&self) -> Box<dyn IndexStorageBackend> {
