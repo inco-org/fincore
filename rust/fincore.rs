@@ -10,24 +10,8 @@ use serde::{Serialize, Deserialize};
 use serde::ser::SerializeStruct;
 use erased_serde;
 
-fn days_in_month(date: NaiveDate) -> u32 {
-    let (year, month) = (date.year(), date.month());
-    let next_month = if month == 12 {
-        NaiveDate::from_ymd_opt(year + 1, 1, 1).unwrap()
-    } else {
-        NaiveDate::from_ymd_opt(year, month + 1, 1).unwrap()
-    };
-    (next_month - date).num_days() as u32
-}
-
-trait RoundingExt {
-    fn round_dp(&self, decimal_places: u32) -> Self;
-}
-
-impl RoundingExt for Decimal {
-    fn round_dp(&self, decimal_places: u32) -> Self {
-        self.round_dp(decimal_places)
-    }
+trait DecimalPow {
+    fn pow(&self, exp: Decimal) -> Decimal;
 }
 
 impl DecimalPow for Decimal {
@@ -38,15 +22,15 @@ impl DecimalPow for Decimal {
     }
 }
 
-trait CloseToExt: Sized {
-    fn is_close_to(&self, other: Self, epsilon: Option<Self>) -> bool;
-}
-
 impl CloseToExt for Decimal {
     fn is_close_to(&self, other: Self, epsilon: Option<Self>) -> bool {
         let epsilon = epsilon.unwrap_or_else(|| Decimal::new(1, 9)); // Default to 1e-9
         (*self - other).abs() <= epsilon
     }
+}
+
+trait CloseToExt: Sized {
+    fn is_close_to(&self, other: Self, epsilon: Option<Self>) -> bool;
 }
 
 // Constants
@@ -63,44 +47,18 @@ const REVENUE_TAX_BRACKETS: [(i64, i64, Decimal); 4] = [
 
 // Enums
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub enum OpModes {
-    Bullet,
-    JurosMensais,
-    Price,
-    Livre,
-}
+pub enum OpModes { Bullet, JurosMensais, Price, Livre }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub enum VrIndex {
-    CDI,
-    Poupanca,
-}
-
+pub enum VrIndex { CDI, Poupanca }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub enum Capitalisation {
-    Days252,
-    Days360,
-    Days365,
-    Days30360,
-}
+pub enum Capitalisation { Days252, Days360, Days365, Days30360 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub enum GainOutputMode {
-    Current,
-    Deferred,
-    Settled,
-}
+pub enum GainOutputMode { Current, Deferred, Settled }
 
-// Structs
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DctOverride {
-    pub date_from: NaiveDate,
-    pub date_to: NaiveDate,
-    pub predates_first_amortization: bool,
-}
-
+// Public API. {{{
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Amortization {
     pub date: NaiveDate,
@@ -168,9 +126,228 @@ pub struct CalcDate {
     pub runaway: bool,
 }
 
-// Helper functions
-fn delta_months(d1: NaiveDate, d2: NaiveDate) -> i32 {
-    (d1.year() - d2.year()) * 12 + d1.month() as i32 - d2.month() as i32
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DctOverride {
+    pub date_from: NaiveDate,
+    pub date_to: NaiveDate,
+    pub predates_first_amortization: bool,
+}
+// }}}
+
+struct Registers {
+    interest: InterestRegisters,
+    principal: PrincipalRegisters,
+}
+
+impl Registers {
+    fn new() -> Self {
+        Registers {
+            interest: InterestRegisters::new(),
+            principal: PrincipalRegisters::new(),
+        }
+    }
+}
+
+struct Generators {
+    principal_tracker_1: PrincipalTracker1,
+    principal_tracker_2: PrincipalTracker2,
+    interest_tracker_1: InterestTracker1,
+    interest_tracker_2: InterestTracker2,
+}
+
+impl Generators {
+    fn new(principal: Decimal) -> Self {
+        Generators {
+            principal_tracker_1: PrincipalTracker1::new(principal),
+            principal_tracker_2: PrincipalTracker2::new(),
+            interest_tracker_1: InterestTracker1::new(),
+            interest_tracker_2: InterestTracker2::new(),
+        }
+    }
+}
+
+struct PrincipalTracker1 {
+    principal: Decimal,
+    amortization_ratio_current: Decimal,
+    amortized_current: Decimal,
+    amortized_total: Decimal,
+}
+
+impl PrincipalTracker1 {
+    fn new(principal: Decimal) -> Self {
+        PrincipalTracker1 {
+            principal,
+            amortization_ratio_current: ZERO,
+            amortized_current: ZERO,
+            amortized_total: ZERO,
+        }
+    }
+
+    fn send(&mut self, ratio: Decimal) {
+        if self.amortization_ratio_current + ratio > ONE {
+            let ratio = ONE - self.amortization_ratio_current;
+            self.amortization_ratio_current += ratio;
+            self.amortized_current = ratio * self.principal;
+            self.amortized_total = self.amortization_ratio_current * self.principal;
+        } else if ratio > ZERO {
+            self.amortization_ratio_current += ratio;
+            self.amortized_current = ratio * self.principal;
+            self.amortized_total = self.amortization_ratio_current * self.principal;
+        } else {
+            self.amortized_current = ZERO;
+        }
+    }
+}
+
+struct PrincipalTracker2 {
+    amortization_ratio_regular: Decimal,
+}
+
+impl PrincipalTracker2 {
+    fn new() -> Self {
+        PrincipalTracker2 {
+            amortization_ratio_regular: ZERO,
+        }
+    }
+
+    fn send(&mut self, ratio: Decimal) {
+        if self.amortization_ratio_regular + ratio > ONE {
+            self.amortization_ratio_regular = ONE;
+        } else if ratio > ZERO {
+            self.amortization_ratio_regular += ratio;
+        }
+    }
+}
+
+struct InterestTracker1 {
+    daily: Decimal,
+    current: Decimal,
+    accrued: Decimal,
+    deferred: Decimal,
+    settled_total: Decimal,
+}
+
+impl InterestTracker1 {
+    fn new() -> Self {
+        InterestTracker1 {
+            daily: ZERO,
+            current: ZERO,
+            accrued: ZERO,
+            deferred: ZERO,
+            settled_total: ZERO,
+        }
+    }
+
+    fn send(&mut self, daily: Decimal) {
+        self.daily = daily;
+        self.current += daily;
+        self.accrued += daily;
+        self.deferred = self.accrued - (self.current + self.settled_total);
+    }
+}
+
+struct InterestTracker2 {
+    settled_current: Decimal,
+    settled_total: Decimal,
+}
+
+impl InterestTracker2 {
+    fn new() -> Self {
+        InterestTracker2 {
+            settled_current: ZERO,
+            settled_total: ZERO,
+        }
+    }
+
+    fn send(&mut self, settled_current: Decimal) {
+        self.settled_current = settled_current;
+        self.settled_total += settled_current;
+    }
+}
+
+struct InterestRegisters {
+    current: Decimal,
+    accrued: Decimal,
+    settled: SettledInterest,
+    deferred: Decimal,
+}
+
+impl InterestRegisters {
+    fn new() -> Self {
+        InterestRegisters {
+            current: ZERO,
+            accrued: ZERO,
+            settled: SettledInterest::new(),
+            deferred: ZERO,
+        }
+    }
+}
+
+struct SettledInterest {
+    current: Decimal,
+    total: Decimal,
+}
+
+impl SettledInterest {
+    fn new() -> Self {
+        SettledInterest {
+            current: ZERO,
+            total: ZERO,
+        }
+    }
+}
+
+struct PrincipalRegisters {
+    amortization_ratio: AmortizationRatio,
+    amortized: AmortizedPrincipal,
+}
+
+impl PrincipalRegisters {
+    fn new() -> Self {
+        PrincipalRegisters {
+            amortization_ratio: AmortizationRatio::new(),
+            amortized: AmortizedPrincipal::new(),
+        }
+    }
+}
+
+struct AmortizationRatio {
+    current: Decimal,
+    regular: Decimal,
+}
+
+impl AmortizationRatio {
+    fn new() -> Self {
+        AmortizationRatio {
+            current: ZERO,
+            regular: ZERO,
+        }
+    }
+}
+
+struct AmortizedPrincipal {
+    current: Decimal,
+    total: Decimal,
+}
+
+impl AmortizedPrincipal {
+    fn new() -> Self {
+        AmortizedPrincipal {
+            current: ZERO,
+            total: ZERO,
+        }
+    }
+}
+
+// Helper functions. {{{
+fn days_in_month(date: NaiveDate) -> u32 {
+    let (year, month) = (date.year(), date.month());
+    let next_month = if month == 12 {
+        NaiveDate::from_ymd_opt(year + 1, 1, 1).unwrap()
+    } else {
+        NaiveDate::from_ymd_opt(year, month + 1, 1).unwrap()
+    };
+    (next_month - date).num_days() as u32
 }
 
 fn date_range(start_date: NaiveDate, end_date: NaiveDate) -> impl Iterator<Item = NaiveDate> {
@@ -181,10 +358,6 @@ fn date_range(start_date: NaiveDate, end_date: NaiveDate) -> impl Iterator<Item 
             None
         }
     })
-}
-
-fn diff_days_to_same_day_on_prev_month(base: NaiveDate) -> i32 {
-    (base - (base - Duration::days(base.day0() as i64) - Duration::days(1))).num_days() as i32
 }
 
 fn diff_surrounding_dates(base: NaiveDate, day_of_month: u32) -> i32 {
@@ -205,6 +378,7 @@ fn diff_surrounding_dates(base: NaiveDate, day_of_month: u32) -> i32 {
         panic!("can't find a date prior to the base of {} on day {}", base, day_of_month);
     }
 }
+// }}}
 
 // Public API. Variable index, and storage backend classes.
 #[derive(Debug)]
@@ -871,214 +1045,6 @@ fn calculate_interest_factor(rate: Decimal, period: Decimal, percent: bool) -> D
     (ONE + rate).pow(period)
 }
 
-trait DecimalPow {
-    fn pow(&self, exp: Decimal) -> Decimal;
-}
-
-struct Registers {
-    interest: InterestRegisters,
-    principal: PrincipalRegisters,
-}
-
-impl Registers {
-    fn new() -> Self {
-        Registers {
-            interest: InterestRegisters::new(),
-            principal: PrincipalRegisters::new(),
-        }
-    }
-}
-
-struct Generators {
-    principal_tracker_1: PrincipalTracker1,
-    principal_tracker_2: PrincipalTracker2,
-    interest_tracker_1: InterestTracker1,
-    interest_tracker_2: InterestTracker2,
-}
-
-impl Generators {
-    fn new(principal: Decimal) -> Self {
-        Generators {
-            principal_tracker_1: PrincipalTracker1::new(principal),
-            principal_tracker_2: PrincipalTracker2::new(),
-            interest_tracker_1: InterestTracker1::new(),
-            interest_tracker_2: InterestTracker2::new(),
-        }
-    }
-}
-
-struct PrincipalTracker1 {
-    principal: Decimal,
-    amortization_ratio_current: Decimal,
-    amortized_current: Decimal,
-    amortized_total: Decimal,
-}
-
-impl PrincipalTracker1 {
-    fn new(principal: Decimal) -> Self {
-        PrincipalTracker1 {
-            principal,
-            amortization_ratio_current: ZERO,
-            amortized_current: ZERO,
-            amortized_total: ZERO,
-        }
-    }
-
-    fn send(&mut self, ratio: Decimal) {
-        if self.amortization_ratio_current + ratio > ONE {
-            let ratio = ONE - self.amortization_ratio_current;
-            self.amortization_ratio_current += ratio;
-            self.amortized_current = ratio * self.principal;
-            self.amortized_total = self.amortization_ratio_current * self.principal;
-        } else if ratio > ZERO {
-            self.amortization_ratio_current += ratio;
-            self.amortized_current = ratio * self.principal;
-            self.amortized_total = self.amortization_ratio_current * self.principal;
-        } else {
-            self.amortized_current = ZERO;
-        }
-    }
-}
-
-struct PrincipalTracker2 {
-    amortization_ratio_regular: Decimal,
-}
-
-impl PrincipalTracker2 {
-    fn new() -> Self {
-        PrincipalTracker2 {
-            amortization_ratio_regular: ZERO,
-        }
-    }
-
-    fn send(&mut self, ratio: Decimal) {
-        if self.amortization_ratio_regular + ratio > ONE {
-            self.amortization_ratio_regular = ONE;
-        } else if ratio > ZERO {
-            self.amortization_ratio_regular += ratio;
-        }
-    }
-}
-
-struct InterestTracker1 {
-    daily: Decimal,
-    current: Decimal,
-    accrued: Decimal,
-    deferred: Decimal,
-    settled_total: Decimal,
-}
-
-impl InterestTracker1 {
-    fn new() -> Self {
-        InterestTracker1 {
-            daily: ZERO,
-            current: ZERO,
-            accrued: ZERO,
-            deferred: ZERO,
-            settled_total: ZERO,
-        }
-    }
-
-    fn send(&mut self, daily: Decimal) {
-        self.daily = daily;
-        self.current += daily;
-        self.accrued += daily;
-        self.deferred = self.accrued - (self.current + self.settled_total);
-    }
-}
-
-struct InterestTracker2 {
-    settled_current: Decimal,
-    settled_total: Decimal,
-}
-
-impl InterestTracker2 {
-    fn new() -> Self {
-        InterestTracker2 {
-            settled_current: ZERO,
-            settled_total: ZERO,
-        }
-    }
-
-    fn send(&mut self, settled_current: Decimal) {
-        self.settled_current = settled_current;
-        self.settled_total += settled_current;
-    }
-}
-
-struct InterestRegisters {
-    current: Decimal,
-    accrued: Decimal,
-    settled: SettledInterest,
-    deferred: Decimal,
-}
-
-impl InterestRegisters {
-    fn new() -> Self {
-        InterestRegisters {
-            current: ZERO,
-            accrued: ZERO,
-            settled: SettledInterest::new(),
-            deferred: ZERO,
-        }
-    }
-}
-
-struct SettledInterest {
-    current: Decimal,
-    total: Decimal,
-}
-
-impl SettledInterest {
-    fn new() -> Self {
-        SettledInterest {
-            current: ZERO,
-            total: ZERO,
-        }
-    }
-}
-
-struct PrincipalRegisters {
-    amortization_ratio: AmortizationRatio,
-    amortized: AmortizedPrincipal,
-}
-
-impl PrincipalRegisters {
-    fn new() -> Self {
-        PrincipalRegisters {
-            amortization_ratio: AmortizationRatio::new(),
-            amortized: AmortizedPrincipal::new(),
-        }
-    }
-}
-
-struct AmortizationRatio {
-    current: Decimal,
-    regular: Decimal,
-}
-
-impl AmortizationRatio {
-    fn new() -> Self {
-        AmortizationRatio {
-            current: ZERO,
-            regular: ZERO,
-        }
-    }
-}
-
-struct AmortizedPrincipal {
-    current: Decimal,
-    total: Decimal,
-}
-
-impl AmortizedPrincipal {
-    fn new() -> Self {
-        AmortizedPrincipal {
-            current: ZERO,
-            total: ZERO,
-        }
-    }
-}
 pub fn preprocess_bullet(
     zero_date: NaiveDate,
     term: i32,
@@ -1794,7 +1760,6 @@ pub fn get_livre_daily_returns(
 pub fn amortize_fixed(principal: Decimal, apy: Decimal, term: i32) -> impl Iterator<Item = Decimal> {
      struct AmortizationIterator {
          principal: Decimal,
-         apy: Decimal,
          term: i32,
          fac: Decimal,
          pmt: Decimal,
@@ -1828,7 +1793,6 @@ pub fn amortize_fixed(principal: Decimal, apy: Decimal, term: i32) -> impl Itera
 
      AmortizationIterator {
          principal,
-         apy,
          term,
          fac,
          pmt,
@@ -1836,3 +1800,5 @@ pub fn amortize_fixed(principal: Decimal, apy: Decimal, term: i32) -> impl Itera
          current_term: 0,
      }
  }
+
+// vim: fdm=marker
