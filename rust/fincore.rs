@@ -292,7 +292,7 @@ fn _diff_surrounding_dates(base: NaiveDate, day_of_month: u32) -> i32 {
 }
 // }}}
 
-// Public API. {{{
+// Public API, basic data strutctures. {{{
 const CENTI: Decimal = dec!(0.01);
 const ZERO: Decimal = dec!(0);
 const ONE: Decimal = dec!(1);
@@ -391,7 +391,7 @@ pub struct DctOverride {
 }
 // }}}
 
-// Public API. Variable index, and storage backend classes. {{{
+// Public API, variable index, and storage backend classes. {{{
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DailyIndex {
     pub date: NaiveDate,
@@ -1022,7 +1022,7 @@ pub fn get_daily_returns(principal: Decimal, apy: Decimal, amortizations: Vec<Am
 }
 // }}}
 
-// Factories. {{{
+// Public API, factories. {{{
 pub fn preprocess_bullet(zero_date: NaiveDate, term: i32, insertions: Vec<AmortizationBare>, anniversary_date: Option<NaiveDate>, capitalisation: Capitalisation, vir: Option<&VariableIndex>) -> Result<Vec<Amortization>, String> {
     let mut sched: Vec<Amortization> = Vec::new();
 
@@ -1518,7 +1518,7 @@ pub fn get_livre_daily_returns( principal: Decimal, apy: Decimal, amortizations:
 }
 // }}}
 
-// Public helpers. {{{
+// Public API, helpers. {{{
 fn calculate_revenue_tax(begin: NaiveDate, end: NaiveDate) -> Decimal {
     if end <= begin {
         panic!("end date should be greater than the begin date");
