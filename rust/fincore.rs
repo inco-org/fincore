@@ -743,10 +743,10 @@ pub fn get_payments_table(principal: Decimal, apy: Decimal, amortizations: Vec<A
                 },
 
                 (Some(v), Capitalisation::Days252) if v.code == VrIndex::CDI => {
-                    let f_v = v.backend.calculate_cdi_factor(get_date(ent0), due, v.percentage).unwrap();
-                    let f_s_temp = calculate_interest_factor(apy, Decimal::from(f_v.1) / dec!(252), false);
+                    let (factor, count) = v.backend.calculate_cdi_factor(get_date(ent0), due, v.percentage);
+                    let f_s_temp = calculate_interest_factor(apy, Decimal::from(count) / dec!(252), false);
 
-                    f_s = f_s_temp * f_v.0;
+                    f_s = f_s_temp * factor;
                 },
 
                 // Add other cases here as needed
@@ -874,7 +874,7 @@ pub fn get_daily_returns(principal: Decimal, apy: Decimal, amortizations: Vec<Am
     fn get_date(amortization: &AmortizationType) -> NaiveDate { match amortization { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date } }
 
     fn get_normalized_cdi_indexes(backend: &dyn IndexStorageBackend, start_date: NaiveDate, end_date: NaiveDate) -> impl Iterator<Item = Decimal> + '_ {
-        backend.get_cdi_indexes(start_date, end_date).unwrap().into_iter().map(|index| index.value / dec!(100))
+        backend.get_cdi_indexes(start_date, end_date).into_iter().map(|index| index.value / dec!(100))
     }
 
     fn calc_balance(principal: Decimal, interest_accrued: Decimal, principal_amortized_total: Decimal, interest_settled_total: Decimal) -> Decimal {
