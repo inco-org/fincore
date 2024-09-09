@@ -25,6 +25,7 @@ impl DecimalPow for Decimal {
     fn pow(&self, exp: Decimal) -> Decimal {
         let base = self.to_f64().unwrap();
         let exponent = exp.to_f64().unwrap();
+
         Decimal::from_f64(base.powf(exponent)).unwrap()
     }
 }
@@ -32,111 +33,13 @@ impl DecimalPow for Decimal {
 impl CloseToExt for Decimal {
     fn is_close_to(&self, other: Self, epsilon: Option<Self>) -> bool {
         let epsilon = epsilon.unwrap_or_else(|| Decimal::new(1, 9)); // Default to 1e-9
+                                                                     //
         (*self - other).abs() <= epsilon
     }
 }
 
 trait CloseToExt: Sized {
     fn is_close_to(&self, other: Self, epsilon: Option<Self>) -> bool;
-}
-// }}}
-
-// Public API. {{{
-const CENTI: Decimal = dec!(0.01);
-const ZERO: Decimal = dec!(0);
-const ONE: Decimal = dec!(1);
-
-const REVENUE_TAX_BRACKETS: [(i64, i64, Decimal); 4] = [
-    (0, 180, dec!(0.225)),
-    (180, 360, dec!(0.2)),
-    (360, 720, dec!(0.175)),
-    (720, i64::MAX, dec!(0.15)),
-];
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub enum OpModes { Bullet, JurosMensais, Price, Livre }
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub enum VrIndex { CDI, Poupanca }
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub enum Capitalisation { Days252, Days360, Days365, Days30360 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub enum GainOutputMode { Current, Deferred, Settled }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Amortization {
-    pub date: NaiveDate,
-    pub amortization_ratio: Decimal,
-    pub amortizes_interest: bool,
-    pub dct_override: Option<DctOverride>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AmortizationBare {
-    pub date: NaiveDate,
-    pub value: Decimal,
-    pub dct_override: Option<DctOverride>,
-}
-
-impl AmortizationBare {
-    pub const MAX_VALUE: Decimal = Decimal::MAX;
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum AmortizationType {
-    Full(Amortization),
-    Bare(AmortizationBare),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Payment {
-    pub no: i32,
-    pub date: NaiveDate,
-    pub raw: Decimal,
-    pub tax: Decimal,
-    pub net: Decimal,
-    pub gain: Decimal,
-    pub amort: Decimal,
-    pub bal: Decimal,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DailyReturn {
-    pub no: i32,
-    pub period: i32,
-    pub date: NaiveDate,
-    pub value: Decimal,
-    pub bal: Decimal,
-    pub fixed_factor: Decimal,
-    pub variable_factor: Decimal,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LatePayment {
-    pub payment: Payment,
-    pub extra_gain: Decimal,
-    pub penalty: Decimal,
-    pub fine: Decimal,
-}
-
-impl LatePayment {
-    pub const FEE_RATE: Decimal = dec!(1);
-    pub const FINE_RATE: Decimal = dec!(2);
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CalcDate {
-    pub value: NaiveDate,
-    pub runaway: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DctOverride {
-    pub date_from: NaiveDate,
-    pub date_to: NaiveDate,
-    pub predates_first_amortization: bool,
 }
 // }}}
 
@@ -349,7 +252,7 @@ impl _AmortizedPrincipal {
     }
 }
 
-fn days_in_month(date: NaiveDate) -> u32 {
+fn _days_in_month(date: NaiveDate) -> u32 {
     let (year, month) = (date.year(), date.month());
     let next_month = if month == 12 {
         NaiveDate::from_ymd_opt(year + 1, 1, 1).unwrap()
@@ -359,7 +262,7 @@ fn days_in_month(date: NaiveDate) -> u32 {
     (next_month - date).num_days() as u32
 }
 
-fn date_range(start_date: NaiveDate, end_date: NaiveDate) -> impl Iterator<Item = NaiveDate> {
+fn _date_range(start_date: NaiveDate, end_date: NaiveDate) -> impl Iterator<Item = NaiveDate> {
     std::iter::successors(Some(start_date), move |&date| {
         if date < end_date {
             Some(date + Duration::days(1))
@@ -369,7 +272,7 @@ fn date_range(start_date: NaiveDate, end_date: NaiveDate) -> impl Iterator<Item 
     })
 }
 
-fn diff_surrounding_dates(base: NaiveDate, day_of_month: u32) -> i32 {
+fn _diff_surrounding_dates(base: NaiveDate, day_of_month: u32) -> i32 {
     if base.day0() >= day_of_month || base >= NaiveDate::from_ymd_opt(1, 2, 1).unwrap() {
         let d01 = base.with_day0(day_of_month).unwrap();
         let d02 = if base.day0() >= day_of_month {
@@ -386,6 +289,105 @@ fn diff_surrounding_dates(base: NaiveDate, day_of_month: u32) -> i32 {
     } else {
         panic!("can't find a date prior to the base of {} on day {}", base, day_of_month);
     }
+}
+// }}}
+
+// Public API. {{{
+const CENTI: Decimal = dec!(0.01);
+const ZERO: Decimal = dec!(0);
+const ONE: Decimal = dec!(1);
+
+const REVENUE_TAX_BRACKETS: [(i64, i64, Decimal); 4] = [
+    (0, 180, dec!(0.225)),
+    (180, 360, dec!(0.2)),
+    (360, 720, dec!(0.175)),
+    (720, i64::MAX, dec!(0.15)),
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum OpModes { Bullet, JurosMensais, Price, Livre }
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum VrIndex { CDI, Poupanca }
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum Capitalisation { Days252, Days360, Days365, Days30360 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum GainOutputMode { Current, Deferred, Settled }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Amortization {
+    pub date: NaiveDate,
+    pub amortization_ratio: Decimal,
+    pub amortizes_interest: bool,
+    pub dct_override: Option<DctOverride>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AmortizationBare {
+    pub date: NaiveDate,
+    pub value: Decimal,
+    pub dct_override: Option<DctOverride>,
+}
+
+impl AmortizationBare {
+    pub const MAX_VALUE: Decimal = Decimal::MAX;
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AmortizationType {
+    Full(Amortization),
+    Bare(AmortizationBare),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Payment {
+    pub no: i32,
+    pub date: NaiveDate,
+    pub raw: Decimal,
+    pub tax: Decimal,
+    pub net: Decimal,
+    pub gain: Decimal,
+    pub amort: Decimal,
+    pub bal: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DailyReturn {
+    pub no: i32,
+    pub period: i32,
+    pub date: NaiveDate,
+    pub value: Decimal,
+    pub bal: Decimal,
+    pub fixed_factor: Decimal,
+    pub variable_factor: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LatePayment {
+    pub payment: Payment,
+    pub extra_gain: Decimal,
+    pub penalty: Decimal,
+    pub fine: Decimal,
+}
+
+impl LatePayment {
+    pub const FEE_RATE: Decimal = dec!(1);
+    pub const FINE_RATE: Decimal = dec!(2);
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CalcDate {
+    pub value: NaiveDate,
+    pub runaway: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DctOverride {
+    pub date_from: NaiveDate,
+    pub date_to: NaiveDate,
+    pub predates_first_amortization: bool,
 }
 // }}}
 
@@ -531,7 +533,7 @@ impl InMemoryBackend {
         ]
         .into_iter()
         .flat_map(|(start, end, value)| {
-            date_range(start, end).map(move |date| (date, value))
+            _date_range(start, end).map(move |date| (date, value))
         })
         .collect();
     }
@@ -540,7 +542,7 @@ impl InMemoryBackend {
 impl IndexStorageBackend for InMemoryBackend {
     fn get_cdi_indexes(&self, begin: NaiveDate, end: NaiveDate) -> Vec<DailyIndex> {
         let mut result = Vec::new();
-        for date in date_range(begin, end) {
+        for date in _date_range(begin, end) {
             if !self._ignore_cdi.contains(&date) {
                 if let Some(&value) = self._registry_cdi.get(&date) {
                     result.push(DailyIndex { date, value });
@@ -633,7 +635,7 @@ impl Clone for InMemoryBackend {
 }
 // }}}
 
-// Core: "get_payments_table". {{{
+// Public API, core: "get_payments_table". {{{
 pub fn get_payments_table(principal: Decimal, apy: Decimal, amortizations: Vec<AmortizationType>, vir: Option<VariableIndex>, capitalisation: Capitalisation, calc_date: Option<CalcDate>, tax_exempt: Option<bool>, gain_output: GainOutputMode) -> Result<Vec<Payment>, String> {
     let mut regs = _Registers::new();
     let mut aux = ZERO;
@@ -718,13 +720,13 @@ pub fn get_payments_table(principal: Decimal, apy: Decimal, amortizations: Vec<A
                     // Handle DCT override cases
                     if let Some(override_data) = match ent1 { AmortizationType::Full(a) => &a.dct_override, AmortizationType::Bare(a) => &a.dct_override } {
                         if num == 0 {
-                            dct = Decimal::from(diff_surrounding_dates(get_date(ent0), 24));
+                            dct = Decimal::from(_diff_surrounding_dates(get_date(ent0), 24));
 
                         } else {
                             dct = Decimal::from((override_data.date_to - override_data.date_from).num_days());
 
                             if override_data.predates_first_amortization {
-                                dct = Decimal::from(diff_surrounding_dates(override_data.date_from, 24));
+                                dct = Decimal::from(_diff_surrounding_dates(override_data.date_from, 24));
                             }
                         }
                     }
@@ -733,7 +735,7 @@ pub fn get_payments_table(principal: Decimal, apy: Decimal, amortizations: Vec<A
                         dct = Decimal::from((get_date(ent1) - override_data.date_from).num_days());
 
                         if override_data.predates_first_amortization {
-                            dct = Decimal::from(diff_surrounding_dates(override_data.date_from, 24));
+                            dct = Decimal::from(_diff_surrounding_dates(override_data.date_from, 24));
                         }
                     }
 
@@ -864,7 +866,7 @@ pub fn get_payments_table(principal: Decimal, apy: Decimal, amortizations: Vec<A
 }
 // }}}
 
-// Core: daily returns. {{{
+// Public API, core: daily returns. {{{
 pub fn get_daily_returns(principal: Decimal, apy: Decimal, amortizations: Vec<AmortizationType>, vir: Option<VariableIndex>, capitalisation: Capitalisation) -> Result<Vec<DailyReturn>, String> {
     let mut gens = _Generators::new(principal);
     let mut aux = ZERO;
@@ -930,7 +932,7 @@ pub fn get_daily_returns(principal: Decimal, apy: Decimal, amortizations: Vec<Am
     let mut period = 1;
     let mut count = 1;
 
-    for ref_date in date_range(get_date(&amortizations[0]), get_date(amortizations.last().unwrap())) {
+    for ref_date in _date_range(get_date(&amortizations[0]), get_date(amortizations.last().unwrap())) {
         let mut f_v = ONE;
         let mut f_s = ONE;
 
@@ -947,9 +949,9 @@ pub fn get_daily_returns(principal: Decimal, apy: Decimal, amortizations: Vec<Am
                 let v02 = if period == 1 && ref_date < get_date(next_amortization) {
                     Decimal::from((get_date(&amortizations[1]) - get_date(&amortizations[0])).num_days())
                 } else if ref_date == get_date(next_amortization) {
-                    Decimal::from(days_in_month(get_date(next_amortization)))
+                    Decimal::from(_days_in_month(get_date(next_amortization)))
                 } else {
-                    Decimal::from(days_in_month(get_date(current_amortization)))
+                    Decimal::from(_days_in_month(get_date(current_amortization)))
                 };
                 f_s = calculate_interest_factor(v01, ONE / v02, false);
             },
