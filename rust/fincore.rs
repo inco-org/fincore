@@ -350,7 +350,7 @@ pub struct Payment {
     pub net: Decimal,
     pub gain: Decimal,
     pub amort: Decimal,
-    pub bal: Decimal,
+    pub bal: Decimal
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -361,7 +361,7 @@ pub struct DailyReturn {
     pub value: Decimal,
     pub bal: Decimal,
     pub fixed_factor: Decimal,
-    pub variable_factor: Decimal,
+    pub variable_factor: Decimal
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -369,7 +369,7 @@ pub struct LatePayment {
     pub payment: Payment,
     pub extra_gain: Decimal,
     pub penalty: Decimal,
-    pub fine: Decimal,
+    pub fine: Decimal
 }
 
 impl LatePayment {
@@ -380,14 +380,14 @@ impl LatePayment {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CalcDate {
     pub value: NaiveDate,
-    pub runaway: bool,
+    pub runaway: bool
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DctOverride {
     pub date_from: NaiveDate,
     pub date_to: NaiveDate,
-    pub predates_first_amortization: bool,
+    pub predates_first_amortization: bool
 }
 // }}}
 
@@ -395,7 +395,7 @@ pub struct DctOverride {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DailyIndex {
     pub date: NaiveDate,
-    pub value: Decimal,
+    pub value: Decimal
 }
 
 pub trait IndexStorageBackend: Debug + erased_serde::Serialize {
@@ -432,14 +432,14 @@ pub struct VariableIndex {
 #[derive(Debug)]
 pub struct InMemoryBackend {
     _ignore_cdi: Vec<NaiveDate>,
-    _registry_cdi: HashMap<NaiveDate, Decimal>,
+    _registry_cdi: HashMap<NaiveDate, Decimal>
 }
 
 impl InMemoryBackend {
     pub fn new() -> Self {
         let mut backend = InMemoryBackend {
             _ignore_cdi: Vec::new(),
-            _registry_cdi: HashMap::new(),
+            _registry_cdi: HashMap::new()
         };
         backend.initialize_data();
         backend
