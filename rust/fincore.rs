@@ -16,7 +16,7 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-// Extensions. {{{
+// Language Extensions. {{{
 trait DecimalPow {
     fn pow(&self, exp: Decimal) -> Decimal;
 }
@@ -53,7 +53,6 @@ const REVENUE_TAX_BRACKETS: [(i64, i64, Decimal); 4] = [
     (720, i64::MAX, dec!(0.15)),
 ];
 
-// Enums
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum OpModes { Bullet, JurosMensais, Price, Livre }
 
@@ -349,9 +348,7 @@ impl _AmortizedPrincipal {
         }
     }
 }
-// }}}
 
-// Helper functions. {{{
 fn days_in_month(date: NaiveDate) -> u32 {
     let (year, month) = (date.year(), date.month());
     let next_month = if month == 12 {
@@ -641,7 +638,7 @@ impl Clone for InMemoryBackend {
 
 // Core: "get_payments_table". {{{
 pub fn get_payments_table(principal: Decimal, apy: Decimal, amortizations: Vec<AmortizationType>, vir: Option<VariableIndex>, capitalisation: Capitalisation, calc_date: Option<CalcDate>, tax_exempt: Option<bool>, gain_output: GainOutputMode) -> Result<Vec<Payment>, String> {
-    let mut regs = Registers::new();
+    let mut regs = _Registers::new();
     let mut aux = ZERO;
 
     fn get_date(amortization: &AmortizationType) -> NaiveDate {
@@ -872,7 +869,7 @@ pub fn get_payments_table(principal: Decimal, apy: Decimal, amortizations: Vec<A
 
 // Core: daily returns. {{{
 pub fn get_daily_returns(principal: Decimal, apy: Decimal, amortizations: Vec<AmortizationType>, vir: Option<VariableIndex>, capitalisation: Capitalisation) -> Result<Vec<DailyReturn>, String> {
-    let mut gens = Generators::new(principal);
+    let mut gens = _Generators::new(principal);
     let mut aux = ZERO;
 
     fn get_date(amortization: &AmortizationType) -> NaiveDate { match amortization { AmortizationType::Full(a) => a.date, AmortizationType::Bare(a) => a.date } }
