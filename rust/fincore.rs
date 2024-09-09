@@ -142,48 +142,48 @@ pub struct DctOverride {
 // }}}
 
 // Private API. {{{
-struct Registers {
-    interest: InterestRegisters,
-    principal: PrincipalRegisters
+struct _Registers {
+    interest: _InterestRegisters,
+    principal: _PrincipalRegisters
 }
 
-impl Registers {
+impl _Registers {
     fn new() -> Self {
-        Registers {
-            interest: InterestRegisters::new(),
-            principal: PrincipalRegisters::new()
+        _Registers {
+            interest: _InterestRegisters::new(),
+            principal: _PrincipalRegisters::new()
         }
     }
 }
 
-struct Generators {
-    principal_tracker_1: PrincipalTracker1,
-    principal_tracker_2: PrincipalTracker2,
-    interest_tracker_1: InterestTracker1,
-    interest_tracker_2: InterestTracker2
+struct _Generators {
+    principal_tracker_1: _PrincipalTracker1,
+    principal_tracker_2: _PrincipalTracker2,
+    interest_tracker_1: _InterestTracker1,
+    interest_tracker_2: _InterestTracker2
 }
 
-impl Generators {
+impl _Generators {
     fn new(principal: Decimal) -> Self {
-        Generators {
-            principal_tracker_1: PrincipalTracker1::new(principal),
-            principal_tracker_2: PrincipalTracker2::new(),
-            interest_tracker_1: InterestTracker1::new(),
-            interest_tracker_2: InterestTracker2::new()
+        _Generators {
+            principal_tracker_1: _PrincipalTracker1::new(principal),
+            principal_tracker_2: _PrincipalTracker2::new(),
+            interest_tracker_1: _InterestTracker1::new(),
+            interest_tracker_2: _InterestTracker2::new()
         }
     }
 }
 
-struct PrincipalTracker1 {
+struct _PrincipalTracker1 {
     principal: Decimal,
     amortization_ratio_current: Decimal,
     amortized_current: Decimal,
     amortized_total: Decimal
 }
 
-impl PrincipalTracker1 {
+impl _PrincipalTracker1 {
     fn new(principal: Decimal) -> Self {
-        PrincipalTracker1 {
+        _PrincipalTracker1 {
             principal,
             amortization_ratio_current: ZERO,
             amortized_current: ZERO,
@@ -210,13 +210,13 @@ impl PrincipalTracker1 {
     }
 }
 
-struct PrincipalTracker2 {
+struct _PrincipalTracker2 {
     amortization_ratio_regular: Decimal,
 }
 
-impl PrincipalTracker2 {
+impl _PrincipalTracker2 {
     fn new() -> Self {
-        PrincipalTracker2 {
+        _PrincipalTracker2 {
             amortization_ratio_regular: ZERO,
         }
     }
@@ -230,7 +230,7 @@ impl PrincipalTracker2 {
     }
 }
 
-struct InterestTracker1 {
+struct _InterestTracker1 {
     daily: Decimal,
     current: Decimal,
     accrued: Decimal,
@@ -238,9 +238,9 @@ struct InterestTracker1 {
     settled_total: Decimal,
 }
 
-impl InterestTracker1 {
+impl _InterestTracker1 {
     fn new() -> Self {
-        InterestTracker1 {
+        _InterestTracker1 {
             daily: ZERO,
             current: ZERO,
             accrued: ZERO,
@@ -257,14 +257,14 @@ impl InterestTracker1 {
     }
 }
 
-struct InterestTracker2 {
+struct _InterestTracker2 {
     settled_current: Decimal,
     settled_total: Decimal,
 }
 
-impl InterestTracker2 {
+impl _InterestTracker2 {
     fn new() -> Self {
-        InterestTracker2 {
+        _InterestTracker2 {
             settled_current: ZERO,
             settled_total: ZERO,
         }
@@ -276,74 +276,74 @@ impl InterestTracker2 {
     }
 }
 
-struct InterestRegisters {
+struct _InterestRegisters {
     current: Decimal,
     accrued: Decimal,
-    settled: SettledInterest,
+    settled: _SettledInterest,
     deferred: Decimal,
 }
 
-impl InterestRegisters {
+impl _InterestRegisters {
     fn new() -> Self {
-        InterestRegisters {
+        _InterestRegisters {
             current: ZERO,
             accrued: ZERO,
-            settled: SettledInterest::new(),
+            settled: _SettledInterest::new(),
             deferred: ZERO,
         }
     }
 }
 
-struct SettledInterest {
+struct _SettledInterest {
     current: Decimal,
     total: Decimal,
 }
 
-impl SettledInterest {
+impl _SettledInterest {
     fn new() -> Self {
-        SettledInterest {
+        _SettledInterest {
             current: ZERO,
             total: ZERO,
         }
     }
 }
 
-struct PrincipalRegisters {
-    amortization_ratio: AmortizationRatio,
-    amortized: AmortizedPrincipal,
+struct _PrincipalRegisters {
+    amortization_ratio: _AmortizationRatio,
+    amortized: _AmortizedPrincipal,
 }
 
-impl PrincipalRegisters {
+impl _PrincipalRegisters {
     fn new() -> Self {
-        PrincipalRegisters {
-            amortization_ratio: AmortizationRatio::new(),
-            amortized: AmortizedPrincipal::new(),
+        _PrincipalRegisters {
+            amortization_ratio: _AmortizationRatio::new(),
+            amortized: _AmortizedPrincipal::new(),
         }
     }
 }
 
-struct AmortizationRatio {
+struct _AmortizationRatio {
     current: Decimal,
     regular: Decimal,
 }
 
-impl AmortizationRatio {
+impl _AmortizationRatio {
     fn new() -> Self {
-        AmortizationRatio {
+        _AmortizationRatio {
             current: ZERO,
             regular: ZERO,
         }
     }
 }
 
-struct AmortizedPrincipal {
+struct _AmortizedPrincipal {
     current: Decimal,
     total: Decimal,
 }
 
-impl AmortizedPrincipal {
+impl _AmortizedPrincipal {
     fn new() -> Self {
-        AmortizedPrincipal {
+        _AmortizedPrincipal {
             current: ZERO,
             total: ZERO,
         }
