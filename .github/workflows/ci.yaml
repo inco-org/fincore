@@ -24,21 +24,6 @@
 # Use the "--fail-under T" parameter on the "python -m coverage report" command below to make the "Report code
 # coverage" step fail if the coverage falls below threshold T, where T is a percentage integer value.
 #
-# Marker: [DANGER]
-# ================
-#
-# Checking out code on a privileged action (like "pull_request_target") is dangerous. From the GitHub docs:
-#
-# “ 1. Workflows triggered via pull_request_target have write permission to the target repository. They also have
-#      access to target repository secrets. The same is true for workflows triggered on pull_request from a branch in
-#      the same repository, but not from external forks. The reasoning behind the latter is that it is safe to share
-#      the repository secrets if the user creating the PR has write permission to the target repository already. ”
-#
-#   — http://securitylab.github.com/research/github-actions-preventing-pwn-requests
-#
-# This is a private repository, we won't be accepting PR from external forks. So the Git checkouts performed here
-# shouldn't be a problem. This workflow would fail for external pull requests.
-#
 name: 🏗 Continuous Integration
 
 on:
@@ -59,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v4
@@ -80,11 +65,11 @@ jobs:
       - name: Lint with Ruff
         run: python -m ruff check fincore.py
 
-  type-check-fincore:
+  type-check:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       # From http://stackoverflow.com/a/70711156.
       - name: Check if Fincore changed
@@ -122,8 +107,18 @@ jobs:
   run-tests:
     runs-on: ubuntu-latest
 
+    permissions:
+      # Gives the action the necessary permissions for publishing new
+      # comments in pull requests.
+      pull-requests: write
+
+      # Gives the action the necessary permissions for pushing data to the
+      # python-coverage-comment-action branch, and for editing existing
+      # comments (to avoid publishing multiple comments in the same PR)
+      contents: write
+
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v4
@@ -145,39 +140,18 @@ jobs:
         run: |
           python -m coverage run -m pytest -Werror tests
 
-      - name: Upload code coverage data
-        uses: actions/upload-artifact@v3
+      - name: Coverage comment
+        id: coverage_comment
+        uses: py-cov-action/python-coverage-comment-action@v3
         with:
-          name: code-coverage-data
-          path: '.coverage.*'
-          include-hidden-files: true
+          GITHUB_TOKEN: ${{ github.token }}
 
-  report-coverage:
-    runs-on: ubuntu-latest
-
-    needs: [ run-tests ]
-
-    steps:
-      - uses: actions/checkout@v3 # See [DANGER] above.
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v4
-        with: { python-version: '3.11' }
-
-      - name: Generate Coverage RC
-        run: |
-          echo '[run]' > .coveragerc
-          echo 'relative_files = true' >> .coveragerc
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install pytest coverage
-        env: { PIP_ROOT_USER_ACTION: ignore }
-
-      - name: Download code coverage data
-        uses: actions/download-artifact@v3
-        with: { name: code-coverage-data }
+      - name: Store code coverage data in a comment
+        uses: actions/upload-artifact@v4
+        if: steps.coverage_comment.outputs.COMMENT_FILE_WRITTEN == 'true'
+        with:
+          name: python-coverage-comment-action
+          path: python-coverage-comment-action.txt
 
       # See [FAIL_ON_LOW_COVERAGE] above.
       - name: Report code coverage
@@ -186,8 +160,3 @@ jobs:
           python -m coverage report
           python -m coverage xml
 
-      # See [DANGER] above.
-      - name: Create code coverage comment
-        uses: py-cov-action/python-coverage-comment-action@v3
-        with:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
