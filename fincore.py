@@ -335,7 +335,7 @@ def _interleave(a: t.Iterable[_T], b: t.Iterable[_T], *, key: t.Callable[..., t.
     >>> [(x.index_a, x.from_a, x.index_b, x.from_b, x.item) for x in _interleave(a, b)]  # doctest: +NORMALIZE_WHITESPACE
     [(0, True,  0, False, 1),
      (1, False, 0, True,  4),
-     (1, True, 1, False,  4),
+     (1, True, 1, False, 4),
      (2, True,  1, False, 6),
      (3, False, 1, True,  9),
      (3, False, 2, True,  11),
@@ -354,23 +354,22 @@ def _interleave(a: t.Iterable[_T], b: t.Iterable[_T], *, key: t.Callable[..., t.
     >>> list(_interleave(a, b))
     Traceback (most recent call last):
         ...
-    ValueError: iterable B, item “5” found multiple times
+    ValueError: iterable B, item "5" found multiple times
 
-      ADENDO: Aqui reside o nosso bloqueio contra duas antecipações no mesmo dia, dentre outros. Isso é bom, pois no
-      ADENDO: momento as controladoras estão pouco testadas, e já houve tentativa de submeter uma única antecipação
-      ADENDO: mais de uma vez. Aconteceu com a Mariana Castro no dia 01 de Agosto de 2023. Ela teve um fluxo de geração
-      ADENDO: de antecipações totais interrompidos por um erro de requisição. Ao tentar resumir o processo, em uma
-      ADENDO: requisição subsequente, a controladora passou novamente por investimentos que já possuíam a antecipação
-      ADENDO: gerada, e tentou inseri-la novamente. Se não fosse essa proteção, teríamos um erro de esquema de dados.
-      ADENDO:
-      ADENDO: Assim que tivermos melhor cobertura nas controladoras de geração de antecipação, pagamento parcial,
-      ADENDO: pagamento de prestações em lote etc, podemos remover essa limitação. Afinal de contas, ela é arbitrária.
-      ADENDO: Do ponto de vista do Fincore, a ordem de duas antecipações em uma mesma data é dada pela posição na lista.
-      ADENDO: Também é necessário ter casos de testes para antecipações consecutivas com os diversos indexadores
-      ADENDO: suportados pelo Fincore, antes da remoção dessa trava.
-      ADENDO:
-      ADENDO: Vale lembrar que se há multiplas antecipações no mesmo dia, a solução simples seria somar os seus valores
-      ADENDO: brutos.
+      ADENDUM: Here lies our problem with multiple prepayments on the same day, among other things. This error is good, because
+      ADENDUM: at the moment the controllers are not well tested, and there was an attempt to submit a single prepayment
+      ADENDUM: more than once. It happened with the Mariana Castro on August 1, 2023. She had a flow of total prepayment
+      ADENDUM: generation interrupted by an error in the request. When trying to resume the process, in a subsequent request,
+      ADENDUM: the controller passed again through investments that already had the prepayment generated, and tried to insert it again.
+      ADENDUM: If it weren't for this protection, we would have a data schema error.
+      ADENDUM:
+      ADENDUM: As soon as we have better coverage in the prepayment generation controllers, partial payments, etc., we can
+      ADENDUM: remove this limitation. After all, it is arbitrary. From the Fincore point of view, the order of two prepayments
+      ADENDUM: on the same day is given by the position in the list. It is also necessary to have test cases for consecutive
+      ADENDUM: prepayments with the various financial indexers supported by Fincore, before removing this lock.
+      ADENDUM:
+      ADENDUM: It is worth remembering that if there are multiple prepayments on the same day, the trivial approach would be to
+      ADENDUM: sum up their gross values.
 
     A key function can be used to establish comparison between elements.
 
@@ -406,13 +405,13 @@ def _interleave(a: t.Iterable[_T], b: t.Iterable[_T], *, key: t.Callable[..., t.
             raise ValueError('iterable A is not ordered')
 
         elif sav_a and val_a and key(sav_a) == key(val_a):
-            raise ValueError(f'iterable A, item “{sav_a}” found multiple times')
+            raise ValueError(f'iterable A, item "{sav_a}" found multiple times')
 
         elif sav_b and val_b and key(sav_b) > key(val_b):
             raise ValueError('iterable B is not ordered')
 
         elif sav_b and val_b and key(sav_b) == key(val_b):  # Ver o adendo na "docstring" da rotina. FIXME.
-            raise ValueError(f'iterable B, item “{sav_b}” found multiple times')
+            raise ValueError(f'iterable B, item "{sav_b}" found multiple times')
 
         if val_a and val_b and key(val_a) == key(val_b):
             sav_b = val_b
@@ -554,9 +553,9 @@ class Amortization:
     periods etc. The basic Amortization class does not provide enough information to create payment schedules for such
     cases. Enter the extension fields.
 
-      • "price_level_adjustment", which is a “PriceLevelAdjustment” instance.
+      • "price_level_adjustment", which is a "PriceLevelAdjustment" instance.
 
-      • "dct_override", an override for the DCT calculation. See “DctOverride” below.
+      • "dct_override", an override for the DCT calculation. See "DctOverride" below.
 
     The DCT override field is specific for 30/360 specs. We need to store extra override information for the DCT
     calculation to ensure that DCT is always the amount of days between two scheduled payments. In case an amortization
@@ -573,7 +572,7 @@ class Amortization:
         sufficient.
         '''
 
-        # Maximum value. Ver “http://stackoverflow.com/a/28082106”.
+        # Maximum value. Ver "http://stackoverflow.com/a/28082106".
         MAX_VALUE: t.ClassVar[decimal.Decimal] = decimal.Decimal(decimal.MAX_EMAX)
 
         # Base field, the bare amortization date.
@@ -666,11 +665,9 @@ class PriceAdjustedPayment(Payment):
 class LatePayment(Payment):
     '''An entry of a payment schedule, with extra gain, penalty and fine values.'''
 
-    # Taxa mensal de juros moratórios (a.m.). MLFR = Montly Late Fee Rate.
-    FEE_RATE: t.ClassVar[decimal.Decimal] = _1
+    FEE_RATE: t.ClassVar[decimal.Decimal] = _1  # Montly Late Fee Rate.
 
-    # Taxa de multa.
-    FINE_RATE: t.ClassVar[decimal.Decimal] = _1 + _1
+    FINE_RATE: t.ClassVar[decimal.Decimal] = _1 + _1  # Fine rate (single application).
 
     extra_gain: decimal.Decimal = _0
 
@@ -678,10 +675,7 @@ class LatePayment(Payment):
 
     fine: decimal.Decimal = _0
 
-# Esta classe é herança da primeira implementação de atraso para IPCA. Essa implementação nunca foi usada, e foi
-# removida em 26 de julho de 2024. Nunca confiamos em quaisquer implementações de IPCA na INCO. Foram muito mal
-# especificadas. Vou deixar a classe aqui para referência em uma implementação futura.
-#
+# FIXME: remove this class.
 @dataclasses.dataclass
 class LatePriceAdjustedPayment(PriceAdjustedPayment):
     '''An entry of a price adjusted payment schedule, with extra gain, penalty and fine values.'''
@@ -774,9 +768,9 @@ class IndexStorageBackend:
     @typeguard.typechecked
     def calculate_cdi_factor(self, begin: datetime.date, end: datetime.date, percentage: int = 100) -> types.SimpleNamespace:
         '''
-        Calcula o fator de DI (CDI) a partir de um período.
+        Calculates the DI (CDI) factor for a given period.
 
-        Os índices de correção CDI dos testes abaixo foram retirados do sítio do BACEN:
+        The CDI correction indices in the tests below were taken from the BACEN website:
 
           https://www3.bcb.gov.br/CALCIDADAO/publico/exibirFormCorrecaoValores.do?method=exibirFormCorrecaoValores&aba=5
 
@@ -806,9 +800,9 @@ class IndexStorageBackend:
         >>> isclose(idx1, idx2.value, rel_tol=1e-8)
         True
 
-        Observe que não é possível escrever testes para índices projetados. Essa função vai pegar o último índice publicado
-        pelo BACEN para estimar os futuros. Um novo índice pode ser publicado, alterando o resultado da computação do
-        fator, e fazendo com que o teste falhe.
+        Note that it's not possible to write tests for projected indices. This function will use the last index published
+        by BACEN to estimate future values. A new index may be published, changing the result of the factor computation,
+        causing the test to fail.
         '''
 
         if begin < end:
@@ -830,7 +824,7 @@ class IndexStorageBackend:
 
     @typeguard.typechecked
     def calculate_savings_factor(self, begin: datetime.date, end: datetime.date, percentage: int = 100) -> types.SimpleNamespace:
-        '''Calcula o fator de Poupança a partir de um período.'''
+        '''Calculates the Savings factor for a given period.'''
 
         # Considera-se a data de aniversário das prestações com início nos dias 29, 30 e 31 como o dia 1° do mês seguinte.
         ini = begin if begin.day <= 28 else (begin + _MONTH).replace(day=1)
@@ -856,9 +850,9 @@ class IndexStorageBackend:
     @typeguard.typechecked
     def calculate_ipca_factor(self, base: datetime.date, period: int, shift: _PL_SHIFT, ratio: decimal.Decimal = _1) -> decimal.Decimal:
         '''
-        Calcula o fator de correção do IPCA.
+        Calculates the IPCA correction factor.
 
-        Toma como parâmetros a data base, o período, deslocamento e uma fração para a última taxa de correção.
+        Takes as parameters the base date, period, shift, and a fraction for the last correction rate.
         '''
 
         ini = base - _MONTH * t.get_args(_PL_SHIFT).index(shift)
@@ -875,7 +869,7 @@ class IndexStorageBackend:
 
     @typeguard.typechecked
     def calculate_igpm_factor(self, base: datetime.date, period: int, shift: _PL_SHIFT, ratio: decimal.Decimal = _1) -> decimal.Decimal:
-        '''Calcula o fator de correção do IGPM.'''
+        '''Calculates the IGPM correction factor.'''
 
         raise NotImplementedError()
 
@@ -1186,65 +1180,62 @@ def get_payments_table(
     gain_output: _GAIN_OUTPUT_MODE = 'current'
 ) -> t.Iterable[Payment]:
     '''
-    Gera uma tabela de pagamentos para um determinado empréstimo.
+    Generates a payment schedule for a given loan.
 
-    Para saber como invocar essa função, tome como base a frase abaixo.
+    To understand how to invoke this function, consider the following sentence:
 
-      “ Retorne os pagamentos um empréstimo em um valor V, a uma taxa anual TA, nas datas D. ”
+      "Return the payments for a loan of amount V, at an annual rate TA, on dates D."
 
-    Dessa elaboração saem os três parâmetros obrigatórios e posicionais dessa rotina:
+    From this sentence, we can derive the three required and positional parameters for this routine:
 
-      • "principal", é o valor principal do empréstimo, ou V.
+      • "principal", which is the principal amount of the loan, or V.
 
-      • "apy", é a taxa nominal anual de spread TA (annual percentage yield).
+      • "apy", which is the nominal annual spread TA (annual percentage yield).
 
-      • "amortizations", que é uma lista contendo as datas D em que amortizações devem ser realizadas.
+      • "amortizations", which is a list containing the dates D when amortizations should occur.
 
-    Os demais parâmetros são associativos.
+    The remaining parameters are associative.
 
-      • "vir", é um índice variável, que pode ser de juros: CDI, ou Poupança; ou de correção monetária: IPCA, ou IGPM.
-        Quando informado, os pagamentos retornados pela rotina vão incorrer, além da taxa fixa, "apy", de uma taxa
-        variável que será computada de acordo com o valor do índice no período. Deve ser uma instância de
-        VariableIndex. Se omitido, a taxa de juros será fixa.
+      • "vir", which is a variable index, which can be either a CDI or Savings index; or a price level index: IPCA or IGPM.
+        When provided, the returned payments will incur, in addition to the fixed rate "apy", a variable rate that will be
+        computed according to the index value in the period. It should be an instance of VariableIndex. If omitted, the
+        interest rate will be fixed.
 
-      • "capitalisation", configura uma dentre quatro formas de composição dos juros.
+      • "capitalisation", configures one of four interest composition methods.
 
-        – "360" é a capitalização de juros diária em ano tem 360 dias corridos. Usada em operações pré-fixadas com
-          modalidade Bullet.
+        – "360" is daily capitalisation in a year with 360 days. Used in Bullet operations with Bullet modality.
 
-        – "30/360" é a capitalização mensal em ano de 12 meses com 30 dias corridos. Usada em operações pré-fixadas com
-          modalidade Juros mensais, Price, ou Livre.
+        – "30/360" is monthly capitalisation in a year with 12 months and 30 days. Used in Bullet operations with Monthly
+          Interest, Price, or Free modality.
 
-        – "252" é a capitalização de juros em ano de 252 dias úteis. Usada em operações pós-fixadas CDI com quaisquer
-          modalidade Bullet, Juros mensais, ou Livre.
+        – "252" is capitalisation of interest in a year with 252 business days. Used in post-fixed CDI operations with
+          any Bullet, Monthly Interest, or Free modality.
 
-        – "365" é a capitalização de juros em ano de 365 dias corridos. Esse modo não deve ser usado. Serve apenas
-          para emular operações Bullet obsoletas, que adotaram essa forma de composição no passado. O Fincore vai
-          emitir um aviso se esse modo for solicitado.
+        – "365" is capitalisation of interest in a year with 365 days. This mode should not be used. It's only used to
+          emulate legacy Bullet operations that adopted this composition method in the past. Fincore will issue a warning
+          if this mode is requested.
 
-      • "calc_date", é uma data de corte para o cálculo dos pagamentos. Pagamentos posteriores à data informada não serão
-        emitidos. Útil para saber a posição de um empréstimo em uma determinada data. Evita que pagamentos desnecessários
-        sejam calculados.
+      • "calc_date", is a cut-off date for payment calculation. Payments after the specified date will not be emitted.
+        Useful to know the position of a loan on a given date. Avoids unnecessary payment calculation.
 
-      • "tax_exempt", quando verdadeiro, indica que os pagamentos são isentos de imposto de renda.
+      • "tax_exempt", when true, indicates that the payments are tax-exempt.
 
-    • "gain_output", é o modo de saída para os juros.
+    • "gain_output", is the interest output mode.
 
-        – "current" é o modo padrão. Faz com que, para cada pagamento P, apenas os juros incorridos no período entre o
-          pagamento anterior e o atual sejam retornados.
+        – "current" is the default mode. Makes each payment P return only the interest accrued in the period between the
+          previous payment and the current one.
 
-        – "settled" faz com que, para cada pagamento P, os juros a serem pagos pelo devedor sejam retornados. Lembrar que
-          os juros a serem pagos não são necessariamente iguais aos juros incorridos no período. Se houver carência, um
-          determinado pagamento pode não ter acerto de juros. Ou um pagamento posterior a um período de carência pode
-          apresentar um componente de juros acumulados, além do que incorreu no período.
+        – "settled" makes each payment P return the interest to be paid by the borrower. Remember that the interest to be
+          paid may not be equal to the interest accrued in the period. If there's a grace period, a certain payment may
+          not have interest settlement. Or a payment after a grace period may have a deferred interest component, in
+          addition to what accrued in the period.
 
-        – "deferred" faz com que o juro acumulado no período atual, somado ao acumulado de períodos anteriores, seja
-          retornado.
+        – "deferred" makes the interest accrued in the current period, plus the accrued from previous periods, be returned.
 
-    Retorna uma lista em que cada objeto P contém as informações de um pagamento: sua data, o valor bruto a ser pago, o
-    imposto, o valor líquido, o valor de amortização do principal, o valor dos juros etc. É uma instância de Payment,
-    para operações sem correção monetária; ou de PriceAdjustedPayment, para operações corrigidas. Vide documentação
-    dessas classes para maiores detalhes sobre essas estruturas de dados.
+    Returns a list where each object P contains the information of a payment: its date, the gross amount to be paid, the
+    tax, the net amount, the principal amortization value, the interest value, etc. It's an instance of Payment, for
+    non-price-level-adjusted operations; or of PriceAdjustedPayment, for price-level-adjusted operations. See the
+    documentation for these classes for more details about these data structures.
     '''
 
     def calc_balance() -> decimal.Decimal:
@@ -1252,17 +1243,17 @@ def get_payments_table(
 
         return t.cast(decimal.Decimal, val)
 
-    # Primeiro gerador para valores de principal.
+    # First principal generator.
     #
-    #  • "principal.amortization_ratio.current", é o percentual de amortização do período corrente.
-    #  • "principal.amortized.current", é o valor amortizado no período corrente.
-    #  • "principal.amortized.total", é o valor amortizado total (período corrente somado aos passados).
+    #  • "principal.amortization_ratio.current", is the current period's amortization percentage.
+    #  • "principal.amortized.current", is the principal amortized in the current period.
+    #  • "principal.amortized.total", is the total principal amortized (current period plus past periods).
     #
     def track_principal_1() -> t.Generator[None, decimal.Decimal | None, None]:
         while True:
             ratio = yield
 
-            # Se o percentual de amortização atual somado ao acumulado ultrapassar 100%, um reajuste deve ser feito.
+            # If the current amortization percentage plus the accumulated percentage exceeds 100%, an adjustment must be made.
             if regs.principal.amortization_ratio.current + ratio > _1:
                 ratio = _1 - regs.principal.amortization_ratio.current
 
@@ -1273,26 +1264,26 @@ def get_payments_table(
             else:
                 regs.principal.amortized = types.SimpleNamespace(current=_0, total=regs.principal.amortized.total)
 
-    # Segundo gerador para valores de principal.
+    # Second principal generator.
     #
-    #  • "principal.amortization_ratio.regular", é o percentual de amortização regular acumulado (período corrente somado a passados)
+    #  • "principal.amortization_ratio.regular", is the regular amortization percentage accumulated (current period plus past periods)
     #
     def track_principal_2() -> t.Generator[None, decimal.Decimal | None, None]:
         while True:
             ratio = yield
 
-            # Se o percentual de amortização regular somado ao acumulado ultrapassar 100%, um reajuste deve ser feito.
+            # If the regular amortization percentage plus the accumulated percentage exceeds 100%, an adjustment must be made.
             if regs.principal.amortization_ratio.regular + ratio > _1:
                 ratio = _1 - regs.principal.amortization_ratio.regular
 
             if ratio:
                 regs.principal.amortization_ratio.regular += ratio
 
-    # Gerador para valores de juros.
+    # Interest generator.
     #
-    #   • "interest.current" são os juros incorridos (produzidos) no período corrente.
-    #   • "interest.accrued" é o total de juros acumulado desde o dia zero do cronograma de pagamentos.
-    #   • "interest.deferred" é o total de juros em aberto de períodos passados.
+    #   • "interest.current" is the interest accrued (produced) in the current period.
+    #   • "interest.accrued" is the total interest accrued since the zero day of the payment schedule.
+    #   • "interest.deferred" is the total deferred interest from past periods.
     #
     def track_interest_1() -> t.Generator[None, decimal.Decimal | None, None]:
         while True:
@@ -1300,17 +1291,17 @@ def get_payments_table(
             regs.interest.accrued += regs.interest.current
             regs.interest.deferred = regs.interest.accrued - (regs.interest.current + regs.interest.settled.total)
 
-    # Gerador para valores de juros acertados entre devedor e credor.
+    # Interest settled generator between borrower and creditor.
     #
-    #   • "interest.settled.current" são os juros acertados no período corrente.
-    #   • "interest.settled.total" é o total de juros acertados desde o dia zero do cronograma de pagamentos.
+    #   • "interest.settled.current" is the interest settled in the current period.
+    #   • "interest.settled.total" is the total interest settled since the zero day of the payment schedule.
     #
     def track_interest_2() -> t.Generator[None, decimal.Decimal | None, None]:
         while True:
             regs.interest.settled = types.SimpleNamespace(current=(yield), total=regs.interest.settled.total)
             regs.interest.settled.total += regs.interest.settled.current
 
-    # A. Valida e prepara para execução.
+    # A. Validation and preparation.
     gens = types.SimpleNamespace()
     regs = types.SimpleNamespace()
     aux = _0
@@ -1346,7 +1337,7 @@ def get_payments_table(
     if calc_date is None:
         calc_date = CalcDate(value=amortizations[-1].date, runaway=False)
 
-    # Registradores.
+    # Registers.
     regs.interest = types.SimpleNamespace(current=_0, accrued=_0, settled=types.SimpleNamespace(current=_0, total=_0), deferred=_0)
     regs.principal = types.SimpleNamespace(amortization_ratio=types.SimpleNamespace(current=_0, regular=_0), amortized=types.SimpleNamespace(current=_0, total=_0))
 
@@ -1362,15 +1353,15 @@ def get_payments_table(
     gens.interest_tracker_1.send(None)
     gens.interest_tracker_2.send(None)
 
-    # B. Executa.
+    # B. Execution.
     for num, (ent0, ent1) in enumerate(itertools.pairwise(amortizations), 1):
         due = min(calc_date.value, ent1.date)
         f_s = f_c = _1
 
-        # Fase B.0, FZA, ou Fase Zille-Anna.
+        # Phase B.0, FZA, or Phase Zille-Anna.
         #
-        #  • Calcula FS (fator de spread) para índice pré-fixado; e ambos FS e FC para índice de correção.
-        #  • Calcula FS para índice pós-fixado (CDI, Poupança etc). Nesse caso não há correção.
+        #  • Calculates FS (spread factor) for pre-fixed index; and both FS and FC for price level index.
+        #  • Calculates FS for post-fixed index (CDI, Savings etc). In this case, there's no price level adjustment.
         #
         if ent0.date < calc_date.value or ent1.date <= calc_date.value:
             if not vir and capitalisation == '360':  # Bullet.
@@ -1379,19 +1370,18 @@ def get_payments_table(
             elif not vir and capitalisation == '365':  # Bullet in legacy mode.
                 f_s = calculate_interest_factor(apy, decimal.Decimal((due - ent0.date).days) / decimal.Decimal(365))
 
-            elif not vir and capitalisation == '30/360':  # Juros mensais, Price, Livre.
+            elif not vir and capitalisation == '30/360':  # Monthly Interest, Price, Free.
                 dcp = (due - ent0.date).days
                 dct = (ent1.date - ent0.date).days
 
-                # Exclusivamente para a primeira data de aniversário o "DCT" será considerado como a diferença em
-                # dias corridos entre o dia 24 anterior e o dia 24 posterior à data de integralização (início do
-                # rendimento).
+                # Exclusively for the first anniversary date, "DCT" will be considered as the difference in calendar days
+                # between the 24th day before and the 24th day after the disbursement date (start of accrual).
                 #
                 if ent1.dct_override and num == 1:
                     dct = _diff_surrounding_dates(ent0.date, 24)
 
-                # Quando existirem entradas extraordinárias de adiantamento no plano, o "DCT" será calculado
-                # utilizando as datas do fluxo regular.
+                # When there are extraordinary advancements in the schedule, "DCT" will be calculated using the regular
+                # flow dates.
                 #
                 elif ent1.dct_override:
                     dct = (ent1.dct_override.date_to - ent1.dct_override.date_from).days
@@ -1407,12 +1397,12 @@ def get_payments_table(
 
                 f_s = calculate_interest_factor(apy, decimal.Decimal(dcp) / (12 * decimal.Decimal(dct)))
 
-            elif vir and vir.code == 'CDI' and capitalisation == '252':  # Bullet, Juros mensais, Livre.
-                f_v = vir.backend.calculate_cdi_factor(ent0.date, due, vir.percentage)  # Taxa (ou fator) variável, FV.
+            elif vir and vir.code == 'CDI' and capitalisation == '252':  # Bullet, Monthly Interest, Free.
+                f_v = vir.backend.calculate_cdi_factor(ent0.date, due, vir.percentage)  # Variable rate (or factor), FV.
                 f_s = calculate_interest_factor(apy, decimal.Decimal(f_v.amount) / decimal.Decimal(252)) * f_v.value
 
-            elif vir and vir.code == 'Poupança' and capitalisation == '360':  # Poupança só suportada em Bullet.
-                f_v = vir.backend.calculate_savings_factor(ent0.date, due, vir.percentage)  # Taxa (ou fator) variável, FV.
+            elif vir and vir.code == 'Poupança' and capitalisation == '360':  # Savings only supported in Bullet.
+                f_v = vir.backend.calculate_savings_factor(ent0.date, due, vir.percentage)  # Variable rate (or factor), FV.
                 f_s = calculate_interest_factor(apy, decimal.Decimal((due - ent0.date).days) / decimal.Decimal(360)) * f_v.value
 
             elif vir and vir.code == 'IPCA' and capitalisation == '360':  # Bullet.
@@ -1424,36 +1414,35 @@ def get_payments_table(
                     kw1a['base'] = ent1.price_level_adjustment.base_date
                     kw1a['period'] = ent1.price_level_adjustment.period
                     kw1a['shift'] = ent1.price_level_adjustment.shift
-                    kw1a['ratio'] = _1  # Ajuste para a última taxa de correção.
+                    kw1a['ratio'] = _1  # Adjustment for the last correction rate.
 
-                    # Trava o fator de correção. O fator mínimo é um, ou seja, o valor da correção tem que ser positivo.
+                    # Lock the price level factor. The minimum factor is one, i.e., the correction value must be positive.
                     f_c = max(vir.backend.calculate_ipca_factor(**kw1a), _1)
 
-                # Na antecipação a correção monetária tem que ser paga ("ent1" nem tem o atributo "price_level_adjustment").
+                # In the case of an advancement, the price level adjustment must be paid ("ent1" doesn't have the "price_level_adjustment" attribute).
                 elif type(ent1) is Amortization.Bare:
                     kw1b: t.Dict[str, t.Any] = {}
 
                     kw1b['base'] = amortizations[0].date.replace(day=1)
                     kw1b['period'] = _delta_months(ent1.date, amortizations[0].date)
                     kw1b['shift'] = 'M-1'  # FIXME.
-                    kw1b['ratio'] = _1  # Ajuste para a última taxa de correção.
+                    kw1b['ratio'] = _1  # Adjustment for the last correction rate.
 
-                    # Trava o fator de correção. O fator mínimo é um, ou seja, o valor da correção tem que ser positivo.
+                    # Lock the price level factor. The minimum factor is one, i.e., the correction value must be positive.
                     f_c = max(vir.backend.calculate_ipca_factor(**kw1b), _1)
 
-            elif vir and vir.code == 'IPCA' and capitalisation == '30/360':  # Juros mensais e Livre.
+            elif vir and vir.code == 'IPCA' and capitalisation == '30/360':  # Monthly Interest and Free.
                 dcp = (due - ent0.date).days
                 dct = (ent1.date - ent0.date).days
 
-                # Exclusivamente para a primeira data de aniversário o "DCT" será considerado como a diferença em
-                # dias corridos entre o dia 24 anterior e o dia 24 posterior à data de integralização (início do
-                # rendimento).
+                # Exclusively for the first anniversary date, "DCT" will be considered as the difference in calendar days
+                # between the 24th day before and the 24th day after the disbursement date (start of accrual).
                 #
                 if ent1.dct_override and num == 1:
                     dct = _diff_surrounding_dates(ent0.date, 24)
 
-                # Quando existirem entradas extraordinárias de adiantamento no plano, o "DCT" será calculado
-                # utilizando as datas do fluxo regular.
+                # When there are extraordinary advancements in the schedule, "DCT" will be calculated using the regular
+                # flow dates.
                 #
                 elif ent1.dct_override:
                     dct = (ent1.dct_override.date_to - ent1.dct_override.date_from).days
@@ -1471,29 +1460,29 @@ def get_payments_table(
 
                 if type(ent1) is Amortization.Bare or type(ent1) is Amortization and ent1.price_level_adjustment:
                     kw2: t.Dict[str, t.Any] = {}
-                    dcp = (due - ent0.date).days  # Spec "30/360" needs a ratio for the IPCA factor.
+                    dcp = (due - ent0.date).days  # "30/360" spec needs a ratio for the IPCA factor.
                     dct = (ent1.date - ent0.date).days
 
                     if type(ent1) is Amortization and ent1.price_level_adjustment:
                         kw2['base'] = ent1.price_level_adjustment.base_date
                         kw2['period'] = ent1.price_level_adjustment.period
                         kw2['shift'] = ent1.price_level_adjustment.shift
-                        kw2['ratio'] = _1  # Ajuste para a última taxa de correção.
+                        kw2['ratio'] = _1  # Adjustment for the last correction rate.
 
                     else:
                         kw2['base'] = amortizations[0].date.replace(day=1)
                         kw2['period'] = _delta_months(ent1.date, amortizations[0].date)
                         kw2['shift'] = 'M-1'  # FIXME.
-                        kw2['ratio'] = _1  # Ajuste para a última taxa de correção.
+                        kw2['ratio'] = _1  # Adjustment for the last correction rate.
 
-                    # Exclusivamente para a primeira data de aniversário o "DCT" será considerado como a diferença
-                    # em dias corridos entre os dias 24 anterior e posterior à data de início do rendimento.
+                    # Exclusively for the first anniversary date, "DCT" will be considered as the difference in calendar
+                    # days between the 24th day before and the 24th day after the disbursement date (start of accrual).
                     #
                     if ent1.dct_override and num == 1:
                         dct = _diff_surrounding_dates(ent0.date, 24)
 
-                    # Quando existirem entradas extraordinárias de adiantamento no plano, o "DCT" será calculado
-                    # utilizando as datas do fluxo regular.
+                    # When there are extraordinary advancements in the schedule, "DCT" will be calculated using the regular
+                    # flow dates.
                     #
                     elif ent1.dct_override:
                         dct = (ent1.dct_override.date_to - ent1.dct_override.date_from).days
@@ -1509,7 +1498,7 @@ def get_payments_table(
 
                     kw2['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)
 
-                    f_c = max(vir.backend.calculate_ipca_factor(**kw2), _1)  # Trava o fator de correção.
+                    f_c = max(vir.backend.calculate_ipca_factor(**kw2), _1)  # Lock the price level factor.
 
             elif vir:
                 raise NotImplementedError(f'Combination of variable interest rate {vir} and capitalisation {capitalisation} unsupported')
@@ -1517,91 +1506,90 @@ def get_payments_table(
             else:
                 raise NotImplementedError(f'Unsupported capitalisation {capitalisation} for fixed interest rate')
 
-        # Fase B.1, FRU, ou Fase Rafa Um.
+        # Phase B.1, FRU, or Phase Rafa Um.
         #
-        # Usando os fatores calculados na fase anterior, calcula e registra as variações de principal, juros e correção
-        # monetária.
+        # Using the factors calculated in the previous phase, calculates and registers the variations in principal, interest,
+        # and price level adjustment.
         #
-        # [FATOR-AJUSTE]
+        # [ADJUSTMENT-FACTOR]
         #
-        # A inserção de uma antecipação parcial na montagem do cronograma faz com que os percentuais de amortização do
-        # principal posteriores à essa antecipação precisem ser atualizados. Essa atualização é feita de forma que o
-        # novo percentual de amortização (Pn), de uma prestação arbitrária, deve ser igual ao percentual antigo (Pa)
-        # multiplicado por um fator de ajuste (ADJ).
+        # Inserting a partial advancement in the payment schedule causes the principal amortization percentages after that
+        # advancement to need to be updated. This update is done in such a way that the new amortization percentage (Pn)
+        # of an arbitrary payment should be equal to the old percentage (Pa) multiplied by an adjustment factor (ADJ).
         #
         #                                                  ACUR
         #                                          ADJ = ————————
         #                                                  AREG
         #
-        # Em que ACUR é o percentual de amortização restante do fluxo de pagamentos, em cima do principal e incluindo
-        # as amortizações extraordinárias (antecipações), e AREG é o percentual de amortização restante do fluxo de
-        # pagamentos ordinário.
+        # Where ACUR is the remaining amortization percentage of the payment flow, including extraordinary amortizations
+        # (advancements), and AREG is the remaining regular amortization percentage of the payment flow.
         #
         if ent0.date < calc_date.value or ent1.date <= calc_date.value or calc_date.runaway:
-            # Registra o valor do juros incorrido no período.
+            # Register the interest accrued in the period.
             gens.interest_tracker_1.send(calc_balance() * (f_s - _1))
 
-            # Registra a correção do período (FIXME: implementar).
+            # Register the price level adjustment for the period (FIXME: implement).
             # gens.price_level_tracker_1.send(…)
 
-            # Caso de uma amortização regular.
+            # Case of a regular amortization.
             if type(ent1) is Amortization:
-                adj = (_1 - regs.principal.amortization_ratio.current) / (_1 - regs.principal.amortization_ratio.regular)  # [FATOR-AJUSTE].
+                adj = (_1 - regs.principal.amortization_ratio.current) / (_1 - regs.principal.amortization_ratio.regular)  # [ADJUSTMENT-FACTOR].
 
-                # Registra o percentual de amortização do principal.
+                # Register the principal amortization percentage.
                 gens.principal_tracker_1.send(ent1.amortization_ratio * adj)
 
-                # Registra o percentual regular de amortização do principal.
+                # Register the regular principal amortization percentage.
                 gens.principal_tracker_2.send(ent1.amortization_ratio)
 
-                # Registra o valor de juros a pagar no período.
+                # Register the interest to be paid in the period.
                 if ent1.amortizes_interest:
                     gens.interest_tracker_2.send(regs.interest.current + regs.principal.amortization_ratio.current * regs.interest.deferred)
 
-                # Registra o valor de correção a pagar no período (FIXME: implementar).
+                # Register the price level adjustment to be paid in the period (FIXME: implement).
                 # gens.price_level_tracker_2.send(…)
 
-            # Caso de um adiantamento (amortização extraordinária).
+            # Case of an advancement (extraordinary amortization).
             #
-            # Lembre-se que um adiantamento apresenta apenas um valor bruto que será pago em uma determinada data. Esse
-            # valor bruto será fatorado em diversos componentes da dívida, de forma ordenada. O primeiro componente da
-            # dívida a ser amortizado é o juro (spread). Após o pagamento dos juros, o que sobra deve ser deduzido da
-            # correção monetária. Finalmente, abate-se o valor restante do principal. No bloco de código abaixo,
+            # Remember that an advancement has only a gross value that will be paid on a certain date. This gross value
+            # will be factored into various components of the debt, in a specific order. The first component of the debt
+            # to be amortized is the spread. After paying the spread, the remaining amount should be deducted from the
+            # price level adjustment. Finally, the remaining amount will be deducted from the principal. In the code
+            # block below,
             #
-            #  • "val1" é o valor de juros a pagar.
+            #  • "val1" is the interest to be paid.
             #
-            #  • "val2" é o valor da correção a pagar. FIXME: a variável "plfv" deveria ser multiplicada pelo
-            #    percentual de amortização do principal do período, e não pelo decimal um.
+            #  • "val2" is the price level adjustment to be paid. FIXME: the variable "plfv" should be multiplied by the
+            #    principal amortization percentage of the period, and not by the decimal one.
             #
-            #  • "val3" é o valor a amortizar do principal.
+            #  • "val3" is the principal to be amortized.
             #
-            # Observe que a ordem de cálculo dessas variáveis corresponde à ordem de fatoração do valor bruto da
-            # antecipação.
+            # Observe that the order of calculation of these variables corresponds to the order of factoring the gross
+            # advancement value.
             #
             else:
-                ent1 = t.cast(Amortization.Bare, ent1)  # O Mypy não consegue inferir o tipo da variável "ent1" aqui.
+                ent1 = t.cast(Amortization.Bare, ent1)  # Mypy can't infer the type of the "ent1" variable here.
                 plfv = principal * (_1 - regs.principal.amortization_ratio.current) * (f_c - _1)  # Price level, full value.
                 val0 = min(ent1.value, calc_balance())
                 val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)
                 val2 = min(val0 - val1, plfv * _1)
                 val3 = val0 - val1 - val2
 
-                # Verifica se o valor do pagamento irregular não ultrapassa o saldo em aberto.
+                # Check if the irregular payment value doesn't exceed the remaining balance.
                 if ent1.value != Amortization.Bare.MAX_VALUE and ent1.value > _Q(calc_balance()):
                     raise Exception(f'the value of the amortization, {ent1.value}, is greater than the remaining balance of the loan, {_Q(calc_balance())}')
 
-                # Registra o percentual de amortização do principal.
+                # Register the principal amortization percentage.
                 gens.principal_tracker_1.send(val3 / principal)
 
-                # Registra o valor de juros a pagar no período.
+                # Register the interest to be paid in the period.
                 gens.interest_tracker_2.send(val1)
 
-                # Registra o valor de correção a pagar no período (FIXME: implementar).
+                # Register the price level adjustment to be paid in the period (FIXME: implement).
                 # gens.price_level_tracker_2.send(val2)
 
-        # Fase B.2, FRD, ou Fase Rafa Dois.
+        # Phase B.2, FRD, or Phase Rafa Dois.
         #
-        # Monta a instância do pagamento, saída da rotina. Faz arredondamentos.
+        # Builds the payment instance, output of the routine. Performs rounding.
         #
         if ent0.date < calc_date.value or ent1.date <= calc_date.value or calc_date.runaway:
             pmt = PriceAdjustedPayment() if vir and vir.code == 'IPCA' else Payment()
@@ -1624,22 +1612,22 @@ def get_payments_table(
 
                 pmt.bal = calc_balance()
 
-                # Amortiza principal, não incorpora juros.
+                # Amortizes principal, does not incorporate interest.
                 if pmt.amort and ent1.amortizes_interest:
                     pmt.raw = pmt.amort + (j_f := regs.interest.settled.current if ent1.amortizes_interest else _0)
                     pmt.tax = j_f * calculate_revenue_tax(amortizations[0].date, due)
 
-                # Amortiza principal, incorpora juros.
+                # Amortizes principal, incorporates interest.
                 elif pmt.amort:
                     pmt.raw = pmt.amort
                     pmt.tax = _0
 
-                # Não amortiza principal, não incorpora juros.
+                # Does not amortize principal, does not incorporate interest.
                 elif ent1.amortizes_interest:
                     pmt.raw = j_f = regs.interest.settled.current if ent1.amortizes_interest else _0
                     pmt.tax = j_f * calculate_revenue_tax(amortizations[0].date, due)
 
-                # Não amortiza principal, incorpora juros.
+                # Does not amortize principal, incorporates interest.
                 else:
                     pmt.raw = _0
                     pmt.tax = _0
@@ -1660,7 +1648,7 @@ def get_payments_table(
                 pmt.raw = pmt.amort + (j_f := regs.interest.settled.current)
                 pmt.tax = j_f * calculate_revenue_tax(amortizations[0].date, due)
 
-            # Aplica a correção no bruto e no I.R.
+            # Applies the price level adjustment to the gross value and the revenue tax.
             if vir and vir.code == 'IPCA':
                 pmt = t.cast(PriceAdjustedPayment, pmt)
 
@@ -1714,57 +1702,57 @@ def get_daily_returns(
     capitalisation: _CAPITALISATION = '360'
 ) -> t.Iterable[DailyReturn]:
     '''
-    Gera uma tabela de rendimentos para um determinado empréstimo.
+    Generates a yield table for a given loan.
 
-    Esta função tem assinatura semelhante a "fincore.get_payments_table". Para saber como invocar essa função, tome
-    como base a frase abaixo.
+    This function has a signature similar to "fincore.get_payments_table". To understand how to invoke this function,
+    use the following phrase as a basis:
 
-      “ Retorne os rendimentos diários de um empréstimo em um valor V, a uma taxa anual TA, nas datas D. ”
+      "Return the daily yields of a loan with a value V, at an annual rate AR, on dates D."
 
-    Dessa elaboração saem os três parâmetros obrigatórios e posicionais dessa rotina:
+    From this elaboration, we get the three mandatory and positional parameters of this routine:
 
-      • "principal", é o valor principal do empréstimo, ou V.
+      • "principal", is the principal amount of the loan, or V.
 
-      • "apy", é a taxa nominal anual de spread TA (annual percentage yield).
+      • "apy", is the nominal annual spread rate AR (annual percentage yield).
 
-      • "amortizations", que é uma lista contendo as datas D em que amortizações devem ser realizadas.
+      • "amortizations", which is a list containing the dates D when amortizations should be made.
 
-    Dois outros parâmetros são opcionais "vir", que especifica um índice variável, podendo ser CDI, Poupança, IPCA, ou
-    IGPM; e "capitalisation", que configura a forma de composição dos juros. Veja a documentação da rotina
-    "fincore.get_payments_table" para mais detalhes sobre esses parâmetros.
+    Two other parameters are optional: "vir", which specifies a variable index, which can be CDI, Savings, IPCA, or
+    IGPM; and "capitalisation", which configures the form of interest compounding. See the documentation of the
+    "fincore.get_payments_table" routine for more details on these parameters.
 
-    Emite uma lista de objetos "DailyReturn", que contêm as informações diárias da posição do empréstimo:
+    Returns a list of "DailyReturn" objects, which contain daily information on the loan position:
 
-      • "date", é a data do rendimento.
+      • "date", is the date of the yield.
 
-      • "value", é o valor rendimento do dia.
+      • "value", is the yield value for the day.
 
-      • "bal", é o saldo devedor do empréstimo no final do dia, isto é, considerando o rendimento do dia, e pagamentos
-        extraordinários porventura realizados. O saldo inicial do dia D, "D.bal", deve ser obviamente, igual ao valor
-        do saldo o final do dia anterior, "D₋₁.bal".
+      • "bal", is the loan's outstanding balance at the end of the day, that is, considering the day's yield and any
+        extraordinary payments made. The initial balance of day D, "D.bal", must obviously be equal to the balance at
+        the end of the previous day, "D₋₁.bal".
 
-        Fique atento pois a expressão "D.bal - D.value" não dá o valor do saldo inicial do dia. Por dois motivos:
+        Be aware that the expression "D.bal - D.value" does not give the initial balance of the day. For two reasons:
 
-        1. Erros de arredondamento. A saída dessa rotina é quantizada, mas sua memória interna não é. Espere diferença
-           de um centavo esporadicamente.
+        1. Rounding errors. The output of this routine is quantized, but its internal memory is not. Expect a difference
+           of one cent sporadically.
 
-        2. Vão ter dias em que pagamentos serão realizados, e essa rotina não os retorna. De fato, a fórmula do saldo
-           inicial é "D.bal - Σ D.entradas + Σ D.saidas", sendo que "D.entradas" seriam as entradas do dia, ou seja, o
-           rendimento; e "D.saidas" as saídas, ou pagamentos, do dia. Esse cálculo também padece de erros de
-           arredondamentos, pelo mesmo motivo do item anterior: a rotina quantiza valores internos somente antes de
-           retorná-los.
+        2. There will be days when payments are made, and this routine does not return them. In fact, the formula for
+           the initial balance is "D.bal - Σ D.inflows + Σ D.outflows", where "D.inflows" would be the day's inflows,
+           i.e., the yield; and "D.outflows" the outflows, or payments, of the day. This calculation also suffers from
+           rounding errors, for the same reason as the previous item: the routine quantizes internal values only before
+           returning them.
 
-      • "fixed_factor", é o fator de juros usado para calcular o componente fixo do rendimento do dia.
+      • "fixed_factor", is the interest factor used to calculate the fixed component of the day's yield.
 
-      • "variable_factor", é o fator de juros usado para calcular o componente variável do rendimento do dia.
+      • "variable_factor", is the interest factor used to calculate the variable component of the day's yield.
     '''
 
     # Some indexes are only published by supervisor bodies on business days. For example, Brazilian DI. On such cases
     # this function will fill in the gaps, i.e., provide a zero value if the upstream misses it.
     #
     def get_normalized_cdi_indexes(backend: IndexStorageBackend) -> t.Iterator[decimal.Decimal]:
-        # Algumas implementações da função "get_cdi_indexes" retornam um gerador, outras retornam uma lista. Portanto,
-        # estou forçando a conversão para lista para atender ambas as possibilidades.
+        # Some implementations of the "get_cdi_indexes" function return a generator, others return a list. Therefore,
+        # I'm forcing the conversion to a list to meet both possibilities.
         #
         lst = list(backend.get_cdi_indexes(amortizations[0].date, amortizations[-1].date))
         idx = 0
@@ -1798,11 +1786,11 @@ def get_daily_returns(
 
         return t.cast(decimal.Decimal, val)
 
-    # Primeiro gerador para valores de principal.
+    # First generator for principal values.
     #
-    #  • "principal.amortization_ratio.current", é o percentual de amortização do período corrente.
-    #  • "principal.amortized.current", é o valor amortizado no período corrente.
-    #  • "principal.amortized.total", é o valor amortizado total (período corrente somado aos passados).
+    #  • "principal.amortization_ratio.current", is the percentage of amortization of the current period.
+    #  • "principal.amortized.current", is the value amortized in the current period.
+    #  • "principal.amortized.total", is the total amortized value (current period plus past periods).
     #
     def track_principal_1() -> t.Generator[None, decimal.Decimal | None, None]:
         while True:
@@ -1819,9 +1807,9 @@ def get_daily_returns(
             else:
                 regs.principal.amortized = types.SimpleNamespace(current=_0, total=regs.principal.amortized.total)
 
-    # Segundo gerador para valores de principal.
+    # Second generator for principal values.
     #
-    #  • "principal.amortization_ratio.regular", é o percentual de amortização regular acumulado (período corrente somado a passados)
+    #  • "principal.amortization_ratio.regular", is the regular amortization percentage accumulated (current period plus past periods)
     #
     def track_principal_2() -> t.Generator[None, decimal.Decimal | None, None]:
         while True:
@@ -1834,12 +1822,12 @@ def get_daily_returns(
             if ratio:
                 regs.principal.amortization_ratio.regular += ratio
 
-    # Gerador para valores de juros.
+    # Generator for interest values.
     #
-    #   • "interest.daily" são os juros incorridos (produzidos) no dia.
-    #   • "interest.current" são os juros incorridos (produzidos) no período corrente.
-    #   • "interest.accrued" é o total de juros acumulado desde o dia zero do cronograma de pagamentos.
-    #   • "interest.deferred" é o total de juros em aberto de períodos passados.
+    #   • "interest.daily" is the accrued interest (produced) on the day.
+    #   • "interest.current" is the accrued interest (produced) on the current period.
+    #   • "interest.accrued" is the total of accrued interest since the start of the payments schedule.
+    #   • "interest.deferred" is the total of deferred interest from past periods.
     #
     def track_interest_1() -> t.Generator[None, decimal.Decimal | None, None]:
         while True:
@@ -1848,10 +1836,10 @@ def get_daily_returns(
             regs.interest.accrued += regs.interest.daily
             regs.interest.deferred = regs.interest.accrued - (regs.interest.current + regs.interest.settled.total)
 
-    # Gerador para valores de juros acertados entre devedor e credor.
+    # Generator for settled interest values.
     #
-    #   • "interest.settled.current" são os juros acertados no período corrente.
-    #   • "interest.settled.total" é o total de juros acertados desde o dia zero do cronograma de pagamentos.
+    #   • "interest.settled.current" are the settled interest on the current period.
+    #   • "interest.settled.total" is the total of settled interest since the start of the payments schedule.
     #
     def track_interest_2() -> t.Generator[None, decimal.Decimal | None, None]:
         while True:
@@ -1919,7 +1907,7 @@ def get_daily_returns(
     elif vir:  # Implies "vir.code == 'IPCA'".
         idxs = get_normalized_ipca_indexes(vir.backend)
 
-    # B. Executa.
+    # B. Execute.
     itr = iter(amortizations)
     tup = next(itr), next(itr)
     cnt = p = 1
@@ -1929,12 +1917,12 @@ def get_daily_returns(
         f_v = _1  # Taxa (ou fator) variável, FV.
         f_s = _1  # Taxa (ou fator) fixo, FS.
 
-        # Fase B.0, FZA, ou Fase Zille-Anna.
+        # Phase B.0, FZA, or Phase Zille-Anna.
         #
-        #  • Calcula FS (fator de spread) para índice pré-fixado; e ambos FS e FC para índice de correção.
-        #  • Calcula FS para índice pós-fixado (CDI, Poupança etc). Nesse caso não há correção.
+        #  • Calculate FS (spread factor) for fixed-rate index; and both FS and FC for price level index.
+        #  • Calculate FS for post-fixed index (CDI, Savings, etc). In this case there is no correction.
         #
-        # Altamente alterada com relação à FZA da rotina "get_payments_table".
+        # Highly altered with respect to FZA from the "get_payments_table" routine.
         #
         if not vir and capitalisation == '360':  # Bullet.
             f_s = calculate_interest_factor(apy, _1 / decimal.Decimal(360))
@@ -1945,20 +1933,20 @@ def get_daily_returns(
         elif not vir and capitalisation == '30/360':  # Juros mensais, Price, Livre.
             v01 = calculate_interest_factor(apy, _1 / decimal.Decimal(12)) - _1  # Fator mensal.
 
-            # O período um tem tratamento especial aqui, para lidar com variações no aniversário do empréstimo.
+            # The first period has special handling here, to deal with variations in the loan anniversary.
             #
-            # Exemplo, o projeto da Resolvvi de junho de 2023. O primeiro período tem 32 dias, em vez dos esperados 30
-            # dias – de 19/06/2023, inclusive, a 21/07/2023, exclusive. A data final do período um foi deslocada em
-            # decorrência da data de aniversário do projeto, que é 21/12/2025.
+            # Example, the project of Resolvvi from June 2023. The first period has 32 days, instead of the expected 30
+            # days – from 19/06/2023, inclusive, to 21/07/2023, exclusive. The end date of the first period was
+            # shifted due to the loan anniversary, which is 21/12/2025.
             #
-            # Para contemplar os casos em que a data final do primeiro período do empréstimo foi adulterada em relação
-            # ao seu início de rendimento, devido a alterações no aniversário do empréstimo, o cálculo do fator de
-            # juro fixo emprega a diferença de dias entre as datas inicial e final do período.
+            # To account for cases where the start date of the loan's first period was altered in relation to its
+            # start of yield, due to changes in the loan anniversary date, the calculation of the fixed interest rate
+            # factor employs the difference in days between the start and end dates of the period.
             #
-            # Em um outro período qualquer, basta saber a quantidade de dias que tem o mês em que ele se inicia.
+            # In any other period, it is sufficient to know the number of days in the month in which it begins.
             #
-            # Observe que pagamentos extraordinários não definem os intervalos de um período de um cronograma de
-            # amortizações. Por isso testa-se pelo tipo de "tup[1]" abaixo.
+            # Observe that irregular amortizations do not define the intervals of a schedule's period. Therefore, the
+            # following test is used to determine the period's interval.
             #
             if p == 1 and (type(tup[1]) is Amortization.Bare or ref < tup[1].date):
                 v02 = decimal.Decimal((amortizations[1].date - amortizations[0].date).days)  # Dias no período.
@@ -1974,12 +1962,13 @@ def get_daily_returns(
         elif vir and vir.code == 'CDI' and capitalisation == '252':  # Bullet, Juros mensais, Livre.
             f_v = next(idxs) * vir.percentage / decimal.Decimal(100) + _1
 
-            # Lembrar que índice na base 252 só rende em dia útil. Assim funciona o CDI. Nesse caso o fator fixo
-            # deve acompanhar o variável. Só deve ser calculado em dia útil.
+            # Note that the index on a 252 basis only earns on a business day. This is how the CDI works. In this case the
+            # fixed factor must follow the variable. It should only be calculated on a business day.
             #
-            # FIXME: se porventura o índice variável, "next(idxs)", for zero, e se tratar de um dia útil, o fator
-            # fixo não será calculado. Nunca vi o CDI ser zero, mas vale contemplar esse caso. O correto abaixo é
-            # testar se o dia é útil, e não se o valor do fator "f_c" é maior que um.
+            # FIXME: if by chance the variable factor, "next(idxs)", is zero, and if it happens to be a business day, the
+            # fixed factor will not be calculated. I've never seen the CDI be zero, but it's worth considering this case.
+            # The correct thing to do below is to test if the day is a business day, not if the value of the factor "f_c"
+            # is greater than one.
             #
             if f_v > _1:
                 f_s = calculate_interest_factor(apy, _1 / decimal.Decimal(252))
@@ -2000,47 +1989,47 @@ def get_daily_returns(
         else:
             raise NotImplementedError(f'Unsupported capitalisation {capitalisation} for fixed interest rate')
 
-        # Fase B.1, FRU, ou Fase Rafa Um. Levemente alterada com relação à FRU da rotina "get_payments_table".
+        # Phase B.1, FRU, or Phase Rafa Um. Slightly altered with respect to FRU from the "get_payments_table" routine.
         while ref == tup[1].date:
-            if type(tup[1]) is Amortization:  # Caso de uma amortização regular.
+            if type(tup[1]) is Amortization:  # Case of a regular amortization.
                 adj = (_1 - regs.principal.amortization_ratio.current) / (_1 - regs.principal.amortization_ratio.regular)  # [FATOR-AJUSTE].
 
-                # Registra o percentual de amortização do principal.
+                # Registers the principal amortization percentage.
                 gens.principal_tracker_1.send(tup[1].amortization_ratio * adj)
 
-                # Registra o percentual regular de amortização do principal.
+                # Registers the regular principal amortization percentage.
                 gens.principal_tracker_2.send(tup[1].amortization_ratio)
 
-                # Registra o valor de juros a pagar no período.
+                # Registers the interest value to be paid in the period.
                 if tup[1].amortizes_interest:
                     gens.interest_tracker_2.send(regs.interest.current + regs.principal.amortization_ratio.current * regs.interest.deferred)
 
-                # Registra o valor de correção a pagar no período (FIXME: implementar).
+                # Registers the price level value to be paid in the period (FIXME: implement).
                 # gens.price_level_tracker_2.send(…)
 
-                # Encerra o acumulador de juros do período anterior.
+                # Ends the interest accumulator from the previous period.
                 regs.interest.current = _0
 
-                p += 1  # O período só incrementa em amortizações regulares.
+                p += 1  # The period only increments in the case of regular amortizations.
 
                 cnt = 1
 
-            # Caso de um adiantamento (amortização extraordinária).
+            # Case of an advance (extraordinary amortization).
             #
-            # Lembre-se que um adiantamento apresenta apenas um valor bruto que será pago em uma determinada data. Esse
-            # valor bruto será fatorado em diversos componentes da dívida, de forma ordenada. O primeiro componente da
-            # dívida a ser amortizado é o juro (spread). Após o pagamento dos juros, o que sobra deve ser deduzido da
-            # correção monetária. Finalmente, abate-se o valor restante do principal. No bloco de código abaixo,
+            # Remember that an advance presents only a gross value to be paid on a certain date. This gross value will be
+            # factored into various components of the debt, in an ordered manner. The first component of the debt to be
+            # amortized is the interest (spread). After payment of the interest, what remains must be deducted from the
+            # monetary correction. Finally, subtract the remaining value of the principal. In the block of code below,
             #
-            #  • "val1" é o valor de juros a pagar.
+            #  • "val1" is the value of interest to be paid.
             #
-            #  • "val2" é o valor da correção a pagar. FIXME: a variável "plfv" deveria ser multiplicada pelo
-            #    percentual de amortização do principal do período, e não pelo decimal um.
+            #  • "val2" is the value of the correction to be paid. FIXME: the variable "plfv" should be multiplied by the
+            #    principal amortization ratio of the period, and not by the decimal one.
             #
-            #  • "val3" é o valor a amortizar do principal.
+            #  • "val3" is the value to amortize the principal.
             #
-            # Observe que a ordem de cálculo dessas variáveis corresponde à ordem de fatoração do valor bruto da
-            # antecipação.
+            # Observe that the order of calculation of these variables corresponds to the order of factorisation of the
+            # gross value of the advance.
             #
             else:
                 ent = t.cast(Amortization.Bare, tup[1])  # O Mypy não consegue inferir o tipo da variável "ent" aqui.
@@ -2050,35 +2039,35 @@ def get_daily_returns(
                 val2 = min(val0 - val1, plfv * _1)
                 val3 = val0 - val1 - val2
 
-                # Verifica se o valor do pagamento irregular não ultrapassa o saldo em aberto.
+                # Checks if the value of the irregular amortization does not exceed the remaining balance.
                 if ent.value != Amortization.Bare.MAX_VALUE and ent.value > _Q(calc_balance()):
                     raise Exception(f'the value of the amortization, {ent.value}, is greater than the remaining balance of the loan, {_Q(calc_balance())}')
 
-                # Registra o percentual de amortização do principal.
+                # Registers the principal amortization percentage.
                 gens.principal_tracker_1.send(val3 / principal)
 
-                # Registra o valor de juros a pagar no período.
+                # Registers the interest value to be paid in the period.
                 gens.interest_tracker_2.send(val1)
 
-                # Registra o valor de correção a pagar no período (FIXME: implementar).
+                # Registers the correction value to be paid in the period (FIXME: implement).
                 # gens.price_level_tracker_2.send(val2)
 
-                # Encerra o acumulador de juros do período anterior.
+                # Ends the interest accumulator from the previous period.
                 regs.interest.current = _0
 
             tup = tup[1], next(itr)
 
-        # Registra o valor do juros incorrido no dia.
+        # Registers the value of the accrued interest on the day.
         gens.interest_tracker_1.send(calc_balance() * (f_s * f_v * f_c - _1))
 
-        # Registra a correção do período (FIXME: implementar).
+        # Registers the correction value to be paid in the period (FIXME: implement).
         # gens.price_level_tracker_1.send(…)
 
-        # Se o saldo é zero, o cronograma acabou.
+        # If the balance is zero, the schedule is over.
         if _Q(calc_balance()) == _0:
             break
 
-        # Monta a instância de rendimento diário, saída da rotina. Faz arredondamentos.
+        # Builds the daily return instance, output of the routine. Makes rounding.
         dr = DailyReturn()
 
         dr.no = cnt
@@ -2107,7 +2096,7 @@ def preprocess_bullet(
 ) -> t.List[Amortization | Amortization.Bare]:
     sched: t.List[Amortization | Amortization.Bare] = []
 
-    # 1. Valida.
+    # 1. Validate.
     if term <= 0:  # See [ANNOTATED_TYPES] above.
         raise ValueError('"term" must be a greater than, or equal to, one')
 
@@ -2130,11 +2119,11 @@ def preprocess_bullet(
         elif anniversary_date and x.date > anniversary_date:
             raise ValueError(f'"insertions[{i}].date", {x.date}, succeeds "anniversary_date", {anniversary_date}')
 
-    # Base de cálculo 365 somente para pré-fixadas históricas. Recomenda-se o uso da base 360 para pré-fixadas.
+    # Base of calculation 365 only for historical pre-fixed – recommend using 360 days for pre-fixed.
     if capitalisation == '365':
         _LOG.warning('capitalising 365 days per year exists solely for legacy Bullet support – prefer 360 days')
 
-    # 2.1. Cria as amortizações. Fluxo regular, sem inserções. Rápido.
+    # 2.1. Create the amortizations. Regular flow, without insertions. Fast.
     if not insertions and not vir:
         sched.append(Amortization(date=zero_date, amortizes_interest=False))
         sched.append(Amortization(date=anniversary_date or zero_date + _MONTH * term, amortization_ratio=_1))
@@ -2142,7 +2131,7 @@ def preprocess_bullet(
         if anniversary_date:
             sched[-1].dct_override = DctOverride(anniversary_date, anniversary_date, predates_first_amortization=False)
 
-    # 2.2. Cria as amortizações. Fluxo regular com Índice Nacional de Preços ao Consumidor Amplo, sem inserções. Rápido.
+    # 2.2. Create the amortizations. Regular flow with National Index of Consumer Prices, without insertions. Fast.
     elif not insertions and vir and vir.code == 'IPCA':
         dif = min(_delta_months(calc_date.value, zero_date), term) if calc_date else term
         pla = PriceLevelAdjustment('IPCA', base_date=zero_date.replace(day=1), period=dif)
@@ -2153,7 +2142,7 @@ def preprocess_bullet(
         if anniversary_date:
             sched[-1].dct_override = DctOverride(anniversary_date, anniversary_date, predates_first_amortization=False)
 
-    # 2.3. Cria as amortizações. Faz inserções no fluxo regular. Lento.
+    # 2.3. Create the amortizations. Insertions in the regular flow. Slow.
     else:
         lst = []
 
@@ -2190,7 +2179,7 @@ def preprocess_jm(
     lst1 = []
     lst2 = []
 
-    # 1. Valida.
+    # 1. Validate.
     if term <= 0:  # See [ANNOTATED_TYPES] above.
         raise ValueError('"term" must be a greater than, or equal to, one')
 
@@ -2213,11 +2202,11 @@ def preprocess_jm(
         elif anniversary_date and x.date > (due := anniversary_date + _MONTH * (term - 1)):
             raise ValueError(f'"insertions[{i}].date", {x.date}, succeeds the last regular payment date, {due}')
 
-    # 2. Cria as amortizações.
+    # 2. Create the amortizations.
     if anniversary_date and anniversary_date == zero_date + _MONTH:
         anniversary_date = None
 
-    # Fluxo regular, sem inserções. Rápido.
+    # Regular flow, without insertions. Fast.
     lst1.append(Amortization(date=zero_date, amortizes_interest=False))  # Data zero (início do rendimento).
 
     for i in range(1, term + 1):
@@ -2236,7 +2225,7 @@ def preprocess_jm(
 
         lst1.append(ent)
 
-    # Faz inserções no fluxo regular. Lento.
+    # Insertions in the regular flow. Slow.
     if insertions:
         for skel in _interleave(lst1, insertions, key=lambda x: x.date):
             lst2.append(skel.item)
@@ -2269,7 +2258,7 @@ def preprocess_price(
     lst1 = []
     lst2 = []
 
-    # 1. Valida.
+    # 1. Validate.
     if term <= 0:  # See [ANNOTATED_TYPES] above.
         raise ValueError('"term" must be a greater than, or equal to, one')
 
@@ -2289,11 +2278,11 @@ def preprocess_price(
         elif anniversary_date and x.date > (due := anniversary_date + _MONTH * (term - 1)):
             raise ValueError(f'"insertions[{i}].date", {x.date}, succeeds the last regular payment date, {due}')
 
-    # 2. Cria as amortizações.
+    # 2. Create the amortizations.
     if anniversary_date and anniversary_date == zero_date + _MONTH:
         anniversary_date = None
 
-    # Fluxo regular, sem inserções. Rápido.
+    # Regular flow, without insertions. Fast.
     lst1.append(Amortization(date=zero_date, amortizes_interest=False))  # Data zero (início do rendimento).
 
     for i, y in enumerate(amortize_fixed(principal, apy, term), 1):
@@ -2304,7 +2293,7 @@ def preprocess_price(
         if i == 1 and anniversary_date:
             lst1[-1].dct_override = DctOverride(anniversary_date, anniversary_date, predates_first_amortization=False)
 
-    # Faz inserções no fluxo regular. Lento.
+    # Insertions in the regular flow. Slow.
     if insertions:
         for skel in _interleave(lst1, insertions, key=lambda x: x.date):
             lst2.append(skel.item)
@@ -2327,7 +2316,7 @@ def preprocess_livre(
     sched: t.List[Amortization | Amortization.Bare] = []
     aux = _0
 
-    # 1. Valida.
+    # 1. Validate.
     if len(amortizations) < 2:
         raise ValueError('at least two amortizations are required: the start of the schedule, and its end')
 
@@ -2359,11 +2348,11 @@ def preprocess_livre(
     if not math.isclose(aux, _1):
         raise ValueError('the accumulated percentage of the amortizations does not reach 1.0')
 
-    # 2. Cria as amortizações.
-    if not insertions:  # Fluxo regular, sem inserções.
+    # 2. Create the amortizations.
+    if not insertions:  # Regular flow, without insertions.
         sched.extend(amortizations)
 
-    else:  # Fluxo extraordinário, com inserções.
+    else:  # Extraordinary flow, with insertions.
         for skel in _interleave(amortizations, insertions, key=lambda x: x.date):
             if skel.from_a:
                 sched.append(skel.item)
@@ -2768,42 +2757,41 @@ def amortize_fixed(principal: decimal.Decimal, apy: decimal.Decimal, term: int) 
 
             yield amr / principal
 
-# FIXME: rotina não suporta IPCA.
+# FIXME: the routine does not support IPCA.
 @typeguard.typechecked
 def get_delinquency_charges(
     outstanding_balance: decimal.Decimal,  # Unpaid principal plus interest.
     arrears_period: t.Tuple[datetime.date, datetime.date],  # Arrear, or delinquency period.
 
-    loan_apy: decimal.Decimal,  # Taxa anual de juros remuneratórios a.a. (spread).
-    loan_vir: t.Optional[VariableIndex] = None,  # Índice variável.
+    loan_apy: decimal.Decimal,  # Annual interest rate for remuneratory interest (spread).
+    loan_vir: t.Optional[VariableIndex] = None,  # Variable index.
 
     fee_rate: decimal.Decimal = LatePayment.FEE_RATE,
     fine_rate: decimal.Decimal = LatePayment.FINE_RATE
 ) -> types.SimpleNamespace:
     '''
-    Calcula cobranças extraordinárias para um empréstimo em atraso.
+    Calculates extra charges for a delinquent loan.
 
-      • "arrears_period" (t.Tuple[datetime.date, datetime.date]): o período de inadimplência, representado como uma tupla
-        com datas de início e fim.
+      • "arrears_period" (t.Tuple[datetime.date, datetime.date]): the delinquency period, represented as a tuple with
+        start and end dates.
 
-      • "outstanding_balance" (decimal.Decimal): o saldo devedor do empréstimo, incluindo principal e juros não pagos, na data
-        inicial.
+      • "outstanding_balance" (decimal.Decimal): the loan's outstanding balance, including unpaid principal and interest, at
+        the initial date.
 
-      • "loan_apy" (decimal.Decimal): A taxa percentual anual do empréstimo (taxa de juros fixa).
+      • "loan_apy" (decimal.Decimal): the annual interest rate for remuneratory interest (spread).
 
-      • "loan_zero_date" (datetime.date): A data inicial do cronograma de pagamentos do empréstimo.
+      • "loan_zero_date" (datetime.date): the initial date of the loan's payment schedule.
 
-      • "loan_vir" (t.Optional[VariableIndex], opcional): O índice variável, se aplicável. Padrão é None.
+      • "loan_vir" (t.Optional[VariableIndex], optional): O índice variável, se aplicável. Padrão é None.
 
-      • "fee_rate" (decimal.Decimal, opcional): a taxa de juros de mora. Padrão é LatePayment.FEE_RATE.
+      • "fee_rate" (decimal.Decimal, optional): the fee rate. Default is LatePayment.FEE_RATE.
 
-      • "fine_rate" (decimal.Decimal, opcional): taxa de multa. Padrão é LatePayment.FINE_RATE.
+      • "fine_rate" (decimal.Decimal, optional): the fine rate. Default is LatePayment.FINE_RATE.
 
-    Retorna um objeto contendo as cobranças de inadimplência calculadas, incluindo taxas de atraso, multas e outras
-    penalidades relevantes.
+    Returns an object containing the delinquency charges calculated, including interest, mora, and fine.
 
-    Exemplo de cálculo de juros, mora, e multa, para um empréstimo de R$ 10.000,00, com taxa de juros fixa de 5% a.a.,
-    realizado em 1 de janeiro de 2022, e com pagamento atrasado de 1 de janeiro de 2023 a 1 de fevereiro de 2023:
+    Example calculation of interest, mora, and fine, for a loan of R$ 10,000.00, with a fixed interest rate of 5% a.a.,
+    performed on January 1, 2022, and with a delayed payment from January 1, 2023 to January 1, 2023:
 
         >>> get_delinquency_charges(  # doctest: +SKIP
                 arrears_period=(datetime.date(2023, 1, 1), datetime.date(2023, 2, 1)),
@@ -2813,29 +2801,28 @@ def get_delinquency_charges(
             )
     '''
 
-    # Fator de juros remuneratórios, "f_1"
-    # ------------------------------------
+    # Interest factor, "f_1"
+    # ----------------------
     #
-    # Calculado em cima da taxa fixa anual da operação (APY), mas:
+    # Calculated based on the fixed annual interest rate of the operation (APY), but:
     #
-    # • Para operações pré-fixadas, considera os dias corridos entre a data prevista para o pagamento ordinário e a
-    #   data do pagamento em atraso.
+    # • For fixed-rate operations, considers the number of days between the scheduled payment date and the payment
+    #   date in arrears.
     #
-    # • Para operações pós-fixadas CDI, considera os dias úteis bancários entre a data prevista para o pagamento
-    #   ordinário e a data do pagamento em atraso.
+    # • For CDI-linked operations, considers the number of business days between the scheduled payment date and the
+    #   payment date in arrears.
     #
-    # Fator de juros moratórios, "f_2"
-    # --------------------------------
+    # Penalty interest factor, "f_2"
+    # ------------------------------
     #
-    # Tanto para operações pré-fixadas, quanto pós-fixadas, é calculado a partir de uma taxa fixa mensal por atraso
-    # ("fee_rate"), considerando os dias corridos entre a data prevista para o pagamento ordinário e a data do
-    # pagamento em atraso. Observe, entretanto, que esse fator considera a fórmula de juros simples, e mês com duração
-    # de 30 dias corridos.
+    # For both fixed-rate and CDI-linked operations, calculated from a fixed monthly fee rate by delay
+    # ("fee_rate"), considering the number of days between the scheduled payment date and the payment date in arrears.
+    # Note, however, that this factor considers the simple interest formula, with a month of 30 days.
     #
-    # Fator de multa, "f_3"
+    # Fine factor, "f_3"
     # ---------------------
     #
-    # A multa é fixa ("fine_rate"). Não há variação do fator de acordo com a extensão do período em atraso.
+    # The fine is fixed ("fine_rate"). The factor does not vary according to the length of the delay period.
     #
     f_1 = f_2 = f_3 = _1
 
@@ -2856,9 +2843,9 @@ def get_delinquency_charges(
     elif loan_vir:
         raise NotImplementedError()
 
-    v_1 = (outstanding_balance) * (f_1 - _1)  # Valor de juros remuneratórios. ATENÇÃO: não quantizar aqui.
-    v_2 = (outstanding_balance + v_1) * (f_2 - _1)  # Valor de juros moratórios. ATENÇÃO: não quantizar aqui.
-    v_3 = (outstanding_balance + v_1 + v_2) * (f_3 - _1)  # Valor de multa. ATENÇÃO: não quantizar aqui.
+    v_1 = (outstanding_balance) * (f_1 - _1)  # Value of remuneratory interest. ATENTION: do not quantize here.
+    v_2 = (outstanding_balance + v_1) * (f_2 - _1)  # Value of penalty interest. ATENTION: do not quantize here.
+    v_3 = (outstanding_balance + v_1 + v_2) * (f_3 - _1)  # Value of fine. ATENTION: do not quantize here.
     out = types.SimpleNamespace()  # FIXME: create a data class for this.
 
     out.extra_gain = _Q(v_1)
@@ -2867,26 +2854,26 @@ def get_delinquency_charges(
 
     return out
 
-# FIXME: remover essa rotina. Criar uma auxiliar nos módulos que precisem de lidar com uma prestação de atraso entrando
-# e outra saindo. Tal auxiliar deve usar a rotina "get_delinquency_charges" para calcular os valores do atraso.
+# FIXME: remove this routine. Create an auxiliary in the modules that need to handle a delayed payment entering and
+# exiting. Such auxiliary should use the "get_delinquency_charges" routine to calculate the values of the delay.
 #
 @typeguard.typechecked
 def get_late_payment(
     in_pmt: t.Union[LatePayment, LatePriceAdjustedPayment],
 
-    # Atraso, data do pagamento.
+    # Delay, payment date.
     calc_date: datetime.date,
 
-    # Dados extras do pagamento. FIXME: os campos abaixo poderiam ser parte da classe Payment, como meta dados.
-    apy: decimal.Decimal,  # Taxa anual de juros remuneratórios a.a. (spread).
-    zero_date: datetime.date,  # Data inicial do cronograma de pagamentos, para cálculo do I.R.
-    vir: t.Optional[VariableIndex] = None,  # Índice variável.
+    # Extra payment data. FIXME: the fields below could be part of the Payment class, as meta data.
+    apy: decimal.Decimal,  # Annual remuneratory interest rate (spread).
+    zero_date: datetime.date,  # Initial date of the payment schedule, for tax calculation.
+    vir: t.Optional[VariableIndex] = None,  # Variable index.
 
-    # Atraso, taxas praticadas.
+    # Delay, fees and fines.
     fee_rate: decimal.Decimal = LatePayment.FEE_RATE,
     fine_rate: decimal.Decimal = LatePayment.FINE_RATE,
 
-    # Dados extras para o índice de correção.
+    # Extra data for the price level adjustment index.
     pla_operations: t.List[t.Tuple[datetime.date, bool, PriceLevelAdjustment]] = []
 ) -> t.Union[LatePayment, LatePriceAdjustedPayment]:
     '''Generates a late payment output.'''
@@ -2914,11 +2901,11 @@ def get_late_payment(
         f_3 = _1 + (fine_rate / decimal.Decimal(100)) if in_pmt.date < calc_date else _1
         f_c = _1
 
-        # Composição do parâmetro "pla_operations":
+        # Composition of the "pla_operations" parameter:
         #
-        # 1. Data de cálculo do fator de correção.
-        # 2. Se deve considerar o período anterior ou posterior à data de cálculo.
-        # 3. Informações adicionais para o cálculo do fator de correção (PLA).
+        # 1. Calculation date of the correction factor.
+        # 2. Whether to consider the period before or after the calculation date.
+        # 3. Additional information for the calculation of the correction factor (PLA).
         #
         for e_1 in pla_operations:
             if e_1[2].code == 'IPCA':
@@ -2941,9 +2928,9 @@ def get_late_payment(
         raise NotImplementedError()
 
     if not vir or vir.code == 'CDI':
-        v_1 = (in_pmt.raw) * (f_1 - _1)  # Valor de juros remuneratórios. ATENÇÃO: não quantizar aqui.
-        v_2 = (in_pmt.raw + v_1) * (f_2 - _1)  # Valor de juros moratórios. ATENÇÃO: não quantizar aqui.
-        v_3 = (in_pmt.raw + v_1 + v_2) * (f_3 - _1)  # Valor de multa. ATENÇÃO: não quantizar aqui.
+        v_1 = (in_pmt.raw) * (f_1 - _1)  # Value of remuneratory interest. ATENTION: do not quantize here.
+        v_2 = (in_pmt.raw + v_1) * (f_2 - _1)  # Value of penalty interest. ATENTION: do not quantize here.
+        v_3 = (in_pmt.raw + v_1 + v_2) * (f_3 - _1)  # Value of fine. ATENTION: do not quantize here.
         val = in_pmt.gain + in_pmt.extra_gain + in_pmt.penalty + in_pmt.fine + _Q(v_1) + _Q(v_2) + _Q(v_3)
         o_1 = LatePayment()
 
@@ -2972,13 +2959,13 @@ def get_late_payment(
         if type(in_pmt) is LatePriceAdjustedPayment:
             pla = _Q(in_pmt.pla + (in_pmt.amort + in_pmt.pla) * (f_c - _1))
 
-        v_1 = (raw) * (f_1 - _1)  # Valor de juros remuneratórios.
-        v_2 = (raw + v_1) * (f_2 - _1)  # Valor de juros moratórios.
-        v_3 = (raw + v_1 + v_2) * (f_3 - _1)  # Valor de multa.
+        v_1 = (raw) * (f_1 - _1)  # Value of remuneratory interest.
+        v_2 = (raw + v_1) * (f_2 - _1)  # Value of penalty interest.
+        v_3 = (raw + v_1 + v_2) * (f_3 - _1)  # Value of fine.
 
-        v_1 = _Q(v_1)  # ATENÇÃO: deve quantizar aqui?
-        v_2 = _Q(v_2)  # ATENÇÃO: deve quantizar aqui?
-        v_3 = _Q(v_3)  # ATENÇÃO: deve quantizar aqui?
+        v_1 = _Q(v_1)  # ATENTION: should quantize here?
+        v_2 = _Q(v_2)  # ATENTION: should quantize here?
+        v_3 = _Q(v_3)  # ATENTION: should quantize here?
 
         v_4 = raw + (v_1 + v_2 + v_3)
         v_5 = gain + extra_gain + penalty + fine + (v_1 + v_2 + v_3) + pla
