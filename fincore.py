@@ -7,30 +7,30 @@
 #
 # [FINCORE V3]
 #
-# I think this module is in its third generation. There was also a generation zero, which preceded the creation of this
-# module, when the financial calculation routines were auxiliary to the "util" module. At that time we only contemplated
-# fixed-rate operations, normal flows.
+# This module is in its third generation. There was also a generation zero, which preceded the creation of this
+# module, when the financial calculation routines were auxiliary to the "util" module. At that time we only handled
+# fixed-rate operations with normal flows.
 #
-# The first generation of Fincore was born on March 22, 2022, in the support repository, in the form of a Jupyter
-# notebook, "lab-000.ipynb". See revision "6f12bab6dc". In April it was integrated into INCO's backend with the name
+# The first generation of Fincore was born on March 22, 2022, in the support repository, as a Jupyter
+# notebook, "lab-000.ipynb". See revision "6f12bab6dc". In April it was integrated into INCO's backend as
 # "util.cli.fin_lib".
 #
-# The second generation came from a refactoring in November 2022, revision "ca58a71c19". At that time the library suffered
-# from anemia. The data types had no names or attributes. All input and output happened through tuples, or
+# The second generation came from a refactoring in November 2022, revision "ca58a71c19". At that time, the library suffered
+# from anemia. The data types had no names or attributes. All input and output happened through tuples or
 # "collections.namedtuple". The public API was extremely confusing, with poorly designed factories.
 #
-# In July 2023, I did a new refactoring, now with a focus on making Fincore's algorithms universal, which enters its
-# third generation. Revision "42bdf101c5" and subsequent. We still had arbitrary operating limitations, and
+# In July 2023, I did a new refactoring, now focusing on making Fincore's algorithms universal, which enters its
+# third generation. Revision "42bdf101c5" and subsequent. We still had arbitrary operating limitations and
 # errors. What was mere inconvenience became an impediment to new INCO operations. Here is a summary of what
-# changed.
+# changed:
 #
-#   • The core became better structured and documented. It operates in three well-defined phases.
+#   • The core became better structured and documented. It operates in three well-defined phases:
 #
 #     1. Calculates "spread" and correction factors.
 #     2. Records values of the current iteration of the schedule: principal and amortization percentage, interest, correction etc.
 #     3. Creates the output instance of the iteration, Payment / PriceAdjustedPayment, and rounding.
 #
-#   • It became more generic.
+#   • It became more generic:
 #
 #     • Covers 100% of cases in Free mode.
 #       • Example: quarterly payments.
@@ -38,7 +38,7 @@
 #     • Covers more alternative flows.
 #       • Example: payment in grace period.
 #
-#   • Errors were fixed.
+#   • Errors were fixed:
 #
 #     • Does not incorporate interest into principal.
 #       • This fixes operations with grace periods.
@@ -46,7 +46,7 @@
 #     • Does not project monetary correction after calculation date.
 #       • This fixes the 3040 maturity schedule.
 #
-#   • Public API improved. Prepayment became more semantic.
+#   • Public API improved. Prepayment became more semantic:
 #
 #     • Takes the prepaid value, not a percentage value.
 #       • Death of the "fincore.get_remaining_amortization" routine.
@@ -59,62 +59,62 @@
 #
 # [WEAKNESSES]
 #
-#   • O Fincore trabalha com datas, não data/hora. Por esse motivo, se for preciso amortizar duas vezes em um mesmo dia,
-#     sua ordem fica implícita na tabela de amortizações. Idealmente, esse módulo seria agnóstico à mensurações de tempo
-#     decorrido. O campo "date" da classe Amortization deveria aceitar tanto uma data, como uma data/hora. A saída
-#     do "get_payments_table" deveria se ajustar de acordo com o tipo de dado usado na entrada. Internamente, o Fincore
-#     poderia simplesmente descartar a informação de hora, e lidar apenas com datas.
+#   • Fincore works with dates, not datetime. For this reason, if it's necessary to amortize twice in the same day,
+#     their order is implicit in the amortization table. Ideally, this module would be agnostic to elapsed time measurements.
+#     The "date" field of the Amortization class should accept both a date and a datetime. The output
+#     of "get_payments_table" should adjust according to the data type used in the input. Internally, Fincore
+#     could simply discard the time information and deal only with dates.
 #
-#   • Arredondamento não está documentado. Explicitar que o Fincore faz arredondamentos na saída, ou seja, instâncias de
-#     Payment ou PriceAdjustedPayment sempre estão arredondados. Mas não há arredondamentos internos. Exemplificar.
+#   • Rounding is not documented. Explicitly state that Fincore rounds on output, i.e., instances of
+#     Payment or PriceAdjustedPayment are always rounded. But there are no internal roundings. Provide examples.
 #
-#   • O comportamento da biblioteca em caso de índice negativo poderia ser personalizável.
+#   • The library's behavior in case of a negative index could be customizable.
 #
-#   • Como essa biblioteca se comporta em caso de cálculos futuros? Hoje ela faz projeção automaticamente. Isso poderia
-#     ser parametrizável. A rotina que calcula a tabela de pagamentos poderia falhar caso um índice não fosse encontrado
-#     (data no futuro).
+#   • How does this library behave in case of future calculations? Currently, it projects automatically. This could
+#     be parameterizable. The routine that calculates the payment table could fail if an index is not found
+#     (future date).
 #
-#   • Como fica o fator de correção menor que zero? Hoje, quando há antecipação, não há dedução de correção caso ela já
-#     seja negativa. Ou seja, o valor antecipado vai ser deduzido dos juros e depois do principal. Isso também poderia
-#     ser parametrizável.
+#   • What about a correction factor less than zero? Currently, when there's an advance payment, there's no deduction of correction if it's already
+#     negative. In other words, the advanced value will be deducted from interest and then from principal. This could also
+#     be parameterizable.
 #
-#   • Por arredondar valores apenas na saída, não se deve reusar valores de saída de um cronograma de pagamento como
-#     entrada. Por exemplo, não se deve rodar a rotina nuclear, "get_payments_table", com uma data de cálculo e somar o
-#     valor bruto com o saldo devedor de saída para se obter o valor de uma suposta antecipação total
+#   • Because it only rounds values on output, output values from a payment schedule should not be reused as
+#     input. For example, one should not run the core routine, "get_payments_table", with a calculation date and add the
+#     gross value to the output debt balance to obtain the value of a supposed total prepayment
 #
 #       _tail = lambda iterable: iter(collections.deque(iterable, maxlen=1))
-#       kargs = { … }  # Opções de um cronograma de amortização Livre, incluindo uma data de cálculo.
+#       kargs = { … }  # Options for a Free amortization schedule, including a calculation date.
 #
-#       # Executa o Fincore (1ª vez) para obter a posição na data de cálculo.
+#       # Execute Fincore (1st time) to get the position on the calculation date.
 #       row = next(_tail(fincore.build(**kargs)))
 #
-#       # Aqui, "row.raw + row.bal" seria o valor de uma antecipação total na data de cálculo, mas nem sempre vai ser.
+#       # Here, "row.raw + row.bal" would be the value of a total prepayment on the calculation date, but it won't always be.
 #       kargs['insertions'].append(fincore.Amortization.Bare(date=datetime.date(…), value=row.raw + row.bal))
 #
-#       # Executa o Fincore (2ª vez). Teoricamente, o cronograma de pagamento terminaria na antecipação.
+#       # Execute Fincore (2nd time). Theoretically, the payment schedule would end at the prepayment.
 #       row = next(_tail(fincore.build(**kargs)))
 #
-#     No exemplo anterior, tanto "row.raw" quanto "row.bal" podem ter sido arredondados para cima, e o valor da
-#     antecipação seria superior ao saldo remanescente do empréstimo em um centavo. Melhor é ser explícito, e usar
-#     "fincore.Amortization.Bare.MAX_VALUE" para sinalizar que todo o valor em aberto do empréstimo deve ser
-#     antecipado.
+#     In the previous example, both "row.raw" and "row.bal" may have been rounded up, and the value of the
+#     prepayment would be higher than the remaining balance of the loan by one cent. It's better to be explicit and use
+#     "fincore.Amortization.Bare.MAX_VALUE" to signal that the entire outstanding value of the loan should be
+#     prepaid.
 #
 #       fincore.Amortization.Bare(date=datetime.date(…), value=fincore.Amortization.Bare.MAX_VALUE)
 #
-#     De forma análoga, se ocorrer arrendondamento para baixo, o valor da antecipação não quitará toda operação. Um
-#     valor inadequado para uma antecipação total poderia passar despercebido.
+#     Similarly, if rounding down occurs, the prepayment value won't settle the entire operation. An
+#     inadequate value for a total prepayment could go unnoticed.
 #
-#     FIXME: se o Fincore fizesse arredondamentos internamente, o problema descrito acima não aconteceria. Seria
-#     possível realimentar um cronograma de amortizações com valores provenientes de um cronograma de pagamentos gerado
-#     por uma invocação prévia da rotina nuclear.
+#     FIXME: if Fincore did internal rounding, the problem described above wouldn't happen. It would be
+#     possible to feed an amortization schedule with values from a payment schedule generated
+#     by a previous invocation of the core routine.
 #
 # [TODO]
 #
-#   • Implementar validações para prevenir entradas do tipo "Amortization.Bare" não quantizadas nas rotinas auxiliares,
-#     as "factories", e em "get_payments_table".
+#   • Implement validations to prevent non-quantized "Amortization.Bare" inputs in auxiliary routines,
+#     the "factories", and in "get_payments_table".
 #
-#   • Implementar uma memória para o IPCA pago e para o acumulado, em caso de antecipação, de forma semelhante aos juros
-#     pagos. Lembrar que os juros se compõem, mas o IPCA não.
+#   • Implement a memory for paid IPCA and for the accumulated, in case of prepayment, similar to paid interest.
+#     Remember that interest compounds, but IPCA doesn't.
 #
 
 '''
