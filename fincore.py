@@ -1092,32 +1092,34 @@ class InMemoryBackend(IndexStorageBackend):
 
     @typeguard.typechecked
     def get_cdi_indexes(self, begin: datetime.date, end: datetime.date) -> t.Iterable[DailyIndex]:
-        if begin >= self._registry_cdi[0][0] and end >= begin:
+        if self._registry_cdi and self._registry_cdi[0] and begin >= self._registry_cdi[0][0] and end >= begin:
+            dzro = self._registry_cdi[0][0]
             save = self._registry_cdi[0][2]
 
-            for d0, d1, value in self._registry_cdi:
-                d = d0
-
-                while d <= d1:
-                    if d <= end:
+            for dzro, done, value in self._registry_cdi:
+                while dzro <= done:
+                    if dzro <= end:
                         save = value
 
-                    if begin <= d <= end and d.weekday() < 5 and d not in self._ignore_cdi:
-                        yield DailyIndex(date=d, value=value)
+                    if begin <= dzro <= end and dzro.weekday() < 5 and dzro not in self._ignore_cdi:
+                        yield DailyIndex(date=dzro, value=value)
 
-                    d += datetime.timedelta(days=1)
+                    dzro += datetime.timedelta(days=1)
 
-            while d <= end:
-                if d >= begin and d.weekday() < 5 and d not in self._ignore_cdi:
-                    yield DailyIndex(date=d, value=save)
+            while dzro <= end:
+                if dzro >= begin and dzro.weekday() < 5 and dzro not in self._ignore_cdi:
+                    yield DailyIndex(date=dzro, value=save)
 
-                d += datetime.timedelta(days=1)
+                dzro += datetime.timedelta(days=1)
 
-        elif begin >= self._registry_cdi[0][0]:
+        elif self._registry_cdi and self._registry_cdi[0] and begin >= self._registry_cdi[0][0]:
             raise ValueError('the initial date must be greater than, or equal to, the end date')
 
-        else:
+        elif self._registry_cdi and self._registry_cdi[0]:
             raise ValueError('this backend cannot provide CDI indexes prior to 2018-01-01')
+
+        else:
+            raise ValueError('this backend has no CDI indexes')
 
     # FIXME: this method attempts to simulate the behaviour of the BACEN API. But the API is flawed. For a monthly
     # index, It can't even properly represent months, using their first days to represent them. For example,
@@ -1128,29 +1130,39 @@ class InMemoryBackend(IndexStorageBackend):
     #
     @typeguard.typechecked
     def get_ipca_indexes(self, begin: datetime.date, end: datetime.date) -> t.Iterable[MonthlyIndex]:
-        for month, value in self._registry_ipca:
-            if begin <= month <= end:
-                yield MonthlyIndex(date=month, value=value)
+        if self._registry_ipca and self._registry_ipca[0]:
+            month = self._registry_ipca[0][0]
 
-        while month < end:
-            month += _MONTH
+            for month, value in self._registry_ipca:
+                if begin <= month <= end:
+                    yield MonthlyIndex(date=month, value=value)
 
-            yield MonthlyIndex(date=month, value=_0)
+            while month < end:
+                month += _MONTH
+
+                yield MonthlyIndex(date=month, value=_0)
+
+        else:
+            raise ValueError('this backend has no IPCA indexes')
 
     # FIXME: this method simulates the behaviour of the BACEN API. But the API is pretty dumb. It returns redundant data,
     # like "2018-01-01" to represent January of 2018.
     #
     @typeguard.typechecked
     def get_savings_indexes(self, begin: datetime.date, end: datetime.date) -> t.Iterable[RangedIndex]:
-        for d0, values in self._registry_savs:
-            i, d = 0, d0
+        if self._registry_savs and self._registry_savs[0]:
+            for d0, values in self._registry_savs:
+                i, d = 0, d0
 
-            while i < 28:
-                if begin <= d <= end:
-                    yield RangedIndex(begin_date=d, end_date=d + _MONTH, value=values[i])
+                while i < 28:
+                    if begin <= d <= end:
+                        yield RangedIndex(begin_date=d, end_date=d + _MONTH, value=values[i])
 
-                d += datetime.timedelta(days=1)
-                i += 1
+                    d += datetime.timedelta(days=1)
+                    i += 1
+
+        else:
+            raise ValueError('this backend has no savings indexes')
 
 @dataclasses.dataclass(frozen=True, eq=True)
 class VariableIndex:
