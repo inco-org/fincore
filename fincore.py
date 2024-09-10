@@ -2793,12 +2793,12 @@ def get_delinquency_charges(
     Example calculation of interest, mora, and fine, for a loan of R$ 10,000.00, with a fixed interest rate of 5% a.a.,
     performed on January 1, 2022, and with a delayed payment from January 1, 2023 to January 1, 2023:
 
-        >>> get_delinquency_charges(  # doctest: +SKIP
-                arrears_period=(datetime.date(2023, 1, 1), datetime.date(2023, 2, 1)),
-                outstanding_balance=decimal.Decimal('10000.00'),
-                loan_apy=decimal.Decimal('0.05'),
-                loan_zero_date=datetime.date(2022, 1, 1)
-            )
+        > get_delinquency_charges(  # doctest: +SKIP
+            arrears_period=(datetime.date(2023, 1, 1), datetime.date(2023, 2, 1)),
+            outstanding_balance=decimal.Decimal('10000.00'),
+            loan_apy=decimal.Decimal('0.05'),
+            loan_zero_date=datetime.date(2022, 1, 1)
+        )
     '''
 
     # Interest factor, "f_1"

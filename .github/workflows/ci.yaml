@@ -1,0 +1,193 @@
+# Copyright (C) Inco - All Rights Reserved.
+#
+# Written by Rafael Viotti <viotti@inco.vc>, September 2024.
+#
+# Unauthorized copying of this file, via any medium, is strictly prohibited. Proprietary and confidential.
+#
+# References on Github Actions
+# ============================
+#
+#  • http://yonatankra.com/7-github-actions-tricks-i-wish-i-knew-before-i-started
+#  • http://blog.zenml.io/github-actions-in-action
+#  • http://stackoverflow.com/a/68158432
+#
+# References for test code coverage
+# =================================
+#
+#  • http://coverage.readthedocs.io/en/latest/
+#  • http://hynek.me/articles/ditch-codecov-python/
+#  • http://github.com/marketplace/actions/python-coverage-comment
+#
+# Marker: [FAIL_ON_LOW_COVERAGE]
+# ==============================
+#
+# Use the "--fail-under T" parameter on the "python -m coverage report" command below to make the "Report code
+# coverage" step fail if the coverage falls below threshold T, where T is a percentage integer value.
+#
+# Marker: [DANGER]
+# ================
+#
+# Checking out code on a privileged action (like "pull_request_target") is dangerous. From the GitHub docs:
+#
+# “ 1. Workflows triggered via pull_request_target have write permission to the target repository. They also have
+#      access to target repository secrets. The same is true for workflows triggered on pull_request from a branch in
+#      the same repository, but not from external forks. The reasoning behind the latter is that it is safe to share
+#      the repository secrets if the user creating the PR has write permission to the target repository already. ”
+#
+#   — http://securitylab.github.com/research/github-actions-preventing-pwn-requests
+#
+# This is a private repository, we won't be accepting PR from external forks. So the Git checkouts performed here
+# shouldn't be a problem. This workflow would fail for external pull requests.
+#
+name: 🏗 Continuous Integration
+
+on:
+  push:
+    branches: [ master, stable ]
+    paths: [ '**.py' ]
+
+  pull_request:
+    branches: [ master, stable ] # Use "[ master, ci ]" to test this workflow.
+    paths: [ '**.py' ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with: { python-version: '3.11' }
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install flake8-pyproject flake8-quotes ruff pyright
+        env: { PIP_ROOT_USER_ACTION: ignore }
+
+      - name: Lint with Flake8
+        run: python -m flake8 fincore.py
+
+      - name: Lint with Pyright
+        run: python -m pyright --verbose fincore.py
+
+      - name: Lint with Ruff
+        run: python -m ruff check fincore.py
+
+  type-check-fincore:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      # From http://stackoverflow.com/a/70711156.
+      - name: Check if Fincore changed
+        uses: dorny/paths-filter@v2
+        id: filter
+        with:
+          filters: |
+            fincore:
+              - fincore.py
+
+      - if: steps.filter.outputs.fincore == 'true'
+        name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with: { python-version: '3.11' }
+
+      - if: steps.filter.outputs.fincore == 'true'
+        name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install mypy typeguard
+          python -m pip install types-python-dateutil types-requests # "mypy --install-types --non-interactive fincore.py".
+        env: { PIP_ROOT_USER_ACTION: ignore }
+
+      - if: steps.filter.outputs.fincore == 'true'
+        name: Run Mypy
+        run: mypy --ignore-missing-imports --strict --follow-imports=silent fincore.py
+
+  # [WERROR]
+  #
+  # This job runs with "-Werror" to convert warnings to errors. This forces the developer to either fix the warning
+  # right away, or explicitly ignore it.
+  #
+  # http://til.simonwillison.net/pytest/treat-warnings-as-errors
+  #
+  run-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with: { python-version: '3.11' }
+
+      - name: Generate Coverage RC
+        run: |
+          echo '[run]' > .coveragerc
+          echo 'relative_files = true' >> .coveragerc
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r tests/requirements.txt
+        env: { PIP_ROOT_USER_ACTION: ignore }
+
+      # See https://docs.pytest.org/en/latest/how-to/doctest.html.
+      - name: Run unitary tests
+        run: |
+          python -m coverage run -m pytest -Werror tests
+
+      - name: Upload code coverage data
+        uses: actions/upload-artifact@v3
+        with:
+          name: code-coverage-data
+          path: '.coverage.*'
+          include-hidden-files: true
+
+  report-coverage:
+    runs-on: ubuntu-latest
+
+    needs: [ run-tests ]
+
+    steps:
+      - uses: actions/checkout@v3 # See [DANGER] above.
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with: { python-version: '3.11' }
+
+      - name: Generate Coverage RC
+        run: |
+          echo '[run]' > .coveragerc
+          echo 'relative_files = true' >> .coveragerc
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest coverage
+        env: { PIP_ROOT_USER_ACTION: ignore }
+
+      - name: Download code coverage data
+        uses: actions/download-artifact@v3
+        with: { name: code-coverage-data }
+
+      # See [FAIL_ON_LOW_COVERAGE] above.
+      - name: Report code coverage
+        run: |
+          python -m coverage combine
+          python -m coverage report
+          python -m coverage xml
+
+      # See [DANGER] above.
+      - name: Create code coverage comment
+        uses: py-cov-action/python-coverage-comment-action@v3
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
