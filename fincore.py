@@ -260,7 +260,7 @@ def _diff_surrounding_dates(base: datetime.date, day_of_month: int) -> int:
 
     Given a base date, this function will find two dates that surround it on
     the specified day of the month. For example, if the base date is
-    2022-06-12, and the day of the month is 15, then de surrounding dates are
+    2022-06-12, and the day of the month is 15, then the surrounding dates are
     2022-05-15 and 2022-06-15. It will then return the difference between these
     dates, in days.
 
