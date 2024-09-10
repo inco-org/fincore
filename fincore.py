@@ -213,7 +213,7 @@ _CAPITALISATION = t.Literal['252', '360', '365', '30/360']
 _DAILY_CAPITALISATION = t.Literal['252', '360', '365']
 
 # Gain output mode.
-_GAIN_OUTPUT_MODE = t.Literal['current', 'deferred', 'settled']
+_GAIN_OUTPUT_MODE = t.Literal['current', 'deferred', 'settled', 'a']
 
 # Helpers. {{{
 @typeguard.typechecked
