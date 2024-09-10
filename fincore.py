@@ -176,16 +176,16 @@ _T = t.TypeVar('_T')
 # A month.
 _MONTH = dateutil.relativedelta.relativedelta(months=1)
 
-# Tabela de IR para aplicações de renda fixa.
+# Income tax table for fixed income investments.
 #
-# Sei que "sys.maxsize" não é o valor máximo de um numero inteiro no Python 3,
-# mas sim o tamanho máximo da palavra na arquitetura em que o interpretador
-# estiver executando.
+# I know that "sys.maxsize" is not the maximum value of an integer in Python 3,
+# but rather the maximum word size in the architecture where the interpreter
+# is running.
 #
 #   https://stackoverflow.com/a/7604981
 #
-# Não me importo. O que quero na última entrada da tabela é apenas um número
-# suficientemente grande.
+# I don't care. What I want in the last entry of the table is just a
+# sufficiently large number.
 #
 _REVENUE_TAX_BRACKETS = [
     (0, 180, decimal.Decimal('0.225')),
