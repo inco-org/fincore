@@ -1,8 +1,14 @@
+# Copyright (C) Inco - All Rights Reserved.
+#
+# Written by Rafael Viotti <viotti@inco.vc>, September 2024.
+#
+# Unauthorized copying of this file, via any medium, is strictly prohibited. Proprietary and confidential.
+#
 name: Post coverage comment
 
 on:
   workflow_run:
-    workflows: ["ci"]
+    workflows: [ "Continuous Integration" ]
     types:
       - completed
 
@@ -13,22 +19,20 @@ jobs:
     if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success'
 
     permissions:
-      # Gives the action the necessary permissions for publishing new
-      # comments in pull requests.
+      # Gives the action the necessary permissions for publishing new comments in pull requests.
       pull-requests: write
 
-      # Gives the action the necessary permissions for editing existing
-      # comments (to avoid publishing multiple comments in the same PR)
+      # Gives the action the necessary permissions for editing existing comments (to avoid publishing multiple comments in the same PR).
       contents: write
 
-      # Gives the action the necessary permissions for looking up the
-      # workflow that launched this workflow, and download the related
-      # artifact that contains the comment to be published
+      # Gives the action the necessary permissions for looking up the workflow that launched this workflow, and download the related artifact that contains the comment to be published.
       actions: read
 
+    # DO NOT run actions/checkout here, for security reasons.
+    #
+    # For details, refer to https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
+    #
     steps:
-      - uses: actions/checkout@v4 # See [DANGER] above.
-
       - name: Download code coverage data
         uses: actions/download-artifact@v4
         with: { name: code-coverage-data }
@@ -37,4 +41,5 @@ jobs:
         uses: py-cov-action/python-coverage-comment-action@v3
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_PR_RUN_ID: ${{ github.event.workflow_run.id }}
           COVERAGE_DATA_BRANCH: coverage-data

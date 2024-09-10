@@ -1,3 +1,9 @@
+# Copyright (C) Inco - All Rights Reserved.
+#
+# Written by Rafael Viotti <viotti@inco.vc>, September 2024.
+#
+# Unauthorized copying of this file, via any medium, is strictly prohibited. Proprietary and confidential.
+#
 [tool.ruff]
     exclude = [
         ".bzr",
