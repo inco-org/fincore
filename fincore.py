@@ -32,7 +32,7 @@
 #
 #   • It became more generic:
 #
-#     • Covers 100% of cases in Free mode.
+#     • Covers 100% of cases in Custom Amortization mode.
 #       • Example: quarterly payments.
 #
 #     • Covers more alternative flows.
@@ -83,7 +83,7 @@
 #     gross value to the output debt balance to obtain the value of a supposed total prepayment
 #
 #       _tail = lambda iterable: iter(collections.deque(iterable, maxlen=1))
-#       kargs = { … }  # Options for a Free amortization schedule, including a calculation date.
+#       kargs = { … }  # Options for a Custom Amortization System, including a calculation date.
 #
 #       # Execute Fincore (1st time) to get the position on the calculation date.
 #       row = next(_tail(fincore.build(**kargs)))
@@ -122,15 +122,14 @@ INCO financial core, Fincore.
 
 Financial calculation library for credit and investment operations.
 
-Its main purpose is to generate monthly amortization schedules for loans in the Bullet, Price, Monthly Interest, and
-Free (SAC, grace period, etc.) modalities. Supports fixed-rate operations, or indexed to CDI, Savings, or IPCA.
-Accounts for interest in a 252 business day year for indexes published on business days, such as CDI; or 30/360 basis
-for fixed-rate and other indexes.
+Its main purpose is to generate payments for loans with a Bullet, Price, American Amortization, or Custom (constant
+amortization, grace period, etc.) systems. Supports fixed-rate operations, or indexed to CDI, Brazilian Savings, or
+IPCA. Accounts for interest in a 252 business day year for CDI; or 30/360 basis for fixed-rate and other indexes.
 
-This library also generates daily yield tables for loans. It covers the same modalities and the same capitalization
-forms as the payment schedule generation routine.
+This library also generates daily returns tables for loans. It covers the same modalities and the same capitalization
+forms as the payments generation routine.
 
-The library supports not only regular flows, but also irregular ones with prepayments, and assists in the calculation
+The library supports not only regular flows, but also irregular ones, with prepayments, and assists in the calculation
 of arrears.
 
 You can find the code for this module in the IPython notebook "fincore-01.ipynb" located in the support folder.
@@ -738,7 +737,7 @@ class IndexStorageBackend:
 
     def get_savings_indexes(self, begin: datetime.date, end: datetime.date) -> t.Iterable[RangedIndex]:
         '''
-        Returns the list of Savings indexes between the begin and end date.
+        Returns the list of Brazilian Savings indexes between the begin and end date.
 
         This method should not project indexes in the future.
         '''
@@ -822,7 +821,7 @@ class IndexStorageBackend:
 
     @typeguard.typechecked
     def calculate_savings_factor(self, begin: datetime.date, end: datetime.date, percentage: int = 100) -> types.SimpleNamespace:
-        '''Calculates the Savings factor for a given period.'''
+        '''Calculates the Brazilian Savings factor for a given period.'''
 
         # Considera-se a data de aniversário das prestações com início nos dias 29, 30 e 31 como o dia 1° do mês seguinte.
         ini = begin if begin.day <= 28 else (begin + _MONTH).replace(day=1)
@@ -1194,20 +1193,20 @@ def get_payments_table(
 
     The remaining parameters are associative.
 
-      • "vir", which is a variable index, which can be either a CDI or Savings index; or a price level index: IPCA or IGPM.
-        When provided, the returned payments will incur, in addition to the fixed rate "apy", a variable rate that will be
-        computed according to the index value in the period. It should be an instance of VariableIndex. If omitted, the
-        interest rate will be fixed.
+      • "vir", which is a variable index, which can be either a CDI or Brazilian Savings index; or a price level index:
+      IPCA or IGPM. When provided, the returned payments will incur, in addition to the fixed rate "apy", a variable
+      rate that will be computed according to the index value in the period. It should be an instance of VariableIndex.
+      If omitted, the interest rate will be fixed.
 
       • "capitalisation", configures one of four interest composition methods.
 
-        – "360" is daily capitalisation in a year with 360 days. Used in Bullet operations with Bullet modality.
+        – "360" is daily capitalisation in a year with 360 days. Used in Bullet operations.
 
-        – "30/360" is monthly capitalisation in a year with 12 months and 30 days. Used in Bullet operations with Monthly
-          Interest, Price, or Free modality.
+        – "30/360" is monthly capitalisation in a year with 12 months and 30 days. Used in fixed-rate operations with
+          American Amortization, Price, or Custom System.
 
         – "252" is capitalisation of interest in a year with 252 business days. Used in post-fixed CDI operations with
-          any Bullet, Monthly Interest, or Free modality.
+          Bullet, American, or Custom System.
 
         – "365" is capitalisation of interest in a year with 365 days. This mode should not be used. It's only used to
           emulate legacy Bullet operations that adopted this composition method in the past. Fincore will issue a warning
@@ -1358,8 +1357,9 @@ def get_payments_table(
 
         # Phase B.0, FZA, or Phase Zille-Anna.
         #
-        #  • Calculates FS (spread factor) for pre-fixed index; and both FS and FC for price level index.
-        #  • Calculates FS for post-fixed index (CDI, Savings etc). In this case, there's no price level adjustment.
+        #  • Calculates FS (spread factor) for fixed-rate index; and both FS and FC for price level index.
+        #  • Calculates FS for post-fixed index (CDI, Brazilian Savings etc). In this case, there's no price level
+        #  adjustment.
         #
         if ent0.date < calc_date.value or ent1.date <= calc_date.value:
             if not vir and capitalisation == '360':  # Bullet.
@@ -1368,7 +1368,7 @@ def get_payments_table(
             elif not vir and capitalisation == '365':  # Bullet in legacy mode.
                 f_s = calculate_interest_factor(apy, decimal.Decimal((due - ent0.date).days) / decimal.Decimal(365))
 
-            elif not vir and capitalisation == '30/360':  # Monthly Interest, Price, Free.
+            elif not vir and capitalisation == '30/360':  # American Amortization, Price, Custom.
                 dcp = (due - ent0.date).days
                 dct = (ent1.date - ent0.date).days
 
@@ -1395,11 +1395,11 @@ def get_payments_table(
 
                 f_s = calculate_interest_factor(apy, decimal.Decimal(dcp) / (12 * decimal.Decimal(dct)))
 
-            elif vir and vir.code == 'CDI' and capitalisation == '252':  # Bullet, Monthly Interest, Free.
+            elif vir and vir.code == 'CDI' and capitalisation == '252':  # Bullet, American Amortization, Custom.
                 f_v = vir.backend.calculate_cdi_factor(ent0.date, due, vir.percentage)  # Variable rate (or factor), FV.
                 f_s = calculate_interest_factor(apy, decimal.Decimal(f_v.amount) / decimal.Decimal(252)) * f_v.value
 
-            elif vir and vir.code == 'Poupança' and capitalisation == '360':  # Savings only supported in Bullet.
+            elif vir and vir.code == 'Poupança' and capitalisation == '360':  # Brazilian Savings only supported in Bullet.
                 f_v = vir.backend.calculate_savings_factor(ent0.date, due, vir.percentage)  # Variable rate (or factor), FV.
                 f_s = calculate_interest_factor(apy, decimal.Decimal((due - ent0.date).days) / decimal.Decimal(360)) * f_v.value
 
@@ -1429,7 +1429,7 @@ def get_payments_table(
                     # Lock the price level factor. The minimum factor is one, i.e., the correction value must be positive.
                     f_c = max(vir.backend.calculate_ipca_factor(**kw1b), _1)
 
-            elif vir and vir.code == 'IPCA' and capitalisation == '30/360':  # Monthly Interest and Free.
+            elif vir and vir.code == 'IPCA' and capitalisation == '30/360':  # American and Custom Amortization systems.
                 dcp = (due - ent0.date).days
                 dct = (ent1.date - ent0.date).days
 
@@ -1715,9 +1715,9 @@ def get_daily_returns(
 
       • "amortizations", which is a list containing the dates D when amortizations should be made.
 
-    Two other parameters are optional: "vir", which specifies a variable index, which can be CDI, Savings, IPCA, or
-    IGPM; and "capitalisation", which configures the form of interest compounding. See the documentation of the
-    "fincore.get_payments_table" routine for more details on these parameters.
+    Two other parameters are optional: "vir", which specifies a variable index, which can be CDI, Brazilian Savings,
+    IPCA, or IGPM; and "capitalisation", which configures the form of interest compounding. See the documentation of
+    the "fincore.get_payments_table" routine for more details on these parameters.
 
     Returns a list of "DailyReturn" objects, which contain daily information on the loan position:
 
@@ -1918,7 +1918,7 @@ def get_daily_returns(
         # Phase B.0, FZA, or Phase Zille-Anna.
         #
         #  • Calculate FS (spread factor) for fixed-rate index; and both FS and FC for price level index.
-        #  • Calculate FS for post-fixed index (CDI, Savings, etc). In this case there is no correction.
+        #  • Calculate FS for post-fixed index (CDI, Brazilian Savings, etc). In this case there is no correction.
         #
         # Highly altered with respect to FZA from the "get_payments_table" routine.
         #
@@ -2117,7 +2117,7 @@ def preprocess_bullet(
         elif anniversary_date and x.date > anniversary_date:
             raise ValueError(f'"insertions[{i}].date", {x.date}, succeeds "anniversary_date", {anniversary_date}')
 
-    # Base of calculation 365 only for historical pre-fixed – recommend using 360 days for pre-fixed.
+    # Base of calculation 365 only for historical fixed-rate. Fincore recommends using 360 days instead.
     if capitalisation == '365':
         _LOG.warning('capitalising 365 days per year exists solely for legacy Bullet support – prefer 360 days')
 
@@ -2466,7 +2466,7 @@ def build_jm(
     gain_output: _GAIN_OUTPUT_MODE = 'current'
 ) -> t.Iterable[Payment]:
     '''
-    Stereotypes a Monthly Interest operation.
+    Stereotypes an American Amortization operation.
 
     In addition to the initial principal value and the annual percentage rate, "apy", this function receives the initial
     yield date, "zero_date", and its term, "term". With this, it generates a Price amortization schedule, and from it
@@ -2565,7 +2565,7 @@ def build_price(
 
     yield from get_payments_table(**kwa)
 
-# FIXME: renomear para "get_livre_payments".
+# FIXME: renomear para "get_custom_payments".
 @typeguard.typechecked
 def build(
     principal: decimal.Decimal,
@@ -2582,7 +2582,7 @@ def build(
     gain_output: _GAIN_OUTPUT_MODE = 'current'
 ) -> t.Iterable[Payment]:
     '''
-    Builds a Free operation.
+    Builds a Custom payments schedule.
 
     In addition to the initial principal value and the annual percentage rate, "apy", this function receives two lists of
     amortizations: one with the regular flow, and another with the prepayments. It has two main utilities:
