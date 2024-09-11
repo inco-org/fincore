@@ -122,18 +122,18 @@ INCO financial core, Fincore.
 
 Financial calculation library for credit and investment operations.
 
-Its main purpose is to generate monthly amortization schedules for loans in the Bullet, Price,
-Monthly Interest, and Free (SAC, grace period, etc.) modalities. Supports fixed-rate operations, or indexed to CDI, Savings, or IPCA.
+Its main purpose is to generate monthly amortization schedules for loans in the Bullet, Price, Monthly Interest, and
+Free (SAC, grace period, etc.) modalities. Supports fixed-rate operations, or indexed to CDI, Savings, or IPCA.
 Accounts for interest in a 252 business day year for indexes published on business days, such as CDI; or 30/360 basis
 for fixed-rate and other indexes.
 
-This library also generates daily yield tables for loans. It covers the same modalities and
-the same capitalization forms as the payment schedule generation routine.
+This library also generates daily yield tables for loans. It covers the same modalities and the same capitalization
+forms as the payment schedule generation routine.
 
-The library supports not only regular flows, but also irregular ones with prepayments, and assists in the calculation of
-arrears.
+The library supports not only regular flows, but also irregular ones with prepayments, and assists in the calculation
+of arrears.
 
-You can find the code for this module in the IPython notebook "lab-000.ipynb" located in the support folder.
+You can find the code for this module in the IPython notebook "fincore-01.ipynb" located in the support folder.
 But be aware that the notebook may be out of date.
 '''
 

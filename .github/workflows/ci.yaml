@@ -108,31 +108,31 @@ jobs:
         uses: actions/setup-python@v5
         with: { python-version: '3.11' }
 
-      - name: Generate Coverage RC
+      - name: Generate Coverage Configuration
         run: |
           echo '[run]' > .coveragerc
           echo 'relative_files = true' >> .coveragerc
           echo 'omit =' >> .coveragerc
           echo '       tests/*' >> .coveragerc
 
-      - name: Install dependencies
+      - name: Install Test Dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r tests/requirements.txt
         env: { PIP_ROOT_USER_ACTION: ignore }
 
       # See https://docs.pytest.org/en/latest/how-to/doctest.html.
-      - name: Run unitary tests
+      - name: Run Tests
         run: |
           python -m coverage run -m pytest -Werror tests
 
-      - name: Coverage comment
+      - name: Create Coverage Comment Artifact
         id: coverage_comment
         uses: py-cov-action/python-coverage-comment-action@v3
         with:
           GITHUB_TOKEN: ${{ github.token }}
 
-      - name: Store code coverage data in a comment
+      - name: Upload Coverage Comment Artifact
         uses: actions/upload-artifact@v4
         if: steps.coverage_comment.outputs.COMMENT_FILE_WRITTEN == 'true'
         with:
@@ -140,6 +140,6 @@ jobs:
           path: python-coverage-comment-action.txt
 
       # See [FAIL_ON_LOW_COVERAGE] above.
-      - name: Report code coverage
+      - name: Report Code Coverage
         run: |
           python -m coverage report
