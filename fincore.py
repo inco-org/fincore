@@ -133,7 +133,7 @@ the same capitalization forms as the payment schedule generation routine.
 The library supports not only regular flows, but also irregular ones with prepayments, and assists in the calculation of
 arrears.
 
-You can find the code for this module in the IPython notebook "lab-000.ipynb" located in the support repository.
+You can find the code for this module in the IPython notebook "lab-000.ipynb" located in the support folder.
 But be aware that the notebook may be out of date.
 '''
 

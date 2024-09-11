@@ -112,6 +112,8 @@ jobs:
         run: |
           echo '[run]' > .coveragerc
           echo 'relative_files = true' >> .coveragerc
+          echo 'omit =' >> .coveragerc
+          echo '       tests/*' >> .coveragerc
 
       - name: Install dependencies
         run: |
