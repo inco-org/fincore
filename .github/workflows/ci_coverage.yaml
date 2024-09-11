@@ -4,7 +4,7 @@
 #
 # Unauthorized copying of this file, via any medium, is strictly prohibited. Proprietary and confidential.
 #
-name: Post coverage comment
+name: Post Coverage Comment
 
 on:
   workflow_run:
@@ -42,4 +42,3 @@ jobs:
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_PR_RUN_ID: ${{ github.event.workflow_run.id }}
-          COVERAGE_DATA_BRANCH: coverage-data
