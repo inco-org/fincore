@@ -1697,7 +1697,8 @@ def get_daily_returns(
     apy: decimal.Decimal,
     amortizations: t.List[Amortization | Amortization.Bare], *,
     vir: t.Optional[VariableIndex] = None,
-    capitalisation: _CAPITALISATION = '360'
+    capitalisation: _CAPITALISATION = '360',
+    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
 ) -> t.Iterable[DailyReturn]:
     '''
     Generates a yield table for a given loan.
@@ -1909,6 +1910,7 @@ def get_daily_returns(
     itr = iter(amortizations)
     tup = next(itr), next(itr)
     cnt = p = 1
+    buf = _0
 
     for ref in _date_range(amortizations[0].date, amortizations[-1].date):
         f_c = _1  # Taxa (ou fator) de correção, FC.
@@ -1989,6 +1991,9 @@ def get_daily_returns(
 
         # Phase B.1, FRU, or Phase Rafa Um. Slightly altered with respect to FRU from the "get_payments_table" routine.
         while ref == tup[1].date:
+            if not buf and not is_bizz_day_cb(ref):
+                buf = _Q(calc_balance())
+
             if type(tup[1]) is Amortization:  # Case of a regular amortization.
                 adj = (_1 - regs.principal.amortization_ratio.current) / (_1 - regs.principal.amortization_ratio.regular)  # [FATOR-AJUSTE].
 
@@ -2072,7 +2077,14 @@ def get_daily_returns(
         dr.period = p
         dr.date = ref
         dr.value = _Q(regs.interest.daily)
-        dr.bal = _Q(calc_balance())
+
+        if buf and not is_bizz_day_cb(ref):
+            dr.bal = (buf := buf + dr.value)  # Balance at the end of the day.
+
+        else:
+            dr.bal = _Q(calc_balance())  # Balance at the end of the day.
+
+            buf = _0
 
         dr.fixed_factor = f_s
         dr.variable_factor = f_v * f_c
@@ -2625,7 +2637,8 @@ def get_bullet_daily_returns(
     # Etc.
     anniversary_date: t.Optional[datetime.date] = None,
     vir: t.Optional[VariableIndex] = None,
-    capitalisation: _DAILY_CAPITALISATION = '360'
+    capitalisation: _DAILY_CAPITALISATION = '360',
+    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
 ) -> t.Iterable[DailyReturn]:
     kwa: t.Dict[str, t.Any] = {}
 
@@ -2634,6 +2647,7 @@ def get_bullet_daily_returns(
     kwa['amortizations'] = preprocess_bullet(zero_date, term, insertions, anniversary_date, capitalisation, vir, calc_date=None)
     kwa['vir'] = vir
     kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else capitalisation
+    kwa['is_bizz_day_cb'] = is_bizz_day_cb
 
     yield from get_daily_returns(**kwa)
 
@@ -2645,7 +2659,8 @@ def get_jm_daily_returns(
     term: int, *,  # Junto com "zero_date", equivale ao "amortizations".
     insertions: t.List[Amortization.Bare] = [],
     anniversary_date: t.Optional[datetime.date] = None,
-    vir: t.Optional[VariableIndex] = None
+    vir: t.Optional[VariableIndex] = None,
+    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
 ) -> t.Iterable[DailyReturn]:
     kwa: t.Dict[str, t.Any] = {}
 
@@ -2654,6 +2669,7 @@ def get_jm_daily_returns(
     kwa['amortizations'] = preprocess_jm(zero_date, term, insertions, anniversary_date, vir)
     kwa['vir'] = vir
     kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else '30/360'
+    kwa['is_bizz_day_cb'] = is_bizz_day_cb
 
     yield from get_daily_returns(**kwa)
 
@@ -2664,7 +2680,8 @@ def get_price_daily_returns(
     zero_date: datetime.date,
     term: int, *,  # Junto com "zero_date", equivale ao "amortizations".
     insertions: t.List[Amortization.Bare] = [],
-    anniversary_date: t.Optional[datetime.date] = None
+    anniversary_date: t.Optional[datetime.date] = None,
+    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
 ) -> t.Iterable[DailyReturn]:
     kwa: t.Dict[str, t.Any] = {}
 
@@ -2672,6 +2689,7 @@ def get_price_daily_returns(
     kwa['apy'] = apy
     kwa['amortizations'] = preprocess_price(principal, apy, zero_date, term, insertions, anniversary_date)
     kwa['capitalisation'] = '30/360'
+    kwa['is_bizz_day_cb'] = is_bizz_day_cb
 
     yield from get_daily_returns(**kwa)
 
@@ -2681,7 +2699,8 @@ def get_livre_daily_returns(
     apy: decimal.Decimal,
     amortizations: t.List[Amortization], *,
     insertions: t.List[Amortization.Bare] = [],
-    vir: t.Optional[VariableIndex] = None
+    vir: t.Optional[VariableIndex] = None,
+    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
 ) -> t.Iterable[DailyReturn]:
     kwa: t.Dict[str, t.Any] = {}
 
@@ -2690,6 +2709,7 @@ def get_livre_daily_returns(
     kwa['vir'] = vir
     kwa['amortizations'] = preprocess_livre(amortizations, insertions, vir)
     kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else '30/360'
+    kwa['is_bizz_day_cb'] = is_bizz_day_cb
 
     yield from get_daily_returns(**kwa)
 # }}}

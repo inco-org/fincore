@@ -13,3 +13,12 @@ The library supports not only regular flows, but also irregular ones, with prepa
 ## Coverage
 
 [![Coverage badge](https://raw.githubusercontent.com/inco-org/fincore/python-coverage-comment-action-data/badge.svg)](https://htmlpreview.github.io/?https://github.com/inco-org/fincore/blob/python-coverage-comment-action-data/htmlcov/index.html)
+
+## Testing
+
+    pytest -Werror --doctest-modules tests fincore.py
+
+## Type-checking Fincore
+
+    mypy --ignore-missing-imports --strict --follow-imports silent fincore.py
+
