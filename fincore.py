@@ -1909,10 +1909,15 @@ def get_daily_returns(
     # B. Execute.
     itr = iter(amortizations)
     tup = next(itr), next(itr)
+    end = amortizations[-1].date
     cnt = p = 1
     buf = _0
 
-    for ref in _date_range(amortizations[0].date, amortizations[-1].date):
+    # Compensação para empréstimos que se encerram em dias não úteis.
+    while not is_bizz_day_cb(end):
+        end = end + datetime.timedelta(days=1)
+
+    for ref in _date_range(amortizations[0].date, end):
         f_c = _1  # Taxa (ou fator) de correção, FC.
         f_v = _1  # Taxa (ou fator) variável, FV.
         f_s = _1  # Taxa (ou fator) fixo, FS.
@@ -1924,13 +1929,13 @@ def get_daily_returns(
         #
         # Highly altered with respect to FZA from the "get_payments_table" routine.
         #
-        if not vir and capitalisation == '360':  # Bullet.
+        if ref < amortizations[-1].date and not vir and capitalisation == '360':  # Bullet.
             f_s = calculate_interest_factor(apy, _1 / decimal.Decimal(360))
 
-        elif not vir and capitalisation == '365':  # Bullet in legacy mode.
+        elif ref < amortizations[-1].date and not vir and capitalisation == '365':  # Bullet in legacy mode.
             f_s = calculate_interest_factor(apy, _1 / decimal.Decimal(365))
 
-        elif not vir and capitalisation == '30/360':  # Juros mensais, Price, Livre.
+        elif ref < amortizations[-1].date and not vir and capitalisation == '30/360':  # Juros mensais, Price, Livre.
             v01 = calculate_interest_factor(apy, _1 / decimal.Decimal(12)) - _1  # Fator mensal.
 
             # The first period has special handling here, to deal with variations in the loan anniversary.
@@ -1959,7 +1964,7 @@ def get_daily_returns(
 
             f_s = calculate_interest_factor(v01, _1 / v02, False)  # Fator diário.
 
-        elif vir and vir.code == 'CDI' and capitalisation == '252':  # Bullet, Juros mensais, Livre.
+        elif ref < amortizations[-1].date and vir and vir.code == 'CDI' and capitalisation == '252':  # Bullet, Juros mensais, Livre.
             f_v = next(idxs) * vir.percentage / decimal.Decimal(100) + _1
 
             # Note that the index on a 252 basis only earns on a business day. This is how the CDI works. In this case the
@@ -1973,24 +1978,24 @@ def get_daily_returns(
             if f_v > _1:
                 f_s = calculate_interest_factor(apy, _1 / decimal.Decimal(252))
 
-        elif vir and vir.code == 'Poupança' and capitalisation == '360':  # Poupança só suportada em Bullet.
+        elif ref < amortizations[-1].date and vir and vir.code == 'Poupança' and capitalisation == '360':  # Poupança só suportada em Bullet.
             f_s = calculate_interest_factor(apy, _1 / decimal.Decimal(360))
             f_v = next(idxs) * vir.percentage / decimal.Decimal(100) + _1
 
-        elif vir and vir.code == 'IPCA' and capitalisation == '360':  # Bullet.
+        elif ref < amortizations[-1].date and vir and vir.code == 'IPCA' and capitalisation == '360':  # Bullet.
             raise NotImplementedError()  # FIXME: implementar.
 
-        elif vir and vir.code == 'IPCA' and capitalisation == '30/360':  # Juros mensais e Livre.
+        elif ref < amortizations[-1].date and vir and vir.code == 'IPCA' and capitalisation == '30/360':  # Juros mensais e Livre.
             raise NotImplementedError()  # FIXME: implementar.
 
-        elif vir:
+        elif ref < amortizations[-1].date and vir:
             raise NotImplementedError(f'Combination of variable interest rate {vir} and capitalisation {capitalisation} unsupported')
 
-        else:
+        elif ref < amortizations[-1].date:
             raise NotImplementedError(f'Unsupported capitalisation {capitalisation} for fixed interest rate')
 
         # Phase B.1, FRU, or Phase Rafa Um. Slightly altered with respect to FRU from the "get_payments_table" routine.
-        while ref == tup[1].date:
+        while ref < amortizations[-1].date and ref == tup[1].date:
             if not buf and not is_bizz_day_cb(ref):
                 buf = _Q(calc_balance())
 
@@ -2067,7 +2072,7 @@ def get_daily_returns(
         # gens.price_level_tracker_1.send(…)
 
         # If the balance is zero, the schedule is over.
-        if _Q(calc_balance()) == _0:
+        if _Q(calc_balance()) == _0 and buf and is_bizz_day_cb(ref):
             break
 
         # Builds the daily return instance, output of the routine. Makes rounding.
@@ -2079,12 +2084,14 @@ def get_daily_returns(
         dr.value = _Q(regs.interest.daily)
 
         if buf and not is_bizz_day_cb(ref):
-            dr.bal = (buf := buf + dr.value)  # Balance at the end of the day.
+            buf = buf + dr.value
+
+            dr.bal = buf  # Balance at the end of the day.
 
         else:
-            dr.bal = _Q(calc_balance())  # Balance at the end of the day.
-
             buf = _0
+
+            dr.bal = _Q(calc_balance())  # Balance at the end of the day.
 
         dr.fixed_factor = f_s
         dr.variable_factor = f_v * f_c
