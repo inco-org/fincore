@@ -1164,7 +1164,7 @@ class VariableIndex:
     backend: IndexStorageBackend = dataclasses.field(default=InMemoryBackend(), compare=False)
 # }}}
 
-# Public API, payments table. {{{
+# Public API. Payments table. {{{
 @typeguard.typechecked
 def get_payments_table(
     principal: decimal.Decimal,
@@ -1690,7 +1690,7 @@ def get_payments_table(
                 break  # Se o saldo é zero, o cronograma acabou.
 # }}}
 
-# Public API, daily returns. {{{
+# Public API. Daily returns. {{{
 @typeguard.typechecked
 def get_daily_returns(
     principal: decimal.Decimal,
@@ -2071,8 +2071,8 @@ def get_daily_returns(
         # Registers the correction value to be paid in the period (FIXME: implement).
         # gens.price_level_tracker_1.send(…)
 
-        # If the balance is zero, the schedule is over.
-        if _Q(calc_balance()) == _0 and buf and is_bizz_day_cb(ref):
+        # If the balance is zero, and the current day is a business day, the schedule is over.
+        if _Q(calc_balance()) == _0 and is_bizz_day_cb(ref):
             break
 
         # Builds the daily return instance, output of the routine. Makes rounding.
@@ -2101,7 +2101,7 @@ def get_daily_returns(
         cnt += 1
 # }}}
 
-# Public API, factories. {{{
+# Public API. Factories. {{{
 def preprocess_bullet(
     zero_date: datetime.date,
     term: int,
@@ -2721,7 +2721,7 @@ def get_livre_daily_returns(
     yield from get_daily_returns(**kwa)
 # }}}
 
-# Public API, helpers. {{{
+# Public API. Helpers. {{{
 @typeguard.typechecked
 def calculate_revenue_tax(begin: datetime.date, end: datetime.date) -> decimal.Decimal:
     '''Calculates tax for fixed income.'''
