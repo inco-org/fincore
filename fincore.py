@@ -1163,7 +1163,7 @@ class VariableIndex:
     backend: IndexStorageBackend = dataclasses.field(default=InMemoryBackend(), compare=False)
 # }}}
 
-# Public API. Payments table. {{{
+# Public API. Payments. {{{
 @typeguard.typechecked
 def get_payments_table(
     principal: decimal.Decimal,
@@ -2944,7 +2944,7 @@ def get_late_payment(
         raise NotImplementedError()
 
     if not vir or vir.code == 'CDI':
-        v_1 = (in_pmt.raw) * (f_1 - _1)  # Value of remuneratory interest. ATENTION: do not quantize here.
+        v_1 = (in_pmt.raw) * (f_1 - _1)  # Value of interest. ATENTION: do not quantize here.
         v_2 = (in_pmt.raw + v_1) * (f_2 - _1)  # Value of penalty interest. ATENTION: do not quantize here.
         v_3 = (in_pmt.raw + v_1 + v_2) * (f_3 - _1)  # Value of fine. ATENTION: do not quantize here.
         val = in_pmt.gain + in_pmt.extra_gain + in_pmt.penalty + in_pmt.fine + _Q(v_1) + _Q(v_2) + _Q(v_3)
@@ -2975,7 +2975,7 @@ def get_late_payment(
         if type(in_pmt) is LatePriceAdjustedPayment:
             pla = _Q(in_pmt.pla + (in_pmt.amort + in_pmt.pla) * (f_c - _1))
 
-        v_1 = (raw) * (f_1 - _1)  # Value of remuneratory interest.
+        v_1 = (raw) * (f_1 - _1)  # Value of interest.
         v_2 = (raw + v_1) * (f_2 - _1)  # Value of penalty interest.
         v_3 = (raw + v_1 + v_2) * (f_3 - _1)  # Value of fine.
 
