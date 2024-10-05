@@ -183,15 +183,12 @@ _MONTH = dateutil.relativedelta.relativedelta(months=1)
 #
 # I don't care. What I want in the last entry of the table is just a sufficiently large number.
 #
-_REVENUE_TAX_BRACKETS = [
+_BRAZIL_TAX_BRACKETS = [
     (0, 180, decimal.Decimal('0.225')),
     (180, 360, decimal.Decimal('0.2')),
     (360, 720, decimal.Decimal('0.175')),
     (720, sys.maxsize, decimal.Decimal('0.15'))
 ]
-
-# Supported operation modes.
-_OP_MODES = t.Literal['Bullet', 'Juros mensais', 'Price', 'Livre']
 
 # Variable rate indexes.
 _VR_INDEX = t.Literal['CDI', 'Poupança']
@@ -241,7 +238,7 @@ def _delta_months(d1: datetime.date, d2: datetime.date) -> int:
     return (d1.year - d2.year) * 12 + d1.month - d2.month
 
 @typeguard.typechecked
-def _date_range(start_date: datetime.date, end_date: datetime.date) -> t.Iterable[datetime.date]:
+def _date_range(start_date: datetime.date, end_date: datetime.date) -> t.Generator[datetime.date, None, None]:
     iterator = start_date
 
     while iterator < end_date:
@@ -300,7 +297,7 @@ def _diff_surrounding_dates(base: datetime.date, day_of_month: int) -> int:
         raise ValueError(f"can't find a date prior to the base of {base} on day {day_of_month}")
 
 @typeguard.typechecked
-def _interleave(a: t.Iterable[_T], b: t.Iterable[_T], *, key: t.Callable[..., t.Any] = lambda x: x) -> t.Iterable[types.SimpleNamespace]:
+def _interleave(a: t.Iterable[_T], b: t.Iterable[_T], *, key: t.Callable[..., t.Any] = lambda x: x) -> t.Generator[types.SimpleNamespace, None, None]:
     '''
     Interleave two ordered iterables into another, also ordered, iterable.
 
@@ -723,7 +720,7 @@ class RangedIndex:
     value: decimal.Decimal = _0
 
 class IndexStorageBackend:
-    def get_cdi_indexes(self, begin: datetime.date, end: datetime.date) -> t.Iterable[DailyIndex]:
+    def get_cdi_indexes(self, begin: datetime.date, end: datetime.date) -> t.Generator[DailyIndex, None, None]:
         '''
         Returns the list of CDI indexes between the begin and end date.
 
@@ -734,7 +731,7 @@ class IndexStorageBackend:
 
         raise NotImplementedError()
 
-    def get_savings_indexes(self, begin: datetime.date, end: datetime.date) -> t.Iterable[RangedIndex]:
+    def get_savings_indexes(self, begin: datetime.date, end: datetime.date) -> t.Generator[RangedIndex, None, None]:
         '''
         Returns the list of Brazilian Savings indexes between the begin and end date.
 
@@ -743,7 +740,7 @@ class IndexStorageBackend:
 
         raise NotImplementedError()
 
-    def get_ipca_indexes(self, begin: datetime.date, end: datetime.date) -> t.Iterable[MonthlyIndex]:
+    def get_ipca_indexes(self, begin: datetime.date, end: datetime.date) -> t.Generator[MonthlyIndex, None, None]:
         '''
         Returns the list of IPCA indexes between the begin and end date.
 
@@ -752,7 +749,7 @@ class IndexStorageBackend:
 
         raise NotImplementedError()
 
-    def get_igpm_indexes(self, begin: datetime.date, end: datetime.date) -> t.Iterable[MonthlyIndex]:
+    def get_igpm_indexes(self, begin: datetime.date, end: datetime.date) -> t.Generator[MonthlyIndex, None, None]:
         '''
         Returns the list of IGPM indexes between the begin and end date.
 
@@ -1081,7 +1078,7 @@ class InMemoryBackend(IndexStorageBackend):
     ]
 
     @typeguard.typechecked
-    def get_cdi_indexes(self, begin: datetime.date, end: datetime.date) -> t.Iterable[DailyIndex]:
+    def get_cdi_indexes(self, begin: datetime.date, end: datetime.date) -> t.Generator[DailyIndex, None, None]:
         if self._registry_cdi and self._registry_cdi[0] and begin >= self._registry_cdi[0][0] and end >= begin:
             dzro = self._registry_cdi[0][0]
             save = self._registry_cdi[0][2]
@@ -1119,7 +1116,7 @@ class InMemoryBackend(IndexStorageBackend):
     # be designed to best suit its use by this module.
     #
     @typeguard.typechecked
-    def get_ipca_indexes(self, begin: datetime.date, end: datetime.date) -> t.Iterable[MonthlyIndex]:
+    def get_ipca_indexes(self, begin: datetime.date, end: datetime.date) -> t.Generator[MonthlyIndex, None, None]:
         if self._registry_ipca and self._registry_ipca[0]:
             month = self._registry_ipca[0][0]
 
@@ -1139,7 +1136,7 @@ class InMemoryBackend(IndexStorageBackend):
     # like "2018-01-01" to represent January of 2018.
     #
     @typeguard.typechecked
-    def get_savings_indexes(self, begin: datetime.date, end: datetime.date) -> t.Iterable[RangedIndex]:
+    def get_savings_indexes(self, begin: datetime.date, end: datetime.date) -> t.Generator[RangedIndex, None, None]:
         if self._registry_savs and self._registry_savs[0]:
             for d0, values in self._registry_savs:
                 i, d = 0, d0
@@ -1174,7 +1171,7 @@ def get_payments_table(
     calc_date: t.Optional[CalcDate] = None,
     tax_exempt: t.Optional[bool] = False,
     gain_output: _GAIN_OUTPUT_MODE = 'current'
-) -> t.Iterable[Payment]:
+) -> t.Generator[Payment, None, None]:
     '''
     Generates a payment schedule for a given loan.
 
@@ -1230,12 +1227,12 @@ def get_payments_table(
 
     Returns a list where each object P contains the information of a payment: its date, the gross amount to be paid, the
     tax, the net amount, the principal amortization value, the interest value, etc. It's an instance of Payment, for
-    non-price-level-adjusted operations; or of PriceAdjustedPayment, for price-level-adjusted operations. See the
-    documentation for these classes for more details about these data structures.
+    nominal loans; or PriceAdjustedPayment, for inflation adjusted loans. See the documentation for these classes for
+    more details about these data structures.
     '''
 
     def calc_balance() -> decimal.Decimal:
-        val = principal * f_c + regs.interest.accrued - regs.principal.amortized.total * f_c - regs.interest.settled.total
+        val = principal + regs.monetary_correction.accrued + regs.interest.accrued - regs.principal.amortized.total - regs.interest.settled.total - regs.monetary_correction.settled.total
 
         return t.cast(decimal.Decimal, val)
 
@@ -1297,6 +1294,17 @@ def get_payments_table(
             regs.interest.settled = types.SimpleNamespace(current=(yield), total=regs.interest.settled.total)
             regs.interest.settled.total += regs.interest.settled.current
 
+    def track_monetary_correction_1() -> t.Generator[None, decimal.Decimal | None, None]:
+        while True:
+            regs.monetary_correction.current = yield
+            regs.monetary_correction.accrued += regs.monetary_correction.current
+            regs.monetary_correction.deferred = regs.monetary_correction.accrued - (regs.monetary_correction.current + regs.monetary_correction.settled.total)
+
+    def track_monetary_correction_2() -> t.Generator[None, decimal.Decimal | None, None]:
+        while True:
+            regs.monetary_correction.settled = types.SimpleNamespace(current=(yield), total=regs.monetary_correction.settled.total)
+            regs.monetary_correction.settled.total += regs.monetary_correction.settled.current
+
     # A. Validation and preparation.
     gens = types.SimpleNamespace()
     regs = types.SimpleNamespace()
@@ -1335,6 +1343,7 @@ def get_payments_table(
 
     # Registers.
     regs.interest = types.SimpleNamespace(current=_0, accrued=_0, settled=types.SimpleNamespace(current=_0, total=_0), deferred=_0)
+    regs.monetary_correction = types.SimpleNamespace(current=_0, accrued=_0, settled=types.SimpleNamespace(current=_0, total=_0), deferred=_0)
     regs.principal = types.SimpleNamespace(amortization_ratio=types.SimpleNamespace(current=_0, regular=_0), amortized=types.SimpleNamespace(current=_0, total=_0))
 
     # Control, create generators.
@@ -1342,12 +1351,16 @@ def get_payments_table(
     gens.interest_tracker_2 = track_interest_2()
     gens.principal_tracker_1 = track_principal_1()
     gens.principal_tracker_2 = track_principal_2()
+    gens.price_level_tracker_1 = track_monetary_correction_1()
+    gens.price_level_tracker_2 = track_monetary_correction_2()
 
     # Control, start generators.
     gens.principal_tracker_1.send(None)
     gens.principal_tracker_2.send(None)
     gens.interest_tracker_1.send(None)
     gens.interest_tracker_2.send(None)
+    gens.price_level_tracker_1.send(None)
+    gens.price_level_tracker_2.send(None)
 
     # B. Execution.
     for num, (ent0, ent1) in enumerate(itertools.pairwise(amortizations), 1):
@@ -1406,29 +1419,29 @@ def get_payments_table(
                 f_s = calculate_interest_factor(apy, decimal.Decimal((due - ent0.date).days) / decimal.Decimal(360))
 
                 if type(ent1) is Amortization and ent1.price_level_adjustment:
-                    kw1a: t.Dict[str, t.Any] = {}
+                    kwa: t.Dict[str, t.Any] = {}
 
-                    kw1a['base'] = ent1.price_level_adjustment.base_date
-                    kw1a['period'] = ent1.price_level_adjustment.period
-                    kw1a['shift'] = ent1.price_level_adjustment.shift
-                    kw1a['ratio'] = _1  # Adjustment for the last correction rate.
+                    kwa['base'] = ent1.price_level_adjustment.base_date
+                    kwa['period'] = ent1.price_level_adjustment.period
+                    kwa['shift'] = ent1.price_level_adjustment.shift
+                    kwa['ratio'] = _1  # Adjustment for the last correction rate.
 
-                    # Lock the price level factor. The minimum factor is one, i.e., the correction value must be positive.
-                    f_c = max(vir.backend.calculate_ipca_factor(**kw1a), _1)
+                    # Ensure the price level factor is at least one, i.e., the correction value must be positive.
+                    f_c = max(vir.backend.calculate_ipca_factor(**kwa), _1)
 
                 # In the case of an advancement, the price level adjustment must be paid ("ent1" doesn't have the "price_level_adjustment" attribute).
                 elif type(ent1) is Amortization.Bare:
-                    kw1b: t.Dict[str, t.Any] = {}
+                    kwb: t.Dict[str, t.Any] = {}
 
-                    kw1b['base'] = amortizations[0].date.replace(day=1)
-                    kw1b['period'] = _delta_months(ent1.date, amortizations[0].date)
-                    kw1b['shift'] = 'M-1'  # FIXME.
-                    kw1b['ratio'] = _1  # Adjustment for the last correction rate.
+                    kwb['base'] = amortizations[0].date.replace(day=1)
+                    kwb['period'] = _delta_months(ent1.date, amortizations[0].date)
+                    kwb['shift'] = 'M-1'  # FIXME.
+                    kwb['ratio'] = _1  # Adjustment for the last correction rate.
 
-                    # Lock the price level factor. The minimum factor is one, i.e., the correction value must be positive.
-                    f_c = max(vir.backend.calculate_ipca_factor(**kw1b), _1)
+                    # Ensure the price level factor is at least one, i.e., the correction value must be positive.
+                    f_c = max(vir.backend.calculate_ipca_factor(**kwb), _1)
 
-            elif vir and vir.code == 'IPCA' and capitalisation == '30/360':  # American and Custom Amortization systems.
+            elif vir and vir.code == 'IPCA' and capitalisation == '30/360':  # American and other monthly amortization systems.
                 dcp = (due - ent0.date).days
                 dct = (ent1.date - ent0.date).days
 
@@ -1456,21 +1469,9 @@ def get_payments_table(
                 f_s = calculate_interest_factor(apy, decimal.Decimal(dcp) / (12 * decimal.Decimal(dct)))
 
                 if type(ent1) is Amortization.Bare or type(ent1) is Amortization and ent1.price_level_adjustment:
-                    kw2: t.Dict[str, t.Any] = {}
+                    kwc: t.Dict[str, t.Any] = {}
                     dcp = (due - ent0.date).days  # "30/360" spec needs a ratio for the IPCA factor.
                     dct = (ent1.date - ent0.date).days
-
-                    if type(ent1) is Amortization and ent1.price_level_adjustment:
-                        kw2['base'] = ent1.price_level_adjustment.base_date
-                        kw2['period'] = ent1.price_level_adjustment.period
-                        kw2['shift'] = ent1.price_level_adjustment.shift
-                        kw2['ratio'] = _1  # Adjustment for the last correction rate.
-
-                    else:
-                        kw2['base'] = amortizations[0].date.replace(day=1)
-                        kw2['period'] = _delta_months(ent1.date, amortizations[0].date)
-                        kw2['shift'] = 'M-1'  # FIXME.
-                        kw2['ratio'] = _1  # Adjustment for the last correction rate.
 
                     # Exclusively for the first anniversary date, "DCT" will be considered as the difference in calendar
                     # days between the 24th day before and the 24th day after the disbursement date (start of accrual).
@@ -1493,9 +1494,19 @@ def get_payments_table(
                         if ent0.dct_override.predates_first_amortization:
                             dct = _diff_surrounding_dates(ent0.dct_override.date_from, 24)
 
-                    kw2['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)
+                    if type(ent1) is Amortization and ent1.price_level_adjustment:
+                        kwc['base'] = ent1.price_level_adjustment.base_date
+                        kwc['period'] = ent1.price_level_adjustment.period
+                        kwc['shift'] = ent1.price_level_adjustment.shift
+                        kwc['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)  # Adjustment for the last correction rate.
 
-                    f_c = max(vir.backend.calculate_ipca_factor(**kw2), _1)  # Lock the price level factor.
+                    else:
+                        kwc['base'] = amortizations[0].date.replace(day=1)
+                        kwc['period'] = _delta_months(ent1.date, amortizations[0].date)
+                        kwc['shift'] = 'M-1'  # FIXME.
+                        kwc['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)  # Adjustment for the last correction rate.
+
+                    f_c = max(vir.backend.calculate_ipca_factor(**kwc), _1)  # Lock the price level factor.
 
             elif vir:
                 raise NotImplementedError(f'Combination of variable interest rate {vir} and capitalisation {capitalisation} unsupported')
@@ -1522,11 +1533,11 @@ def get_payments_table(
         # (advancements), and AREG is the remaining regular amortization percentage of the payment flow.
         #
         if ent0.date < calc_date.value or ent1.date <= calc_date.value or calc_date.runaway:
-            # Register the interest accrued in the period.
-            gens.interest_tracker_1.send(calc_balance() * (f_s - _1))
+            # Register the price level adjustment for the period.
+            gens.price_level_tracker_1.send(v := calc_balance() * (f_c - _1))
 
-            # Register the price level adjustment for the period (FIXME: implement).
-            # gens.price_level_tracker_1.send(…)
+            # Register the interest accrued in the period.
+            gens.interest_tracker_1.send((calc_balance() + v) * (f_s - _1))
 
             # Case of a regular amortization.
             if type(ent1) is Amortization:
@@ -1542,33 +1553,31 @@ def get_payments_table(
                 if ent1.amortizes_interest:
                     gens.interest_tracker_2.send(regs.interest.current + regs.principal.amortization_ratio.current * regs.interest.deferred)
 
-                # Register the price level adjustment to be paid in the period (FIXME: implement).
-                # gens.price_level_tracker_2.send(…)
+                # Register the price level adjustment to be paid in the period.
+                if ent1.price_level_adjustment and ent1.price_level_adjustment.amortizes_adjustment:
+                    gens.price_level_tracker_2.send(regs.monetary_correction.current + regs.principal.amortization_ratio.current * regs.monetary_correction.deferred)
 
             # Case of an advancement (extraordinary amortization).
             #
-            # Remember that an advancement has only a gross value that will be paid on a certain date. This gross value
-            # will be factored into various components of the debt, in a specific order. The first component of the debt
-            # to be amortized is the spread. After paying the spread, the remaining amount should be deducted from the
-            # price level adjustment. Finally, the remaining amount will be deducted from the principal. In the code
-            # block below,
+            # Remember that an advance presents only a gross value to be paid on a certain date. This gross value will be
+            # factored into various components of the debt, in an ordered manner. The first component of the debt to be
+            # amortized is the interest (spread). After payment of the interest, what remains must be deducted from the
+            # monetary correction. Finally, subtract the remaining value of the principal. In the block of code below,
             #
-            #  • "val1" is the interest to be paid.
+            #  • "val1" is the interest to be paid;
             #
-            #  • "val2" is the price level adjustment to be paid. FIXME: the variable "plfv" should be multiplied by the
-            #    principal amortization percentage of the period, and not by the decimal one.
+            #  • "val2" is the price level adjustment to be paid;
             #
             #  • "val3" is the principal to be amortized.
             #
-            # Observe that the order of calculation of these variables corresponds to the order of factoring the gross
-            # advancement value.
+            # Observe that the order of calculation of these variables corresponds to the order of factorisation of the
+            # gross value of the advance.
             #
             else:
                 ent1 = t.cast(Amortization.Bare, ent1)  # Mypy can't infer the type of the "ent1" variable here.
-                plfv = principal * (_1 - regs.principal.amortization_ratio.current) * (f_c - _1)  # Price level, full value.
                 val0 = min(ent1.value, calc_balance())
                 val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)
-                val2 = min(val0 - val1, plfv * _1)
+                val2 = min(val0 - val1, regs.monetary_correction.accrued - regs.monetary_correction.settled.total)
                 val3 = val0 - val1 - val2
 
                 # Check if the irregular payment value doesn't exceed the remaining balance.
@@ -1581,8 +1590,8 @@ def get_payments_table(
                 # Register the interest to be paid in the period.
                 gens.interest_tracker_2.send(val1)
 
-                # Register the price level adjustment to be paid in the period (FIXME: implement).
-                # gens.price_level_tracker_2.send(val2)
+                # Register the price level adjustment to be paid in the period.
+                gens.price_level_tracker_2.send(val2)
 
         # Phase B.2, FRD, or Phase Rafa Dois.
         #
@@ -1607,12 +1616,10 @@ def get_payments_table(
                 else:  # Implies "gain_output == 'current'."
                     pmt.gain = regs.interest.current
 
-                pmt.bal = calc_balance()
-
                 # Amortizes principal, does not incorporate interest.
                 if pmt.amort and ent1.amortizes_interest:
-                    pmt.raw = pmt.amort + (j_f := regs.interest.settled.current if ent1.amortizes_interest else _0)
-                    pmt.tax = j_f * calculate_revenue_tax(amortizations[0].date, due)
+                    pmt.raw = pmt.amort + (y := regs.interest.settled.current)
+                    pmt.tax = _0 if tax_exempt else y * calculate_revenue_tax(amortizations[0].date, due)
 
                 # Amortizes principal, incorporates interest.
                 elif pmt.amort:
@@ -1621,13 +1628,31 @@ def get_payments_table(
 
                 # Does not amortize principal, does not incorporate interest.
                 elif ent1.amortizes_interest:
-                    pmt.raw = j_f = regs.interest.settled.current if ent1.amortizes_interest else _0
-                    pmt.tax = j_f * calculate_revenue_tax(amortizations[0].date, due)
+                    pmt.raw = regs.interest.settled.current
+                    pmt.tax = _0 if tax_exempt else pmt.raw * calculate_revenue_tax(amortizations[0].date, due)
 
                 # Does not amortize principal, incorporates interest.
                 else:
                     pmt.raw = _0
                     pmt.tax = _0
+
+                # Applies the price level adjustment to the gross value and the revenue tax.
+                if vir and vir.code == 'IPCA':
+                    pmt = t.cast(PriceAdjustedPayment, pmt)
+
+                    if gain_output == 'deferred':
+                        pmt.pla = regs.monetary_correction.deferred + regs.monetary_correction.current
+
+                    elif gain_output == 'settled':
+                        pmt.pla = regs.monetary_correction.settled.current if ent1.amortizes_interest else _0
+
+                    else:  # Implies "gain_output == 'current'."
+                        pmt.pla = regs.monetary_correction.current
+
+                    pmt.raw = pmt.raw + pmt.pla
+                    pmt.tax = _0 if tax_exempt else pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
+
+                pmt.bal = calc_balance()
 
             else:
                 pmt.amort = regs.principal.amortized.current
@@ -1641,17 +1666,26 @@ def get_payments_table(
                 else:  # Implies "gain_output == 'current'."
                     pmt.gain = regs.interest.current
 
+                pmt.raw = pmt.amort + (y := regs.interest.settled.current)
+                pmt.tax = _0 if tax_exempt else y * calculate_revenue_tax(amortizations[0].date, due)
+
+                # Applies the price level adjustment to the gross value and the revenue tax.
+                if vir and vir.code == 'IPCA':
+                    pmt = t.cast(PriceAdjustedPayment, pmt)
+
+                    if gain_output == 'deferred':
+                        pmt.pla = regs.monetary_correction.deferred + regs.monetary_correction.current
+
+                    elif gain_output == 'settled':
+                        pmt.pla = regs.monetary_correction.settled.current
+
+                    else:  # Implies "gain_output == 'current'."
+                        pmt.pla = regs.monetary_correction.current
+
+                    pmt.raw = pmt.raw + pmt.pla
+                    pmt.tax = _0 if tax_exempt else pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
+
                 pmt.bal = calc_balance()
-                pmt.raw = pmt.amort + (j_f := regs.interest.settled.current)
-                pmt.tax = j_f * calculate_revenue_tax(amortizations[0].date, due)
-
-            # Applies the price level adjustment to the gross value and the revenue tax.
-            if vir and vir.code == 'IPCA':
-                pmt = t.cast(PriceAdjustedPayment, pmt)
-
-                pmt.pla = regs.principal.amortized.current * (f_c - _1)
-                pmt.raw = pmt.raw + pmt.pla
-                pmt.tax = pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
 
             # Sanity check.
             #
@@ -1668,9 +1702,6 @@ def get_payments_table(
                 assert _Q(pmt.raw) == _Q(ent1.value)
 
             # B.2.2. Arredonda valores do pagamento, e calcula o seu valor líquido.
-            if tax_exempt:
-                pmt.tax = _0
-
             pmt.amort = _Q(pmt.amort)
             pmt.gain = _Q(pmt.gain)
             pmt.raw = _Q(pmt.raw)
@@ -1698,7 +1729,7 @@ def get_daily_returns(
     vir: t.Optional[VariableIndex] = None,
     capitalisation: _CAPITALISATION = '360',
     is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
-) -> t.Iterable[DailyReturn]:
+) -> t.Generator[DailyReturn, None, None]:
     '''
     Generates a yield table for a given loan.
 
@@ -1748,7 +1779,7 @@ def get_daily_returns(
     # Some indexes are only published by supervisor bodies on business days. For example, Brazilian DI. On such cases
     # this function will fill in the gaps, i.e., provide a zero value if the upstream misses it.
     #
-    def get_normalized_cdi_indexes(backend: IndexStorageBackend) -> t.Iterator[decimal.Decimal]:
+    def get_normalized_cdi_indexes(backend: IndexStorageBackend) -> t.Generator[decimal.Decimal, None, None]:
         # Some implementations of the "get_cdi_indexes" function return a generator, others return a list. Therefore,
         # I'm forcing the conversion to a list to meet both possibilities.
         #
@@ -1765,7 +1796,7 @@ def get_daily_returns(
                 yield _0
 
     # Poupança is a monthly index. This function will normalize it to daily values.
-    def get_normalized_savings_indexes(backend: IndexStorageBackend) -> t.Iterator[decimal.Decimal]:
+    def get_normalized_savings_indexes(backend: IndexStorageBackend) -> t.Generator[decimal.Decimal, None, None]:
         for ranged in backend.get_savings_indexes(amortizations[0].date, amortizations[-1].date):
             init = max(amortizations[0].date, ranged.begin_date)
             ends = min(amortizations[-1].date, ranged.end_date)
@@ -1776,7 +1807,7 @@ def get_daily_returns(
                 yield rate - _1
 
     # IPCA is a monthly index. This function will normalize it to daily values.
-    def get_normalized_ipca_indexes(backend: IndexStorageBackend) -> t.Iterator[decimal.Decimal]:
+    def get_normalized_ipca_indexes(backend: IndexStorageBackend) -> t.Generator[decimal.Decimal, None, None]:
         raise NotImplementedError()
 
     def calc_balance() -> decimal.Decimal:
@@ -1949,23 +1980,7 @@ def get_daily_returns(
 
                 cnt = 1
 
-            # Case of an advance (extraordinary amortization).
-            #
-            # Remember that an advance presents only a gross value to be paid on a certain date. This gross value will be
-            # factored into various components of the debt, in an ordered manner. The first component of the debt to be
-            # amortized is the interest (spread). After payment of the interest, what remains must be deducted from the
-            # monetary correction. Finally, subtract the remaining value of the principal. In the block of code below,
-            #
-            #  • "val1" is the value of interest to be paid.
-            #
-            #  • "val2" is the value of the correction to be paid. FIXME: the variable "plfv" should be multiplied by the
-            #    principal amortization ratio of the period, and not by the decimal one.
-            #
-            #  • "val3" is the value to amortize the principal.
-            #
-            # Observe that the order of calculation of these variables corresponds to the order of factorisation of the
-            # gross value of the advance.
-            #
+            # Case of an advance (extraordinary amortization). See comments of the similar block in "get_payments_table".
             else:
                 ent = t.cast(Amortization.Bare, tup[1])  # O Mypy não consegue inferir o tipo da variável "ent" aqui.
                 plfv = principal * (_1 - regs.principal.amortization_ratio.current) * (f_c - _1)  # Price level, full value.
@@ -2377,23 +2392,6 @@ def preprocess_livre(
 
     return sched
 
-# FIXME: remove this class.
-class PaymentFactory:
-    @staticmethod
-    @typeguard.typechecked
-    def create(mode: _OP_MODES, **kwa: t.Any) -> t.Iterable[Payment]:
-        if mode == 'Bullet':
-            return build_bullet(**kwa)
-
-        elif mode == 'Juros mensais':
-            return build_jm(**kwa)
-
-        elif mode == 'Price':
-            return build_price(**kwa)
-
-        else:
-            return build(**kwa)
-
 # FIXME: renomear para "get_bullet_payments".
 @typeguard.typechecked
 def build_bullet(
@@ -2408,11 +2406,11 @@ def build_bullet(
     # Etc.
     anniversary_date: t.Optional[datetime.date] = None,
     vir: t.Optional[VariableIndex] = None,
-    calc_date: t.Optional[CalcDate] = None,  # Pass through.
     capitalisation: _DAILY_CAPITALISATION = '360',
     tax_exempt: t.Optional[bool] = False,
+    calc_date: t.Optional[CalcDate] = None,
     gain_output: _GAIN_OUTPUT_MODE = 'current'
-) -> t.Iterable[Payment]:
+) -> t.Generator[Payment, None, None]:
     '''
     Stereotypes a Bullet operation.
 
@@ -2457,6 +2455,8 @@ def build_bullet(
 
     yield from get_payments_table(**kwa)
 
+get_bullet_payments = build_bullet
+
 # FIXME: renomear para "get_jm_payments".
 @typeguard.typechecked
 def build_jm(
@@ -2471,10 +2471,10 @@ def build_jm(
     # Etc.
     anniversary_date: t.Optional[datetime.date] = None,
     vir: t.Optional[VariableIndex] = None,
-    calc_date: t.Optional[CalcDate] = None,  # Pass through.
     tax_exempt: t.Optional[bool] = False,
+    calc_date: t.Optional[CalcDate] = None,
     gain_output: _GAIN_OUTPUT_MODE = 'current'
-) -> t.Iterable[Payment]:
+) -> t.Generator[Payment, None, None]:
     '''
     Stereotypes an American Amortization operation.
 
@@ -2517,6 +2517,8 @@ def build_jm(
 
     yield from get_payments_table(**kwa)
 
+get_jm_payments = build_jm
+
 # FIXME: renomear para "get_price_payments".
 @typeguard.typechecked
 def build_price(
@@ -2530,10 +2532,10 @@ def build_price(
 
     # Etc.
     anniversary_date: t.Optional[datetime.date] = None,
-    calc_date: t.Optional[CalcDate] = None,  # Pass through.
     tax_exempt: t.Optional[bool] = False,
+    calc_date: t.Optional[CalcDate] = None,
     gain_output: _GAIN_OUTPUT_MODE = 'current'
-) -> t.Iterable[Payment]:
+) -> t.Generator[Payment, None, None]:
     '''
     Stereotypes a Price operation.
 
@@ -2575,7 +2577,9 @@ def build_price(
 
     yield from get_payments_table(**kwa)
 
-# FIXME: renomear para "get_custom_payments".
+get_price_payments = build_price
+
+# FIXME: remove.
 @typeguard.typechecked
 def build(
     principal: decimal.Decimal,
@@ -2587,10 +2591,10 @@ def build(
 
     # Etc.
     vir: t.Optional[VariableIndex] = None,
-    calc_date: t.Optional[CalcDate] = None,  # Pass through.
     tax_exempt: t.Optional[bool] = False,
+    calc_date: t.Optional[CalcDate] = None,
     gain_output: _GAIN_OUTPUT_MODE = 'current'
-) -> t.Iterable[Payment]:
+) -> t.Generator[Payment, None, None]:
     '''
     Builds a Custom payments schedule.
 
@@ -2637,7 +2641,7 @@ def get_bullet_daily_returns(
     vir: t.Optional[VariableIndex] = None,
     capitalisation: _DAILY_CAPITALISATION = '360',
     is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
-) -> t.Iterable[DailyReturn]:
+) -> t.Generator[DailyReturn, None, None]:
     kwa: t.Dict[str, t.Any] = {}
 
     kwa['principal'] = principal
@@ -2659,7 +2663,7 @@ def get_jm_daily_returns(
     anniversary_date: t.Optional[datetime.date] = None,
     vir: t.Optional[VariableIndex] = None,
     is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
-) -> t.Iterable[DailyReturn]:
+) -> t.Generator[DailyReturn, None, None]:
     kwa: t.Dict[str, t.Any] = {}
 
     kwa['principal'] = principal
@@ -2680,7 +2684,7 @@ def get_price_daily_returns(
     insertions: t.List[Amortization.Bare] = [],
     anniversary_date: t.Optional[datetime.date] = None,
     is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
-) -> t.Iterable[DailyReturn]:
+) -> t.Generator[DailyReturn, None, None]:
     kwa: t.Dict[str, t.Any] = {}
 
     kwa['principal'] = principal
@@ -2691,6 +2695,7 @@ def get_price_daily_returns(
 
     yield from get_daily_returns(**kwa)
 
+# FIXME: remove.
 @typeguard.typechecked
 def get_livre_daily_returns(
     principal: decimal.Decimal,
@@ -2699,7 +2704,7 @@ def get_livre_daily_returns(
     insertions: t.List[Amortization.Bare] = [],
     vir: t.Optional[VariableIndex] = None,
     is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
-) -> t.Iterable[DailyReturn]:
+) -> t.Generator[DailyReturn, None, None]:
     kwa: t.Dict[str, t.Any] = {}
 
     kwa['principal'] = principal
@@ -2720,7 +2725,7 @@ def calculate_revenue_tax(begin: datetime.date, end: datetime.date) -> decimal.D
     if end > begin:
         dif = (end - begin).days
 
-        for minimum, maximum, rate in _REVENUE_TAX_BRACKETS:
+        for minimum, maximum, rate in _BRAZIL_TAX_BRACKETS:
             if minimum < dif <= maximum:
                 return rate
 
@@ -2779,7 +2784,7 @@ def get_delinquency_charges(
     outstanding_balance: decimal.Decimal,  # Unpaid principal plus interest.
     arrears_period: t.Tuple[datetime.date, datetime.date],  # Arrear, or delinquency period.
 
-    loan_apy: decimal.Decimal,  # Annual interest rate for remuneratory interest (spread).
+    loan_apy: decimal.Decimal,  # Annual interest rate (spread).
     loan_vir: t.Optional[VariableIndex] = None,  # Variable index.
 
     fee_rate: decimal.Decimal = LatePayment.FEE_RATE,
@@ -2794,7 +2799,7 @@ def get_delinquency_charges(
       • "outstanding_balance" (decimal.Decimal): the loan's outstanding balance, including unpaid principal and interest, at
         the initial date.
 
-      • "loan_apy" (decimal.Decimal): the annual interest rate for remuneratory interest (spread).
+      • "loan_apy" (decimal.Decimal): the annual interest rate (spread).
 
       • "loan_zero_date" (datetime.date): the initial date of the loan's payment schedule.
 
@@ -2881,7 +2886,7 @@ def get_late_payment(
     calc_date: datetime.date,
 
     # Extra payment data. FIXME: the fields below could be part of the Payment class, as meta data.
-    apy: decimal.Decimal,  # Annual remuneratory interest rate (spread).
+    apy: decimal.Decimal,  # Annual interest rate (spread).
     zero_date: datetime.date,  # Initial date of the payment schedule, for tax calculation.
     vir: t.Optional[VariableIndex] = None,  # Variable index.
 
