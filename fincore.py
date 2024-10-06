@@ -648,6 +648,8 @@ class DailyReturn:
 
     variable_factor: decimal.Decimal = _1
 
+    monetary_correction_factor: decimal.Decimal = _1
+
 @dataclasses.dataclass
 class PriceAdjustedPayment(Payment):
     '''An entry of a payment schedule, with price level adjustment (IPCA or IGPM).'''
@@ -819,7 +821,7 @@ class IndexStorageBackend:
     def calculate_savings_factor(self, begin: datetime.date, end: datetime.date, percentage: int = 100) -> types.SimpleNamespace:
         '''Calculates the Brazilian Savings factor for a given period.'''
 
-        # Considera-se a data de aniversário das prestações com início nos dias 29, 30 e 31 como o dia 1° do mês seguinte.
+        # Usa-se o 1º dia do mês seguinte como o aniversário dos dias 29, 30 e 31.
         ini = begin if begin.day <= 28 else (begin + _MONTH).replace(day=1)
         pct = decimal.Decimal(percentage) / decimal.Decimal(100)
         fac = _1
@@ -1429,7 +1431,8 @@ def get_payments_table(
                     # Ensure the price level factor is at least one, i.e., the correction value must be positive.
                     f_c = max(vir.backend.calculate_ipca_factor(**kwa), _1)
 
-                # In the case of an advancement, the price level adjustment must be paid ("ent1" doesn't have the "price_level_adjustment" attribute).
+                # In the case of an advancement, the price level adjustment must be paid – "ent1" doesn't
+                # need to have the "price_level_adjustment" attribute.
                 elif type(ent1) is Amortization.Bare:
                     kwb: t.Dict[str, t.Any] = {}
 
@@ -1776,44 +1779,6 @@ def get_daily_returns(
       • "variable_factor", is the interest factor used to calculate the variable component of the day's yield.
     '''
 
-    # Some indexes are only published by supervisor bodies on business days. For example, Brazilian DI. On such cases
-    # this function will fill in the gaps, i.e., return zero if missing from upstream.
-    #
-    # Some implementations of "IndexStorageBackend.get_cdi_indexes" return a generator, others might return a list.
-    # Hence the cast to "iter" below.
-    #
-    def get_normalized_cdi_indexes(backend: IndexStorageBackend) -> t.Generator[decimal.Decimal, None, None]:
-        lst = iter(backend.get_cdi_indexes(amortizations[0].date, amortizations[-1].date))
-        idx = next(lst, None)
-
-        for ref in _date_range(amortizations[0].date, amortizations[-1].date):
-            if idx and ref == idx.date:
-                yield idx.value / decimal.Decimal(100)
-
-                idx = next(lst, None)
-
-            else:
-                yield _0
-
-    # Poupança is a monthly index. This function will normalize it to daily values.
-    #
-    # FIXME: this was not specified by a domain expert. Also, this is untested. Create a test case comparing the
-    # output of a Poupança loan output from "get_payments_table" with "get_daily_returns".
-    #
-    def get_normalized_savings_indexes(backend: IndexStorageBackend) -> t.Generator[decimal.Decimal, None, None]:
-        for ranged in backend.get_savings_indexes(amortizations[0].date, amortizations[-1].date):
-            init = max(amortizations[0].date, ranged.begin_date)
-            ends = min(amortizations[-1].date, ranged.end_date)
-            days = (ranged.end_date - ranged.begin_date).days
-            rate = calculate_interest_factor(ranged.value, _1 / decimal.Decimal(days))
-
-            for _ in _date_range(init, ends):
-                yield rate - _1
-
-    # IPCA is a monthly index. This function will normalize it to daily values.
-    def get_normalized_ipca_indexes(backend: IndexStorageBackend) -> t.Generator[decimal.Decimal, None, None]:
-        raise NotImplementedError()
-
     def calc_balance() -> decimal.Decimal:
         val = principal - regs.principal.amortized.total + regs.interest.current + regs.monetary_correction.current
 
@@ -1893,6 +1858,62 @@ def get_daily_returns(
 
             regs.monetary_correction.current = regs.monetary_correction.current - val
 
+    # Some indexes are only published by supervisor bodies on business days. For example, Brazilian DI. On such cases
+    # this function will fill in the gaps, i.e., return zero if missing from upstream.
+    #
+    # Some implementations of "IndexStorageBackend.get_cdi_indexes" return a generator, others might return a list.
+    # Hence the cast to "iter" below.
+    #
+    def get_normalized_cdi_indexes(backend: IndexStorageBackend) -> t.Generator[decimal.Decimal, None, None]:
+        lst = iter(backend.get_cdi_indexes(amortizations[0].date, amortizations[-1].date))
+        idx = next(lst, None)
+
+        for ref in _date_range(amortizations[0].date, amortizations[-1].date):
+            if idx and ref == idx.date:
+                yield idx.value / decimal.Decimal(100)
+
+                idx = next(lst, None)
+
+            else:
+                yield _0
+
+    # Poupança is a monthly index. This function will normalize it to daily values.
+    #
+    # FIXME: this is wrong.
+    #
+    def get_normalized_savings_indexes(backend: IndexStorageBackend) -> t.Generator[decimal.Decimal, None, None]:
+        for ranged in backend.get_savings_indexes(amortizations[0].date, amortizations[-1].date):
+            init = max(amortizations[0].date, ranged.begin_date)
+            ends = min(amortizations[-1].date, ranged.end_date)
+            days = (ranged.end_date - ranged.begin_date).days
+            rate = calculate_interest_factor(ranged.value, _1 / decimal.Decimal(days))
+
+            for _ in _date_range(init, ends):
+                yield rate - _1
+
+    # IPCA is a monthly index. This function will normalize it to daily values.
+    def get_normalized_ipca_indexes(backend: IndexStorageBackend) -> t.Generator[decimal.Decimal, None, None]:
+        ls = [x for x in amortizations if type(x) is Amortization and x.price_level_adjustment]
+        dt = amortizations[0].date
+
+        for amort0, amort1 in itertools.pairwise([amortizations[0]] + ls):
+            kwa: t.Dict[str, t.Any] = {}
+            pla = t.cast(PriceLevelAdjustment, t.cast(Amortization, amort1).price_level_adjustment)
+
+            kwa['base'] = pla.base_date
+            kwa['period'] = pla.period
+            kwa['shift'] = pla.shift
+            kwa['ratio'] = _1
+
+            # Ensure the price level factor is at least one, i.e., the correction value must be positive.
+            fac = max(backend.calculate_ipca_factor(**kwa), _1)
+            dif = (amort1.date - amort0.date).days
+
+            while dt < amort1.date:
+                yield calculate_interest_factor(fac, _1 / decimal.Decimal(dif))
+
+                dt += datetime.timedelta(days=1)
+
     # A. Valida e prepara para execução.
     gens = types.SimpleNamespace()
     regs = types.SimpleNamespace()
@@ -1947,15 +1968,17 @@ def get_daily_returns(
     gens.price_level_tracker_1.send(None)
     gens.price_level_tracker_2.send(None)
 
-    # List of indexes.
     if vir and vir.code == 'CDI':
         idxs = get_normalized_cdi_indexes(vir.backend)
+
+    elif vir and vir.code == 'IPCA':
+        idxs = get_normalized_ipca_indexes(vir.backend)
 
     elif vir and vir.code == 'Poupança':
         idxs = get_normalized_savings_indexes(vir.backend)
 
-    elif vir:  # Implies "vir.code == 'IPCA'".
-        idxs = get_normalized_ipca_indexes(vir.backend)
+    elif vir:
+        raise NotImplementedError(f'unsupported variable index {vir}')
 
     # B. Execute.
     itr = iter(amortizations)
@@ -1964,14 +1987,14 @@ def get_daily_returns(
     cnt = prd = 1
     buf = _0
 
-    # Compensação para empréstimos que se encerram em dias não úteis.
+    # Extend the end date to the next business day.
     while not is_bizz_day_cb(end):
         end = end + datetime.timedelta(days=1)
 
     for ref in _date_range(amortizations[0].date, end):
-        f_c = _1  # Taxa (ou fator) de correção, FC.
-        f_v = _1  # Taxa (ou fator) variável, FV.
-        f_s = _1  # Taxa (ou fator) fixo, FS.
+        f_c = _1  # Correction factor, FC.
+        f_v = _1  # Variable factor, FV.
+        f_s = _1  # Spread factor, FS.
 
         # Phase B.0, FRU, or Phase Rafa Um. Slightly altered with respect to FRU from the "get_payments_table" routine.
         while ref < amortizations[-1].date and ref == tup[1].date:
@@ -2081,10 +2104,24 @@ def get_daily_returns(
             f_v = next(idxs) * vir.percentage / decimal.Decimal(100) + _1
 
         elif ref < amortizations[-1].date and vir and vir.code == 'IPCA' and capitalisation == '360':  # Bullet.
-            raise NotImplementedError()  # FIXME: implementar.
+            f_s = calculate_interest_factor(apy, _1 / decimal.Decimal(360))
+            f_c = next(idxs)
 
         elif ref < amortizations[-1].date and vir and vir.code == 'IPCA' and capitalisation == '30/360':  # Juros mensais e Livre.
-            raise NotImplementedError()  # FIXME: implementar.
+            mr = calculate_interest_factor(apy, _1 / decimal.Decimal(12)) - _1  # Monthly rate.
+
+            # Calculation of DT, from DP/DT: see comments of the previous "30/360" block.
+            if p == 1 and (type(tup[1]) is Amortization.Bare or ref < tup[1].date):
+                dt = decimal.Decimal((amortizations[1].date - amortizations[0].date).days)
+
+            elif ref == tup[1].date:
+                dt = decimal.Decimal(calendar.monthrange(tup[1].date.year, tup[1].date.month)[1])
+
+            else:
+                dt = decimal.Decimal(calendar.monthrange(tup[0].date.year, tup[0].date.month)[1])
+
+            f_s = calculate_interest_factor(mr, _1 / dt, False)  # Fator diário.
+            f_c = next(idxs)
 
         elif ref < amortizations[-1].date and vir:
             raise NotImplementedError(f'Combination of variable interest rate {vir} and capitalisation {capitalisation} unsupported')
@@ -2121,7 +2158,8 @@ def get_daily_returns(
             dr.bal = _Q(calc_balance())  # Balance at the end of the day.
 
         dr.fixed_factor = f_s
-        dr.variable_factor = f_v * f_c
+        dr.variable_factor = f_v
+        dr.monetary_correction_factor = f_c
 
         yield dr
 
