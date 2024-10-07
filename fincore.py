@@ -156,6 +156,9 @@ import dateutil.relativedelta
 # Logger object.
 _LOG = logging.getLogger('fincore')
 
+# Log version info
+_LOG.info(f"Fincore version {__version__} initialized")
+
 # Zero as decimal.
 _0 = decimal.Decimal()
 
