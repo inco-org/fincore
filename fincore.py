@@ -153,11 +153,13 @@ import dataclasses
 import typeguard
 import dateutil.relativedelta
 
+__version__ = '3.1.0'
+
 # Logger object.
 _LOG = logging.getLogger('fincore')
 
 # Log version info
-_LOG.info(f"Fincore version {__version__} initialized")
+_LOG.info(f'Fincore version {__version__} initialized')
 
 # Zero as decimal.
 _0 = decimal.Decimal()
