@@ -148,18 +148,17 @@ import functools
 import itertools
 import contextlib
 import dataclasses
+import importlib.metadata
 
 # Libs.
 import typeguard
 import dateutil.relativedelta
 
-__version__ = '3.1.0'
+# Fincore version (http://versioningit.readthedocs.io/en/stable/runtime-version.html).
+__version__ = importlib.metadata.version('fincore')
 
 # Logger object.
 _LOG = logging.getLogger('fincore')
-
-# Log version info
-_LOG.info(f'Fincore version {__version__} initialized')
 
 # Zero as decimal.
 _0 = decimal.Decimal()
@@ -1883,22 +1882,23 @@ def get_daily_returns(
                 yield _0
 
     # Poupança is a monthly index. This function will normalize it to daily values.
-    #
-    # FIXME: this is wrong.
-    #
     def get_normalized_savings_indexes(backend: IndexStorageBackend) -> t.Generator[decimal.Decimal, None, None]:
-        for ranged in backend.get_savings_indexes(amortizations[0].date, amortizations[-1].date):
-            init = max(amortizations[0].date, ranged.begin_date)
-            ends = min(amortizations[-1].date, ranged.end_date)
-            days = (ranged.end_date - ranged.begin_date).days
-            rate = calculate_interest_factor(ranged.value, _1 / decimal.Decimal(days))
+        ls = [x for x in amortizations if type(x) is Amortization and x.amortizes_interest]
+        dt = amortizations[0].date
 
-            for _ in _date_range(init, ends):
-                yield rate - _1
+        for amort0, amort1 in itertools.pairwise([amortizations[0]] + ls):
+            pct = t.cast(VariableIndex, vir).percentage  # Mypy fails to detect that, despite "vir" being optional, here it can't be None.
+            fac = backend.calculate_savings_factor(amort0.date, amort1.date, pct).value - _1
+            val = calculate_interest_factor(fac, _1 / (amort1.date - amort0.date).days, False)
+
+            while dt < amort1.date:
+                yield val
+
+                dt += datetime.timedelta(days=1)
 
     # IPCA is a monthly index. This function will normalize it to daily values.
     def get_normalized_ipca_indexes(backend: IndexStorageBackend) -> t.Generator[decimal.Decimal, None, None]:
-        ls = [x for x in amortizations if type(x) is Amortization and x.price_level_adjustment]
+        ls = [x for x in amortizations if type(x) is Amortization and x.price_level_adjustment and x.price_level_adjustment.amortizes_adjustment]
         dt = amortizations[0].date
 
         for amort0, amort1 in itertools.pairwise([amortizations[0]] + ls):
@@ -1911,11 +1911,11 @@ def get_daily_returns(
             kwa['ratio'] = _1
 
             # Ensure the price level factor is at least one, i.e., the correction value must be positive.
-            fac = max(backend.calculate_ipca_factor(**kwa), _1)
-            dif = (amort1.date - amort0.date).days
+            fac = max(backend.calculate_ipca_factor(**kwa), _1) - _1
+            val = calculate_interest_factor(fac, _1 / (amort1.date - amort0.date).days, False)
 
             while dt < amort1.date:
-                yield calculate_interest_factor(fac, _1 / decimal.Decimal(dif))
+                yield val
 
                 dt += datetime.timedelta(days=1)
 
@@ -2106,7 +2106,7 @@ def get_daily_returns(
 
         elif ref < amortizations[-1].date and vir and vir.code == 'Poupança' and capitalisation == '360':  # Poupança só suportada em Bullet.
             f_s = calculate_interest_factor(apy, _1 / decimal.Decimal(360))
-            f_v = next(idxs) * vir.percentage / decimal.Decimal(100) + _1
+            f_v = next(idxs)
 
         elif ref < amortizations[-1].date and vir and vir.code == 'IPCA' and capitalisation == '360':  # Bullet.
             f_s = calculate_interest_factor(apy, _1 / decimal.Decimal(360))
@@ -2803,7 +2803,11 @@ def calculate_interest_factor(rate: decimal.Decimal, period: decimal.Decimal, pe
     if percent:
         rate = decimal.Decimal(rate) / decimal.Decimal(100)
 
-    return (1 + rate) ** decimal.Decimal(period)
+    if rate:
+        return (_1 + rate) ** decimal.Decimal(period)
+
+    else:
+        return _1
 
 @typeguard.typechecked
 def calculate_iof(begin: datetime.date, term: int) -> decimal.Decimal:
@@ -3073,6 +3077,9 @@ def get_late_payment(
 
         return o_2
 # }}}
+
+# Log current version info.
+_LOG.info(f'Fincore version {__version__} initialized')
 
 if __name__ == '__main__':
     import doctest
