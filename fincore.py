@@ -155,7 +155,7 @@ import typeguard
 import dateutil.relativedelta
 
 # Fincore version (http://versioningit.readthedocs.io/en/stable/runtime-version.html).
-__version__ = importlib.metadata.version('fincore')
+__version__ = importlib.metadata.version('fincore') if 'fincore' in importlib.metadata.packages_distributions() else 'DEV'
 
 # Logger object.
 _LOG = logging.getLogger('fincore')
