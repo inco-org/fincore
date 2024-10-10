@@ -143,7 +143,6 @@ import types
 import typing as t
 import decimal
 import logging
-import calendar
 import datetime
 import functools
 import itertools
@@ -1910,7 +1909,7 @@ def get_daily_returns(
     itr = iter(amortizations)
     tup = next(itr), next(itr)
     end = amortizations[-1].date
-    cnt = p = 1
+    cnt = prd = 1
     buf = _0
 
     # Compensação para empréstimos que se encerram em dias não úteis.
@@ -1922,79 +1921,7 @@ def get_daily_returns(
         f_v = _1  # Taxa (ou fator) variável, FV.
         f_s = _1  # Taxa (ou fator) fixo, FS.
 
-        # Phase B.0, FZA, or Phase Zille-Anna.
-        #
-        #  • Calculate FS (spread factor) for fixed-rate index; and both FS and FC for price level index.
-        #  • Calculate FS for post-fixed index (CDI, Brazilian Savings, etc). In this case there is no correction.
-        #
-        # Highly altered with respect to FZA from the "get_payments_table" routine.
-        #
-        if ref < amortizations[-1].date and not vir and capitalisation == '360':  # Bullet.
-            f_s = calculate_interest_factor(apy, _1 / decimal.Decimal(360))
-
-        elif ref < amortizations[-1].date and not vir and capitalisation == '365':  # Bullet in legacy mode.
-            f_s = calculate_interest_factor(apy, _1 / decimal.Decimal(365))
-
-        elif ref < amortizations[-1].date and not vir and capitalisation == '30/360':  # Juros mensais, Price, Livre.
-            v01 = calculate_interest_factor(apy, _1 / decimal.Decimal(12)) - _1  # Fator mensal.
-
-            # The first period has special handling here, to deal with variations in the loan anniversary.
-            #
-            # Example, the project of Resolvvi from June 2023. The first period has 32 days, instead of the expected 30
-            # days – from 19/06/2023, inclusive, to 21/07/2023, exclusive. The end date of the first period was
-            # shifted due to the loan anniversary, which is 21/12/2025.
-            #
-            # To account for cases where the start date of the loan's first period was altered in relation to its
-            # start of yield, due to changes in the loan anniversary date, the calculation of the fixed interest rate
-            # factor employs the difference in days between the start and end dates of the period.
-            #
-            # In any other period, it is sufficient to know the number of days in the month in which it begins.
-            #
-            # Observe that irregular amortizations do not define the intervals of a schedule's period. Therefore, the
-            # following test is used to determine the period's interval.
-            #
-            if p == 1 and (type(tup[1]) is Amortization.Bare or ref < tup[1].date):
-                v02 = decimal.Decimal((amortizations[1].date - amortizations[0].date).days)  # Dias no período.
-
-            elif ref == tup[1].date:
-                v02 = decimal.Decimal(calendar.monthrange(tup[1].date.year, tup[1].date.month)[1])  # Dias do mês do período.
-
-            else:
-                v02 = decimal.Decimal(calendar.monthrange(tup[0].date.year, tup[0].date.month)[1])  # Dias do mês do período.
-
-            f_s = calculate_interest_factor(v01, _1 / v02, False)  # Fator diário.
-
-        elif ref < amortizations[-1].date and vir and vir.code == 'CDI' and capitalisation == '252':  # Bullet, Juros mensais, Livre.
-            f_v = next(idxs) * vir.percentage / decimal.Decimal(100) + _1
-
-            # Note that the index on a 252 basis only earns on a business day. This is how the CDI works. In this case the
-            # fixed factor must follow the variable. It should only be calculated on a business day.
-            #
-            # FIXME: if by chance the variable factor, "next(idxs)", is zero, and if it happens to be a business day, the
-            # fixed factor will not be calculated. I've never seen the CDI be zero, but it's worth considering this case.
-            # The correct thing to do below is to test if the day is a business day, not if the value of the factor "f_c"
-            # is greater than one.
-            #
-            if f_v > _1:
-                f_s = calculate_interest_factor(apy, _1 / decimal.Decimal(252))
-
-        elif ref < amortizations[-1].date and vir and vir.code == 'Poupança' and capitalisation == '360':  # Poupança só suportada em Bullet.
-            f_s = calculate_interest_factor(apy, _1 / decimal.Decimal(360))
-            f_v = next(idxs) * vir.percentage / decimal.Decimal(100) + _1
-
-        elif ref < amortizations[-1].date and vir and vir.code == 'IPCA' and capitalisation == '360':  # Bullet.
-            raise NotImplementedError()  # FIXME: implementar.
-
-        elif ref < amortizations[-1].date and vir and vir.code == 'IPCA' and capitalisation == '30/360':  # Juros mensais e Livre.
-            raise NotImplementedError()  # FIXME: implementar.
-
-        elif ref < amortizations[-1].date and vir:
-            raise NotImplementedError(f'Combination of variable interest rate {vir} and capitalisation {capitalisation} unsupported')
-
-        elif ref < amortizations[-1].date:
-            raise NotImplementedError(f'Unsupported capitalisation {capitalisation} for fixed interest rate')
-
-        # Phase B.1, FRU, or Phase Rafa Um. Slightly altered with respect to FRU from the "get_payments_table" routine.
+        # Phase B.0, FRU, or Phase Rafa Um. Slightly altered with respect to FRU from the "get_payments_table" routine.
         while ref < amortizations[-1].date and ref == tup[1].date:
             if not buf and not is_bizz_day_cb(ref):
                 buf = _Q(calc_balance())
@@ -2018,7 +1945,7 @@ def get_daily_returns(
                 # Ends the interest accumulator from the previous period.
                 regs.interest.current = _0
 
-                p += 1  # The period only increments in the case of regular amortizations.
+                prd += 1  # The period only increments in the case of regular amortizations.
 
                 cnt = 1
 
@@ -2065,6 +1992,70 @@ def get_daily_returns(
 
             tup = tup[1], next(itr)
 
+        # Phase B.1, FZA, or Phase Zille-Anna.
+        #
+        #  • Calculate FS (spread factor) for fixed-rate index; and both FS and FC for price level index.
+        #  • Calculate FS for post-fixed index (CDI, Brazilian Savings, etc). In this case there is no correction.
+        #
+        # Highly altered with respect to FZA from the "get_payments_table" routine.
+        #
+        if ref < amortizations[-1].date and not vir and capitalisation == '360':  # Bullet.
+            f_s = calculate_interest_factor(apy, _1 / decimal.Decimal(360))
+
+        elif ref < amortizations[-1].date and not vir and capitalisation == '365':  # Bullet in legacy mode.
+            f_s = calculate_interest_factor(apy, _1 / decimal.Decimal(365))
+
+        elif ref < amortizations[-1].date and not vir and capitalisation == '30/360':  # Juros mensais, Price, Livre.
+            v01 = calculate_interest_factor(apy, _1 / decimal.Decimal(12)) - _1  # Fator mensal.
+            v02 = decimal.Decimal((tup[1].date - tup[0].date).days)
+
+            if prd == 1 and tup[1].dct_override:
+                v02 = decimal.Decimal(_diff_surrounding_dates(tup[0].date, 24))
+
+            elif tup[1].dct_override:
+                v02 = decimal.Decimal((tup[1].dct_override.date_to - tup[1].dct_override.date_from).days)
+
+                if tup[1].dct_override.predates_first_amortization:
+                    v02 = decimal.Decimal(_diff_surrounding_dates(tup[1].dct_override.date_from, 24))
+
+            if tup[0].dct_override:
+                v02 = decimal.Decimal((tup[1].date - tup[0].dct_override.date_from).days)
+
+                if tup[0].dct_override.predates_first_amortization:
+                    v02 = decimal.Decimal(_diff_surrounding_dates(tup[0].dct_override.date_from, 24))
+
+            f_s = calculate_interest_factor(v01, _1 / v02, False)  # Fator diário.
+
+        elif ref < amortizations[-1].date and vir and vir.code == 'CDI' and capitalisation == '252':  # Bullet, Juros mensais, Livre.
+            f_v = next(idxs) * vir.percentage / decimal.Decimal(100) + _1
+
+            # Note that the index on a 252 basis only earns on a business day. This is how the CDI works. In this case the
+            # fixed factor must follow the variable. It should only be calculated on a business day.
+            #
+            # FIXME: if by chance the variable factor, "next(idxs)", is zero, and if it happens to be a business day, the
+            # fixed factor will not be calculated. I've never seen the CDI be zero, but it's worth considering this case.
+            # The correct thing to do below is to test if the day is a business day, not if the value of the factor "f_c"
+            # is greater than one.
+            #
+            if f_v > _1:
+                f_s = calculate_interest_factor(apy, _1 / decimal.Decimal(252))
+
+        elif ref < amortizations[-1].date and vir and vir.code == 'Poupança' and capitalisation == '360':  # Poupança só suportada em Bullet.
+            f_s = calculate_interest_factor(apy, _1 / decimal.Decimal(360))
+            f_v = next(idxs) * vir.percentage / decimal.Decimal(100) + _1
+
+        elif ref < amortizations[-1].date and vir and vir.code == 'IPCA' and capitalisation == '360':  # Bullet.
+            raise NotImplementedError()  # FIXME: implementar.
+
+        elif ref < amortizations[-1].date and vir and vir.code == 'IPCA' and capitalisation == '30/360':  # Juros mensais e Livre.
+            raise NotImplementedError()  # FIXME: implementar.
+
+        elif ref < amortizations[-1].date and vir:
+            raise NotImplementedError(f'Combination of variable interest rate {vir} and capitalisation {capitalisation} unsupported')
+
+        elif ref < amortizations[-1].date:
+            raise NotImplementedError(f'Unsupported capitalisation {capitalisation} for fixed interest rate')
+
         # Registers the value of the accrued interest on the day.
         gens.interest_tracker_1.send(calc_balance() * (f_s * f_v * f_c - _1))
 
@@ -2079,7 +2070,7 @@ def get_daily_returns(
         dr = DailyReturn()
 
         dr.no = cnt
-        dr.period = p
+        dr.period = prd
         dr.date = ref
         dr.value = _Q(regs.interest.daily)
 
