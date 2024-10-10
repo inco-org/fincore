@@ -1237,8 +1237,8 @@ def get_payments_table(
     more details about these data structures.
     '''
 
-    def calc_balance() -> decimal.Decimal:
-        val = principal + regs.monetary_correction.accrued + regs.interest.accrued - regs.principal.amortized.total - regs.interest.settled.total - regs.monetary_correction.settled.total
+    def calc_balance(correction_factor=_1) -> decimal.Decimal:
+        val = principal * correction_factor + regs.interest.accrued - regs.principal.amortized.total * correction_factor - regs.interest.settled.total
 
         return t.cast(decimal.Decimal, val)
 
@@ -1300,17 +1300,6 @@ def get_payments_table(
             regs.interest.settled = types.SimpleNamespace(current=(yield), total=regs.interest.settled.total)
             regs.interest.settled.total += regs.interest.settled.current
 
-    def track_monetary_correction_1() -> t.Generator[None, decimal.Decimal | None, None]:
-        while True:
-            regs.monetary_correction.current = yield
-            regs.monetary_correction.accrued += regs.monetary_correction.current
-            regs.monetary_correction.deferred = regs.monetary_correction.accrued - (regs.monetary_correction.current + regs.monetary_correction.settled.total)
-
-    def track_monetary_correction_2() -> t.Generator[None, decimal.Decimal | None, None]:
-        while True:
-            regs.monetary_correction.settled = types.SimpleNamespace(current=(yield), total=regs.monetary_correction.settled.total)
-            regs.monetary_correction.settled.total += regs.monetary_correction.settled.current
-
     # A. Validation and preparation.
     gens = types.SimpleNamespace()
     regs = types.SimpleNamespace()
@@ -1350,23 +1339,18 @@ def get_payments_table(
     # Registers.
     regs.principal = types.SimpleNamespace(amortization_ratio=types.SimpleNamespace(current=_0, regular=_0), amortized=types.SimpleNamespace(current=_0, total=_0))
     regs.interest = types.SimpleNamespace(current=_0, accrued=_0, settled=types.SimpleNamespace(current=_0, total=_0), deferred=_0)
-    regs.monetary_correction = types.SimpleNamespace(current=_0, accrued=_0, settled=types.SimpleNamespace(current=_0, total=_0), deferred=_0)
 
     # Control, create generators.
     gens.interest_tracker_1 = track_interest_1()
     gens.interest_tracker_2 = track_interest_2()
     gens.principal_tracker_1 = track_principal_1()
     gens.principal_tracker_2 = track_principal_2()
-    gens.price_level_tracker_1 = track_monetary_correction_1()
-    gens.price_level_tracker_2 = track_monetary_correction_2()
 
     # Control, start generators.
     gens.principal_tracker_1.send(None)
     gens.principal_tracker_2.send(None)
     gens.interest_tracker_1.send(None)
     gens.interest_tracker_2.send(None)
-    gens.price_level_tracker_1.send(None)
-    gens.price_level_tracker_2.send(None)
 
     # B. Execution.
     for num, (ent0, ent1) in enumerate(itertools.pairwise(amortizations), 1):
@@ -1476,7 +1460,6 @@ def get_payments_table(
                 f_s = calculate_interest_factor(apy, decimal.Decimal(dcp) / (12 * decimal.Decimal(dct)))
 
                 if type(ent1) is Amortization.Bare or type(ent1) is Amortization and ent1.price_level_adjustment:
-                    kwc: t.Dict[str, t.Any] = {}
                     dcp = (due - ent0.date).days  # "30/360" spec needs a ratio for the IPCA factor.
                     dct = (ent1.date - ent0.date).days
 
@@ -1502,24 +1485,32 @@ def get_payments_table(
                             dct = _diff_surrounding_dates(ent0.dct_override.date_from, 24)
 
                     if type(ent1) is Amortization and ent1.price_level_adjustment:
+                        kwc: t.Dict[str, t.Any] = {}
+
                         kwc['base'] = ent1.price_level_adjustment.base_date
                         kwc['period'] = ent1.price_level_adjustment.period
                         kwc['shift'] = ent1.price_level_adjustment.shift
                         kwc['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)  # Adjustment for the last correction rate.
 
-                    else:
-                        kwc['base'] = amortizations[0].date.replace(day=1)
-                        kwc['period'] = _delta_months(ent1.date, amortizations[0].date)
-                        kwc['shift'] = 'M-1'  # FIXME.
-                        kwc['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)  # Adjustment for the last correction rate.
+                        f_c = max(vir.backend.calculate_ipca_factor(**kwc), _1)  # Lock the price level factor.
 
-                    f_c = max(vir.backend.calculate_ipca_factor(**kwc), _1)  # Lock the price level factor.
+                    else:
+                        kwd: t.Dict[str, t.Any] = {}
+
+                        kwd['base'] = amortizations[0].date.replace(day=1)
+                        kwd['period'] = _delta_months(ent1.date, amortizations[0].date)
+                        kwd['shift'] = 'M-1'  # FIXME.
+                        kwd['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)  # Adjustment for the last correction rate.
+
+                        f_c = max(vir.backend.calculate_ipca_factor(**kwd), _1)  # Lock the price level factor.
 
             elif vir:
                 raise NotImplementedError(f'Combination of variable interest rate {vir} and capitalisation {capitalisation} unsupported')
 
             else:
                 raise NotImplementedError(f'Unsupported capitalisation {capitalisation} for fixed interest rate')
+
+        _LOG.debug(f'T={num}, f_s={f_s:.8f}, f_c={f_c:.8f}')
 
         # Phase B.1, FRU, or Phase Rafa Um.
         #
@@ -1540,11 +1531,8 @@ def get_payments_table(
         # (advancements), and AREG is the remaining regular amortization percentage of the payment flow.
         #
         if ent0.date < calc_date.value or ent1.date <= calc_date.value or calc_date.runaway:
-            # Register the price level adjustment for the period.
-            gens.price_level_tracker_1.send(v := calc_balance() * (f_c - _1))
-
             # Register the interest accrued in the period.
-            gens.interest_tracker_1.send((calc_balance() + v) * (f_s - _1))
+            gens.interest_tracker_1.send(calc_balance(f_c) * (f_s - _1))
 
             # Case of a regular amortization.
             if type(ent1) is Amortization:
@@ -1559,10 +1547,6 @@ def get_payments_table(
                 # Register the interest to be settled in the period.
                 if ent1.amortizes_interest:
                     gens.interest_tracker_2.send(regs.interest.current + regs.principal.amortization_ratio.current * regs.interest.deferred)
-
-                # Register the monetary correction to be settled in the period.
-                if ent1.price_level_adjustment and ent1.price_level_adjustment.amortizes_adjustment:
-                    gens.price_level_tracker_2.send(regs.monetary_correction.current + regs.principal.amortization_ratio.current * regs.monetary_correction.deferred)
 
             # Case of an advancement (extraordinary amortization).
             #
@@ -1582,23 +1566,19 @@ def get_payments_table(
             #
             else:
                 ent1 = t.cast(Amortization.Bare, ent1)  # Mypy can't infer the type of the "ent1" variable here.
-                val0 = min(ent1.value, calc_balance())
+                val0 = min(ent1.value, calc_balance(f_c))
                 val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)
-                val2 = min(val0 - val1, regs.monetary_correction.accrued - regs.monetary_correction.settled.total)
-                val3 = val0 - val1 - val2
+                val3 = val0 - val1
 
                 # Check if the irregular payment value doesn't exceed the remaining balance.
-                if ent1.value != Amortization.Bare.MAX_VALUE and ent1.value > _Q(calc_balance()):
-                    raise Exception(f'the value of the amortization, {ent1.value}, is greater than the remaining balance of the loan, {_Q(calc_balance())}')
+                if ent1.value != Amortization.Bare.MAX_VALUE and ent1.value > _Q(calc_balance(f_c)):
+                    raise Exception(f'the value of the amortization, {ent1.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(f_c))}')
 
                 # Register the principal amortization percentage.
                 gens.principal_tracker_1.send(val3 / principal)
 
                 # Register the interest to be settled in the period.
                 gens.interest_tracker_2.send(val1)
-
-                # Register the price level adjustment to be settled in the period.
-                gens.price_level_tracker_2.send(val2)
 
         # Phase B.2, FRD, or Phase Rafa Dois.
         #
@@ -1612,7 +1592,7 @@ def get_payments_table(
             pmt.date = ent1.date
 
             if type(ent1) is Amortization:
-                pmt.amort = regs.principal.amortized.current
+                pmt.amort = regs.principal.amortized.current * f_c
 
                 if gain_output == 'deferred':
                     pmt.gain = regs.interest.deferred + regs.interest.current
@@ -1643,23 +1623,12 @@ def get_payments_table(
                     pmt.raw = _0
                     pmt.tax = _0
 
-                # Applies the price level adjustment to the gross value and the revenue tax.
                 if vir and vir.code == 'IPCA':
                     pmt = t.cast(PriceAdjustedPayment, pmt)
 
-                    if gain_output == 'deferred':
-                        pmt.pla = regs.monetary_correction.deferred + regs.monetary_correction.current
+                    pmt.pla = calc_balance(f_c) - calc_balance()
 
-                    elif gain_output == 'settled':
-                        pmt.pla = regs.monetary_correction.settled.current if ent1.amortizes_interest else _0
-
-                    else:  # Implies "gain_output == 'current'."
-                        pmt.pla = regs.monetary_correction.current
-
-                    pmt.raw = pmt.raw + pmt.pla
-                    pmt.tax = _0 if tax_exempt else pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
-
-                pmt.bal = calc_balance()
+                pmt.bal = calc_balance(f_c)
 
             else:
                 pmt.amort = regs.principal.amortized.current
@@ -1680,19 +1649,9 @@ def get_payments_table(
                 if vir and vir.code == 'IPCA':
                     pmt = t.cast(PriceAdjustedPayment, pmt)
 
-                    if gain_output == 'deferred':
-                        pmt.pla = regs.monetary_correction.deferred + regs.monetary_correction.current
+                    pmt.pla = calc_balance(f_c) - calc_balance()
 
-                    elif gain_output == 'settled':
-                        pmt.pla = regs.monetary_correction.settled.current
-
-                    else:  # Implies "gain_output == 'current'."
-                        pmt.pla = regs.monetary_correction.current
-
-                    pmt.raw = pmt.raw + pmt.pla
-                    pmt.tax = _0 if tax_exempt else pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
-
-                pmt.bal = calc_balance()
+                pmt.bal = calc_balance(f_c)
 
             # Sanity check.
             #
@@ -1911,7 +1870,8 @@ def get_daily_returns(
             kwa['ratio'] = _1
 
             # Ensure the price level factor is at least one, i.e., the correction value must be positive.
-            fac = max(backend.calculate_ipca_factor(**kwa), _1) - _1
+            fac = max(backend.calculate_ipca_factor(**kwa), _1)
+            fac = fac ** (_1 / pla.period) - _1
             val = calculate_interest_factor(fac, _1 / (amort1.date - amort0.date).days, False)
 
             while dt < amort1.date:
@@ -2308,7 +2268,6 @@ def preprocess_jm(
 
             ent.price_level_adjustment.base_date = zero_date.replace(day=1)
             ent.price_level_adjustment.period = i
-            ent.price_level_adjustment.amortizes_adjustment = i == term
 
         lst1.append(ent)
 
@@ -2322,7 +2281,6 @@ def preprocess_jm(
 
                 skel.item.price_level_adjustment.base_date = zero_date.replace(day=1)
                 skel.item.price_level_adjustment.period = skel.index_a
-                skel.item.price_level_adjustment.amortizes_adjustment = skel.index_a == len(lst1) - 1
 
             if skel.from_b:
                 date1 = lst1[skel.index_a - 1].date
