@@ -143,6 +143,7 @@ import types
 import typing as t
 import decimal
 import logging
+import calendar
 import datetime
 import functools
 import itertools
@@ -1807,6 +1808,7 @@ def get_daily_returns(
             regs.interest.settled = types.SimpleNamespace(current=(yield), total=regs.interest.settled.total)
             regs.interest.settled.total += regs.interest.settled.current
             regs.interest.current -= regs.interest.settled.current
+
     # Some indexes are only published by supervisor bodies on business days. For example, Brazilian DI. On such cases
     # this function will fill in the gaps, i.e., return zero if missing from upstream.
     #
@@ -1948,47 +1950,6 @@ def get_daily_returns(
         f_v = _1  # Variable factor, FV.
         f_s = _1  # Spread factor, FS.
 
-        # Phase B.0, FRZ, or Phase Rafa Zero. Slightly altered with respect to FRU from the "get_payments_table" routine.
-        while ref < amortizations[-1].date and ref == tup[1].date:
-            if not buf and not is_bizz_day_cb(ref):
-                buf = _Q(calc_balance(f_c))
-
-            if type(tup[1]) is Amortization:  # Case of a regular amortization.
-                adj = (_1 - regs.principal.amortization_ratio.current) / (_1 - regs.principal.amortization_ratio.regular)  # [FATOR-AJUSTE].
-
-                # Registers the principal amortization percentage.
-                gens.principal_tracker_1.send(tup[1].amortization_ratio * adj)
-
-                # Registers the regular principal amortization percentage.
-                gens.principal_tracker_2.send(tup[1].amortization_ratio)
-
-                # Registers the interest value to be settled in the period.
-                if tup[1].amortizes_interest:
-                    gens.interest_tracker_2.send(regs.interest.current + regs.principal.amortization_ratio.current * regs.interest.deferred)
-
-                p += 1  # The period only increments in the case of regular amortizations.
-
-                cnt = 1
-
-            # Case of an advance (extraordinary amortization). See comments of the similar block in "get_payments_table".
-            else:
-                ent = t.cast(Amortization.Bare, tup[1])  # O Mypy não consegue inferir o tipo da variável "ent" aqui.
-                val0 = min(ent.value, calc_balance(f_c))
-                val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)
-                val3 = val0 - val1
-
-                # Checks if the value of the irregular amortization does not exceed the remaining balance.
-                if ent.value != Amortization.Bare.MAX_VALUE and ent.value > _Q(calc_balance(f_c)):
-                    raise Exception(f'the value of the amortization, {ent.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(f_c))}')
-
-                # Registers the principal amortization percentage.
-                gens.principal_tracker_1.send(val3 / principal)
-
-                # Registers the interest value to be settled in the period.
-                gens.interest_tracker_2.send(val1)
-
-            tup = tup[1], next(itr)
-
         # Phase B.1, FZA, or Phase Zille-Anna.
         #
         #  • Calculate FS (spread factor) for fixed-rate index; and both FS and FC for price level index.
@@ -2002,26 +1963,50 @@ def get_daily_returns(
         elif ref < amortizations[-1].date and not vir and capitalisation == '365':  # Bullet in legacy mode.
             f_s = calculate_interest_factor(apy, _1 / decimal.Decimal(365))
 
+        # Monthly fixed rate, 30/360.
+        #
+        # Calculation of DT, from DP/DT.
+        #
+        # Notice that here, DP == 1, since we are working with the smallest fraction of a factor, a day.
+        #
+        # The value of DT has special handling in the first period, to deal with variations in the loan's first
+        # payment date, since it may be customized. Consider the Resolvvi project, from June 2023. The first period
+        # has 32 days, instead of the expected 30 days – from 19/06/2023, inclusive, to 21/07/2023, exclusive. The
+        # end date of the first period was shifted due to the loan's anniversary, which is 21/12/2025. In cases
+        # like this, the value of DT is the difference in days between the start and end dates of the period. In
+        # any other period, it is sufficient to know the number of days of the month in which it begins.
+        #
+        # Observe that extraordinary amortizations should not redefine the value of DT in the DP/DT formula in
+        # period one. Notice that although it does not increase the period number, it would affect the comparision
+        # "ref < tup[1].date", since "tup[1]" will be the date of the anticipation, and not the date in which the
+        # first regular period ends. This explains why "type(tup[1]) is Amortization.Bare" was added to the
+        # condition. In other periods, anticipations have no effect.
+        #
+        #           … ───┬──────────┬──────────┬─── …
+        #                pₙ₋₁       x          pₙ
+        #
+        # Consider the above diagram, where
+        #
+        #  • pₙ₋₁, is the start of the period where an anticipation, x, happens;
+        #  • py is the period's start year, and pm its month;
+        #  • xy is the year of the anticipation, xm its month;
+        #
+        # then the calls to “calendar.monthrange(pyₙ₋₁, pmₙ₋₁)[1]”, and “calendar.monthrange(xy, xm)[1]” should
+        # give the same results. So, once "ref" transitions from pₙ₋₁ to x, the value of DT won't change.
+        #
         elif ref < amortizations[-1].date and not vir and capitalisation == '30/360':  # Juros mensais, Price, Livre.
-            v01 = calculate_interest_factor(apy, _1 / decimal.Decimal(12)) - _1  # Fator mensal.
-            v02 = decimal.Decimal((tup[1].date - tup[0].date).days)
+            mr = calculate_interest_factor(apy, _1 / decimal.Decimal(12)) - _1  # Fator mensal.
 
-            if p == 1 and tup[1].dct_override:
-                v02 = decimal.Decimal(_diff_surrounding_dates(tup[0].date, 24))
+            if p == 1 and (type(tup[1]) is Amortization.Bare or ref < tup[1].date):
+                dt = decimal.Decimal((amortizations[1].date - amortizations[0].date).days)  # Dias no período.
 
-            elif tup[1].dct_override:
-                v02 = decimal.Decimal((tup[1].dct_override.date_to - tup[1].dct_override.date_from).days)
+            elif ref == tup[1].date:
+                dt = decimal.Decimal(calendar.monthrange(tup[1].date.year, tup[1].date.month)[1])  # Dias do mês do período.
 
-                if tup[1].dct_override.predates_first_amortization:
-                    v02 = decimal.Decimal(_diff_surrounding_dates(tup[1].dct_override.date_from, 24))
+            else:
+                dt = decimal.Decimal(calendar.monthrange(tup[0].date.year, tup[0].date.month)[1])  # Dias do mês do período.
 
-            if tup[0].dct_override:
-                v02 = decimal.Decimal((tup[1].date - tup[0].dct_override.date_from).days)
-
-                if tup[0].dct_override.predates_first_amortization:
-                    v02 = decimal.Decimal(_diff_surrounding_dates(tup[0].dct_override.date_from, 24))
-
-            f_s = calculate_interest_factor(v01, _1 / v02, False)  # Fator diário.
+            f_s = calculate_interest_factor(mr, _1 / dt, False)  # Fator diário.
 
         elif ref < amortizations[-1].date and vir and vir.code == 'CDI' and capitalisation == '252':  # Bullet, Juros mensais, Livre.
             f_v = next(idxs) * vir.percentage / decimal.Decimal(100) + _1
@@ -2045,26 +2030,23 @@ def get_daily_returns(
             f_s = calculate_interest_factor(apy, _1 / decimal.Decimal(360))
             f_c = next(idxs)
 
+        # Monthly IPCA rate, 30/360.
+        #
+        # Same logic as the monthly fixed rate, 30/360, but with the added price level adjustment. See comments above.
+        #
         elif ref < amortizations[-1].date and vir and vir.code == 'IPCA' and capitalisation == '30/360':  # Juros mensais e Livre.
-            v01 = calculate_interest_factor(apy, _1 / decimal.Decimal(12)) - _1  # Fator mensal.
-            v02 = decimal.Decimal((tup[1].date - tup[0].date).days)
+            mr = calculate_interest_factor(apy, _1 / decimal.Decimal(12)) - _1  # Fator mensal.
 
-            if p == 1 and tup[1].dct_override:
-                v02 = decimal.Decimal(_diff_surrounding_dates(tup[0].date, 24))
+            if p == 1 and (type(tup[1]) is Amortization.Bare or ref < tup[1].date):
+                dt = decimal.Decimal((amortizations[1].date - amortizations[0].date).days)  # Dias no período.
 
-            elif tup[1].dct_override:
-                v02 = decimal.Decimal((tup[1].dct_override.date_to - tup[1].dct_override.date_from).days)
+            elif ref == tup[1].date:
+                dt = decimal.Decimal(calendar.monthrange(tup[1].date.year, tup[1].date.month)[1])  # Dias do mês do período.
 
-                if tup[1].dct_override.predates_first_amortization:
-                    v02 = decimal.Decimal(_diff_surrounding_dates(tup[1].dct_override.date_from, 24))
+            else:
+                dt = decimal.Decimal(calendar.monthrange(tup[0].date.year, tup[0].date.month)[1])  # Dias do mês do período.
 
-            if tup[0].dct_override:
-                v02 = decimal.Decimal((tup[1].date - tup[0].dct_override.date_from).days)
-
-                if tup[0].dct_override.predates_first_amortization:
-                    v02 = decimal.Decimal(_diff_surrounding_dates(tup[0].dct_override.date_from, 24))
-
-            f_s = calculate_interest_factor(v01, _1 / v02, False)  # Fator diário.
+            f_s = calculate_interest_factor(mr, _1 / dt, False)  # Fator diário.
             f_c = next(idxs)
 
         elif ref < amortizations[-1].date and vir:
@@ -2077,6 +2059,47 @@ def get_daily_returns(
 
         # Registers the value of the accrued interest on the day.
         gens.interest_tracker_1.send(calc_balance(f_c) * (f_s * f_v - _1))
+
+        # Phase B.0, FRZ, or Phase Rafa Zero. Slightly altered with respect to FRU from the "get_payments_table" routine.
+        while ref < amortizations[-1].date and ref == tup[1].date:
+            if not buf and not is_bizz_day_cb(ref):
+                buf = _Q(calc_balance(f_c))
+
+            if type(tup[1]) is Amortization:  # Case of a regular amortization.
+                adj = (_1 - regs.principal.amortization_ratio.current) / (_1 - regs.principal.amortization_ratio.regular)  # [FATOR-AJUSTE].
+
+                # Registers the principal amortization percentage.
+                gens.principal_tracker_1.send(tup[1].amortization_ratio * adj)
+
+                # Registers the regular principal amortization percentage.
+                gens.principal_tracker_2.send(tup[1].amortization_ratio)
+
+                # Registers the interest value to be settled in the period.
+                if tup[1].amortizes_interest:
+                    gens.interest_tracker_2.send(regs.interest.current - regs.interest.daily + regs.principal.amortization_ratio.current * regs.interest.deferred)
+
+                p += 1  # The period only increments in the case of regular amortizations.
+
+                cnt = 1
+
+            # Case of an advance (extraordinary amortization). See comments of the similar block in "get_payments_table".
+            else:
+                ent = t.cast(Amortization.Bare, tup[1])  # O Mypy não consegue inferir o tipo da variável "ent" aqui.
+                val0 = min(ent.value, calc_balance(f_c))
+                val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)
+                val3 = val0 - val1
+
+                # Checks if the value of the irregular amortization does not exceed the remaining balance.
+                if ent.value != Amortization.Bare.MAX_VALUE and ent.value > _Q(calc_balance(f_c)):
+                    raise Exception(f'the value of the amortization, {ent.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(f_c))}')
+
+                # Registers the principal amortization percentage.
+                gens.principal_tracker_1.send(val3 / principal)
+
+                # Registers the interest value to be settled in the period.
+                gens.interest_tracker_2.send(val1 - regs.interest.daily)
+
+            tup = tup[1], next(itr)
 
         # If the balance is zero, and the current day is a business day, the schedule is over.
         if _Q(calc_balance(f_c)) == _0 and is_bizz_day_cb(ref):
