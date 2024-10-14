@@ -1539,10 +1539,10 @@ def get_payments_table(
             if type(ent1) is Amortization:
                 adj = (_1 - regs.principal.amortization_ratio.current) / (_1 - regs.principal.amortization_ratio.regular)  # [ADJUSTMENT-FACTOR].
 
-                # Register the principal amortization percentage.
+                # Register the amortization percentage.
                 gens.principal_tracker_1.send(ent1.amortization_ratio * adj)
 
-                # Register the regular principal amortization percentage.
+                # Register the non adjusted amortization percentage.
                 gens.principal_tracker_2.send(ent1.amortization_ratio)
 
                 # Register the interest to be settled in the period.
@@ -1575,7 +1575,7 @@ def get_payments_table(
                 if ent1.value != Amortization.Bare.MAX_VALUE and ent1.value > _Q(calc_balance(f_c)):
                     raise Exception(f'the value of the amortization, {ent1.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(f_c))}')
 
-                # Register the principal amortization percentage.
+                # Register the amortization percentage.
                 gens.principal_tracker_1.send(val3 / principal)
 
                 # Register the interest to be settled in the period.
@@ -1744,7 +1744,7 @@ def get_daily_returns(
     '''
 
     def calc_balance(correction_factor) -> decimal.Decimal:
-        val = principal * correction_factor + regs.interest.accrued - regs.principal.amortized.total * correction_factor - regs.interest.settled.total
+        val = (principal - regs.principal.amortized.total) * correction_factor
 
         return t.cast(decimal.Decimal, val)
 
@@ -1860,32 +1860,34 @@ def get_daily_returns(
                 dt += datetime.timedelta(days=1)
 
     # IPCA is a monthly index. This function will normalize it to daily values.
-    def get_normalized_ipca_indexes(backend: IndexStorageBackend) -> t.Generator[decimal.Decimal, None, None]:
+    def get_normalized_ipca_indexes(backend: IndexStorageBackend) -> t.Generator[t.Tuple[decimal.Decimal, decimal.Decimal], None, None]:
         ls = [x for x in amortizations if type(x) is Amortization]
         dt = amortizations[0].date
 
         for amort0, amort1 in itertools.pairwise([amortizations[0]] + ls):
-            if amort1.price_level_adjustment:
+            if x := t.cast(Amortization, amort1).price_level_adjustment:
                 kwa: t.Dict[str, t.Any] = {}
-                pla = t.cast(PriceLevelAdjustment, t.cast(Amortization, amort1).price_level_adjustment)
 
-                kwa['base'] = pla.base_date
+                kwa['base'] = (pla := t.cast(PriceLevelAdjustment, x)).base_date
                 kwa['period'] = pla.period
                 kwa['shift'] = pla.shift
                 kwa['ratio'] = _1
 
                 # Ensure the price level factor is at least one, i.e., the correction value must be positive.
-                fac = max(backend.calculate_ipca_factor(**kwa), _1)
-                val = calculate_interest_factor(fac, _1 / (amort1.date - amort0.date).days, False)
+                fac = max(backend.calculate_ipca_factor(**kwa), _1) - _1
+                fac = calculate_interest_factor(fac, _1 / (amort1.date - amort0.date).days, False)
+                acc = fac, fac
 
                 while dt < amort1.date:
-                    yield val
+                    yield acc
 
                     dt += datetime.timedelta(days=1)
 
+                    acc = acc[1], acc[1] * fac
+
             else:
                 while dt < amort1.date:
-                    yield _1
+                    yield _1, _1
 
                     dt += datetime.timedelta(days=1)
 
@@ -1938,16 +1940,16 @@ def get_daily_returns(
     gens.interest_tracker_1.send(None)
     gens.interest_tracker_2.send(None)
 
-    facs = get_normalized_interest_factors()
+    fixd = get_normalized_interest_factors()
 
     if vir and vir.code == 'CDI':
-        idxs = get_normalized_cdi_indexes(vir.backend)
+        vars = get_normalized_cdi_indexes(vir.backend)
 
     elif vir and vir.code == 'IPCA':
-        idxs = get_normalized_ipca_indexes(vir.backend)
+        vars = get_normalized_ipca_indexes(vir.backend)
 
     elif vir and vir.code == 'Poupança':
-        idxs = get_normalized_savings_indexes(vir.backend)
+        vars = get_normalized_savings_indexes(vir.backend)
 
     elif vir:
         raise NotImplementedError(f'unsupported variable index {vir}')
@@ -1964,22 +1966,25 @@ def get_daily_returns(
         end = end + datetime.timedelta(days=1)
 
     for ref in _date_range(amortizations[0].date, end):
-        f_c = _1  # Correction factor, FC.
+        f_c = _1, _1  # Correction factor, FC.
         f_v = _1  # Variable factor, FV.
         f_s = _1  # Spread factor, FS.
 
-        # Phase B.1, FZA, or Phase Zille-Anna.
+        # Phase B.0, FZA NG, or Phase Zille-Anna, next gen.
         #
-        #  • Calculate FS (spread factor) for fixed-rate index; and both FS and FC for price level index.
-        #  • Calculate FS for post-fixed index (CDI, Brazilian Savings, etc). In this case there is no correction.
+        # This phase has a single purpose of calculating the factors that will be used in the next phase.
         #
-        # Highly altered with respect to FZA from the "get_payments_table" routine.
+        #  • Calculates FS (spread factor) for fixed-rate and post-fixed loans.
+        #  • Calculates FV for post-fixed loans (CDI, Brazilian Savings, etc).
+        #  • Calculates FC for price level adjusted loans.
+        #
+        # Simplified form of FZA from "get_payments_table".
         #
         if ref < amortizations[-1].date and not vir and capitalisation == '360':  # Bullet.
-            f_s = next(facs)
+            f_s = next(fixd)
 
         elif ref < amortizations[-1].date and not vir and capitalisation == '365':  # Bullet in legacy mode.
-            f_s = next(facs)
+            f_s = next(fixd)
 
         # Monthly fixed rate, 30/360.
         #
@@ -1987,58 +1992,63 @@ def get_daily_returns(
         # a factor, a day.
         #
         elif ref < amortizations[-1].date and not vir and capitalisation == '30/360':  # Juros mensais, Price, Livre.
-            f_s = next(facs)
+            f_s = next(fixd)
 
         elif ref < amortizations[-1].date and vir and vir.code == 'CDI' and capitalisation == '252':  # Bullet, Juros mensais, Livre.
-            f_v = next(idxs) * vir.percentage / decimal.Decimal(100) + _1
+            f_v = next(vars) * vir.percentage / decimal.Decimal(100) + _1
 
             # Note that the index on a 252 basis only earns on a business day. This is how the CDI works. In this case
             # the fixed factor must follow the variable. It should only be calculated on a business day.
             #
-            # FIXME: if by chance the variable factor, "next(idxs)", is zero, and if it happens to be a business day, the
+            # FIXME: if by chance the variable factor, "next(vars)", is zero, and if it happens to be a business day, the
             # fixed factor will not be calculated. I've never seen the CDI be zero, but it's worth considering this case.
             # The correct thing to do below is to test if the day is a business day, not if the value of the factor "f_c"
             # is greater than one.
             #
             if f_v > _1:
-                f_s = next(facs)
+                f_s = next(fixd)
 
         elif ref < amortizations[-1].date and vir and vir.code == 'Poupança' and capitalisation == '360':  # Poupança is supported only with Bullet.
-            f_s = next(facs)
-            f_v = next(idxs)
+            f_s = next(fixd)
+            f_v = next(vars)
 
         elif ref < amortizations[-1].date and vir and vir.code == 'IPCA' and capitalisation == '360':  # Bullet.
-            f_s = next(facs)
-            f_c = next(idxs)
+            f_s = next(fixd)
+            f_c = next(vars)
 
         # Monthly IPCA rate, 30/360.
         #
         # Same logic as the monthly fixed rate, 30/360, but with the added price level adjustment. See comments above.
         #
         elif ref < amortizations[-1].date and vir and vir.code == 'IPCA' and capitalisation == '30/360':  # Juros mensais, Livre.
-            f_s = next(facs)
-            f_c = next(idxs)
+            f_s = next(fixd)
+            f_c = next(vars)
 
         elif ref < amortizations[-1].date and vir:
-            raise NotImplementedError(f'Combination of variable interest rate {vir} and capitalisation {capitalisation} unsupported')
+            raise NotImplementedError(f'combination of variable interest rate {vir} and capitalisation {capitalisation} unsupported')
 
         elif ref < amortizations[-1].date:
-            raise NotImplementedError(f'Unsupported capitalisation {capitalisation} for fixed interest rate')
+            raise NotImplementedError(f'unsupported capitalisation {capitalisation} for fixed interest rate')
 
-        _LOG.debug(f'T={p}, f_s={f_s:.8f}, f_c={f_c:.8f}')
+        _LOG.debug(f'T={p}, f_s={f_s:.8f}, f_c={f_c[1]:.8f}')
 
-        # Phase B.0, FRZ, or Phase Rafa Zero. Slightly altered with respect to FRU from the "get_payments_table" routine.
+        # Phase B.1, FRU NG, or Phase Rafa Um, next gen.
+        #
+        # In this phase we process amortizations, interest payments etc.
+        #
+        # Slightly altered with respect to FRU from the "get_payments_table" routine.
+        #
         while ref < amortizations[-1].date and ref == tup[1].date:
             if not buf and not is_bizz_day_cb(ref):
-                buf = _Q(calc_balance(f_c))
+                buf = _Q(calc_balance(f_c[1]))
 
             if type(tup[1]) is Amortization:  # Case of a regular amortization.
                 adj = (_1 - regs.principal.amortization_ratio.current) / (_1 - regs.principal.amortization_ratio.regular)  # [FATOR-AJUSTE].
 
-                # Registers the principal amortization percentage.
+                # Registers the amortization percentage.
                 gens.principal_tracker_1.send(tup[1].amortization_ratio * adj)
 
-                # Registers the regular principal amortization percentage.
+                # Registers the non adjusted amortization percentage.
                 gens.principal_tracker_2.send(tup[1].amortization_ratio)
 
                 # Registers the interest value to be settled in the period.
@@ -2048,22 +2058,21 @@ def get_daily_returns(
                 # Ends the interest accumulator from the previous period.
                 regs.interest.current = _0
 
-                p += 1  # The period only increments in the case of regular amortizations.
-
-                cnt = 1
+                # The period only increments in the case of regular amortizations.
+                p, cnt = p + 1, 1
 
             # Case of an advance (extraordinary amortization). See comments of the similar block in "get_payments_table".
             else:
                 ent = t.cast(Amortization.Bare, tup[1])  # O Mypy não consegue inferir o tipo da variável "ent" aqui.
-                val0 = min(ent.value, calc_balance(f_c))
+                val0 = min(ent.value, calc_balance(f_c[1]))
                 val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)
                 val3 = val0 - val1
 
                 # Checks if the value of the irregular amortization does not exceed the remaining balance.
-                if ent.value != Amortization.Bare.MAX_VALUE and ent.value > _Q(calc_balance(f_c)):
-                    raise Exception(f'the value of the amortization, {ent.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(f_c))}')
+                if ent.value != Amortization.Bare.MAX_VALUE and ent.value > _Q(calc_balance(f_c[1])):
+                    raise Exception(f'the value of the amortization, {ent.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(f_c[1]))}')
 
-                # Registers the principal amortization percentage.
+                # Registers the amortization percentage.
                 gens.principal_tracker_1.send(val3 / principal)
 
                 # Registers the interest value to be settled in the period.
@@ -2079,10 +2088,12 @@ def get_daily_returns(
         # The interest have to be calculated after processing all amortizations of the current day. This way we get the
         # correct balance value to apply the factors on.
         #
-        gens.interest_tracker_1.send(calc_balance(f_c) * (f_s * f_v - _1))
+        v0 = calc_balance(f_c[0]) * ((f_s * f_v) ** (cnt - 1) - _1)
+        v1 = calc_balance(f_c[1]) * ((f_s * f_v) ** cnt - _1)
+        gens.interest_tracker_1.send(v1 - v0)
 
         # If the balance is zero, and the current day is a business day, the schedule is over.
-        if _Q(calc_balance(f_c)) == _0 and is_bizz_day_cb(ref):
+        if _Q(calc_balance(_1)) == _0 and is_bizz_day_cb(ref):
             break
 
         # Builds the daily return instance, output of the routine. Makes rounding.
@@ -2101,11 +2112,11 @@ def get_daily_returns(
         else:
             buf = _0
 
-            dr.bal = _Q(calc_balance(f_c))  # Balance at the end of the day.
+            dr.bal = _Q(calc_balance(_1) + regs.interest.current)  # Balance at the end of the day.
 
         dr.fixed_factor = f_s
         dr.variable_factor = f_v
-        dr.monetary_correction_factor = f_c
+        dr.monetary_correction_factor = f_c[1]
 
         yield dr
 
