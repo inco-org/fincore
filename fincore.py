@@ -143,7 +143,6 @@ import types
 import typing as t
 import decimal
 import logging
-import calendar
 import datetime
 import functools
 import itertools
@@ -1556,11 +1555,9 @@ def get_payments_table(
             # amortized is the interest (spread). After payment of the interest, what remains must be deducted from the
             # monetary correction. Finally, subtract the remaining value of the principal. In the block of code below,
             #
-            #  • "val1" is the interest to be paid;
+            #  • "val1" is the price level corrected interest to be paid;
             #
-            #  • "val2" is the price level adjustment to be paid;
-            #
-            #  • "val3" is the principal to be amortized.
+            #  • "val2" is the principal to be amortized.
             #
             # Observe that the order of calculation of these variables corresponds to the order of factorisation of the
             # gross value of the advance.
@@ -1569,14 +1566,14 @@ def get_payments_table(
                 ent1 = t.cast(Amortization.Bare, ent1)  # Mypy can't infer the type of the "ent1" variable here.
                 val0 = min(ent1.value, calc_balance(f_c))
                 val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)
-                val3 = val0 - val1
+                val2 = val0 - val1
 
                 # Check if the irregular payment value doesn't exceed the remaining balance.
                 if ent1.value != Amortization.Bare.MAX_VALUE and ent1.value > _Q(calc_balance(f_c)):
                     raise Exception(f'the value of the amortization, {ent1.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(f_c))}')
 
                 # Register the amortization percentage.
-                gens.principal_tracker_1.send(val3 / principal)
+                gens.principal_tracker_1.send(val2 / principal)
 
                 # Register the interest to be settled in the period.
                 gens.interest_tracker_2.send(val1)
@@ -1688,6 +1685,117 @@ def get_payments_table(
 # }}}
 
 # Public API. Daily returns. {{{
+#
+# The following establishes how much easier is the computation returns of loans that have fixed and variable
+# factors, when compared to loans that have price level correction factors.
+#
+# Loans With Fixed and Variable Factors
+# -------------------------------------
+#
+# Considering
+#
+#     S = 1 + FS                                  (FS being the daily fixed, spread factor)
+#     V = 1 + FV                                  (FV being the daily variable factor)
+#
+# For the first period, assume
+#
+#     R₁ = B₀ * (V * S - 1)                       (A)
+#     B₁ = B₀ + R₁
+#
+# Then
+#
+#     B₁ = B₀ + R₁
+#   ∴ B₁ = B₀ + B₀ * (V * S - 1)
+#   ∴ B₁ = B₀ * V * S                             (B)
+#
+# And, for the second period,
+#
+#     R₂ = B₀ * V² * S² - B₁                      (R₂ is the accumulated variable factor, V², times the
+#   ∴ R₂ = B₀ * V² * S² - B₀ * V * S               accumulated spread, S², over the starting balance, minus
+#   ∴ R₂ = B₀ * (V² * S² - V * S)                  the balance of the previous period)
+#   ∴ R₂ = B₀ * (V * S) * (V * S - 1)
+#   ∴ R₂ = (V * S) * B₀ * (V * S - 1)
+#   ∴ R₂ = B₀ * (V * S - 1) * (V * S)             (C)
+#
+# Notice that R₂ can be simply expressed both in terms of the previous gains, and in terms of the previous
+# balance. The second balance, B₂, is also a direct function of the first balance, B₁.
+#
+#     R₂ = R₁ * V * S                             (R₂ in terms of R₁, after applying equation A on equation C)
+#     R₂ = B₁ * (V * S - 1)                       (R₂ in terms of B₁, after applying equation B on equation C)
+#
+#     B₂ = B₁ + R₂
+#   ∴ B₂ = B₁ + B₁ * (V * S - 1)
+#   ∴ B₂ = B₁ * V * S
+#
+# This goes on.
+#
+#     R₃ = R₂ * V * S                             (R₃ in terms of R₂)
+#     B₃ = B₂ * V * S
+#
+# There is a simple recursion here, which is straightforward to implement.
+#
+# Loans With Price Level Correction
+# ---------------------------------
+#
+# Now consider:
+#
+#     C = 1 + FC                                  (FC being the daily correction factor)
+#     S = FS                                      (FS being the daily spread factor)
+#
+# Then, for the first period,
+#
+#     R₁ = B₀ * C * S                             (A')
+#     B₁ = B₀ + R₁
+#
+# The first balance is quite simple to express in terms of the previous one.
+#
+#     B₁ = B₀ + B₀ * C * S
+#   ∴ B₁ = B₀ * (C * S + 1)                       (B')
+#
+# But, for the second period, things get a bit more complicated. One could think that, given B', then
+# "B₂ = B₁ * (C * S + 1)". But this inference is wrong.
+#
+# Since B₂ cannot be easily expressed in terms of B₁, one has to rely on calculating B₂ from R₂, i.e.,
+# "B₂ = B₁ + R₂". But the calculation of R₂ itself is convoluted.
+#
+#     R₂ = B₀ * C² * [(S + 1)² - 1] - R₁          (R₂ is the accumulated correction factor, C², times the
+#   ∴ R₂ = B₀ * C² * [(S + 1)² - 1] - B₀ * C * S   accumulated spread, (S + 1)² - 1, over the starting balance,
+#   ∴ R₂ = B₀ * C² * (S² + 2S) - B₀ * C * S        minus the gain of the previous period)
+#   ∴ …
+#
+# Now R₂ cannot be immediately expressed in terms of the previous gain, R₁, nor in terms of the previous
+# balance, B₁, as it happens with a fixed and variable factor loan. There isn't a simple recursion formula
+# here.
+#
+# Conclusion
+# ----------
+#
+# The introduction of a price level correction factor makes the calculation of the daily gains much more
+# complicated. The simple notion that the balance on day D is the ending balance of D-1 multiplied by the
+# multiple interest factors in play on D is simply not true anymore. The return of day D is also not a
+# function of the ending balance of D-1 and the current daily interest factors.
+#
+# Hence, the daily returns algorithm will rely on the principal outstanding since the last payment, or the
+# initial date of the loan, and the accumulated daily factors up to day D, to calculate the return value of D.
+# In high level terms.
+#
+#   Rn = B₀ * Fⁿ - B₀ * Fⁿ⁻¹
+#
+# The formula above is not precise. The algorithm will not exponentiate factors. An accumulated factor is
+# actually the product of all the previous factors, since they change from one period to another. This happens
+# especially on loans with 30/360 capitalisation, because the monthly rate, when converted to a daily rate,
+# will be proportional to the amount of days in the period. And two subsequent payments might comprise more
+# than one period, if there are grace periods.
+#
+# References
+# ----------
+#
+# To see the factor accumulation logic described above in practice, check the "Testes Rendimento Diário" spreadsheet:
+#
+#  https://docs.google.com/spreadsheets/d/1vzW6Kz_NvLRHj8WZv2dSSGSvHauwhM7eCS5YfQ_ohng
+#
+# Navigate to tab "ASAD Energia".
+#
 @typeguard.typechecked
 def get_daily_returns(
     principal: decimal.Decimal,
@@ -1809,9 +1917,9 @@ def get_daily_returns(
             regs.interest.settled.total += regs.interest.settled.current
             regs.interest.current -= regs.interest.settled.current
 
-    def get_normalized_interest_factors() -> t.Generator[decimal.Decimal, None, None]:
+    def get_normalized_interest_factors() -> t.Generator[t.Tuple[decimal.Decimal, decimal.Decimal, decimal.Decimal], None, None]:
         lst = [x for x in amortizations if type(x) is Amortization]
-        ref = amortizations[0].date
+        acc = _1, _1, _1
 
         for amort0, amort1 in itertools.pairwise(lst):
             if capitalisation in ['360', '365', '252']:
@@ -1820,10 +1928,10 @@ def get_daily_returns(
             else:  # Implies "capitalisation == 30/360".
                 fac = calculate_interest_factor(apy, _1 / decimal.Decimal(12 * (amort1.date - amort0.date).days))
 
-            while ref < amort1.date:
-                yield fac
+            for _ in _date_range(amort0.date, amort1.date):
+                acc = acc[1], acc[1] * fac, fac
 
-                ref += datetime.timedelta(days=1)
+                yield acc
 
     # Some indexes are only published by supervisor bodies on business days. For example, Brazilian DI. On such cases
     # this function will fill in the gaps, i.e., return zero if missing from upstream.
@@ -1831,21 +1939,26 @@ def get_daily_returns(
     # Some implementations of "IndexStorageBackend.get_cdi_indexes" return a generator, others might return a list.
     # Hence the cast to "iter" below.
     #
-    def get_normalized_cdi_indexes(backend: IndexStorageBackend) -> t.Generator[decimal.Decimal, None, None]:
+    def get_normalized_cdi_indexes(backend: IndexStorageBackend) -> t.Generator[t.Tuple[decimal.Decimal, decimal.Decimal, decimal.Decimal], None, None]:
         lst = iter(backend.get_cdi_indexes(amortizations[0].date, amortizations[-1].date))
         idx = next(lst, None)
 
-        for ref in _date_range(amortizations[0].date, amortizations[-1].date):
-            if idx and ref == idx.date:
-                yield idx.value / decimal.Decimal(100)
+        for amort0, amort1 in itertools.pairwise(amortizations):
+            acc = _1, _1, _1
 
-                idx = next(lst, None)
+            for ref in _date_range(amort0.date, amort1.date):
+                if idx and ref == idx.date:
+                    acc = acc[1], (idx.value / decimal.Decimal(100) + _1) * acc[1], idx.value / decimal.Decimal(100) + _1
 
-            else:
-                yield _0
+                    yield acc
+
+                    idx = next(lst, None)
+
+                else:
+                    yield _1, _1, _1
 
     # Poupança is a monthly index. This function will normalize it to daily values.
-    def get_normalized_savings_indexes(backend: IndexStorageBackend) -> t.Generator[decimal.Decimal, None, None]:
+    def get_normalized_savings_indexes(backend: IndexStorageBackend) -> t.Generator[t.Tuple[decimal.Decimal, decimal.Decimal, decimal.Decimal], None, None]:
         ls = [x for x in amortizations if type(x) is Amortization and x.amortizes_interest]
         dt = amortizations[0].date
 
@@ -1853,14 +1966,17 @@ def get_daily_returns(
             pct = t.cast(VariableIndex, vir).percentage  # Mypy fails to detect that, despite "vir" being optional, here it can't be None.
             fac = backend.calculate_savings_factor(amort0.date, amort1.date, pct).value - _1
             val = calculate_interest_factor(fac, _1 / (amort1.date - amort0.date).days, False)
+            acc = _1, val, val
 
             while dt < amort1.date:
-                yield val
+                yield acc
+
+                acc = acc[1], acc[1] * val, val
 
                 dt += datetime.timedelta(days=1)
 
     # IPCA is a monthly index. This function will normalize it to daily values.
-    def get_normalized_ipca_indexes(backend: IndexStorageBackend) -> t.Generator[t.Tuple[decimal.Decimal, decimal.Decimal], None, None]:
+    def get_normalized_ipca_indexes(backend: IndexStorageBackend) -> t.Generator[t.Tuple[decimal.Decimal, decimal.Decimal, decimal.Decimal], None, None]:
         ls = [x for x in amortizations if type(x) is Amortization]
         dt = amortizations[0].date
 
@@ -1876,18 +1992,18 @@ def get_daily_returns(
                 # Ensure the price level factor is at least one, i.e., the correction value must be positive.
                 fac = max(backend.calculate_ipca_factor(**kwa), _1) - _1
                 fac = calculate_interest_factor(fac, _1 / (amort1.date - amort0.date).days, False)
-                acc = fac, fac
+                acc = _1, fac, fac
 
                 while dt < amort1.date:
                     yield acc
 
-                    dt += datetime.timedelta(days=1)
+                    acc = acc[1], acc[1] * fac, fac
 
-                    acc = acc[1], acc[1] * fac
+                    dt += datetime.timedelta(days=1)
 
             else:
                 while dt < amort1.date:
-                    yield _1, _1
+                    yield _1, _1, _1
 
                     dt += datetime.timedelta(days=1)
 
@@ -1958,17 +2074,17 @@ def get_daily_returns(
     itr = iter(amortizations)
     tup = next(itr), next(itr)
     end = amortizations[-1].date
+    buf = lvl = _0
     cnt = p = 1
-    buf = _0
 
     # Extend the end date to the next business day.
     while not is_bizz_day_cb(end):
         end = end + datetime.timedelta(days=1)
 
     for ref in _date_range(amortizations[0].date, end):
-        f_c = _1, _1  # Correction factor, FC.
-        f_v = _1  # Variable factor, FV.
-        f_s = _1  # Spread factor, FS.
+        f_c = _1, _1, _1  # Correction factor, FC.
+        f_v = _1, _1, _1  # Variable factor, FV.
+        f_s = _1, _1, _1  # Spread factor, FS.
 
         # Phase B.0, FZA NG, or Phase Zille-Anna, next gen.
         #
@@ -1995,7 +2111,7 @@ def get_daily_returns(
             f_s = next(fixd)
 
         elif ref < amortizations[-1].date and vir and vir.code == 'CDI' and capitalisation == '252':  # Bullet, Juros mensais, Livre.
-            f_v = next(vars) * vir.percentage / decimal.Decimal(100) + _1
+            f_v = next(vars) * vir.percentage
 
             # Note that the index on a 252 basis only earns on a business day. This is how the CDI works. In this case
             # the fixed factor must follow the variable. It should only be calculated on a business day.
@@ -2005,7 +2121,7 @@ def get_daily_returns(
             # The correct thing to do below is to test if the day is a business day, not if the value of the factor "f_c"
             # is greater than one.
             #
-            if f_v > _1:
+            if f_v[1] > _1:
                 f_s = next(fixd)
 
         elif ref < amortizations[-1].date and vir and vir.code == 'Poupança' and capitalisation == '360':  # Poupança is supported only with Bullet.
@@ -2030,7 +2146,7 @@ def get_daily_returns(
         elif ref < amortizations[-1].date:
             raise NotImplementedError(f'unsupported capitalisation {capitalisation} for fixed interest rate')
 
-        _LOG.debug(f'T={p}, f_s={f_s:.8f}, f_c={f_c[1]:.8f}')
+        _LOG.debug(f'T={p}, f_s={f_s[1]:.8f}, f_v={f_v[1]:.8f} f_c={f_c[1]:.8f}')
 
         # Phase B.1, FRU NG, or Phase Rafa Um, next gen.
         #
@@ -2055,8 +2171,9 @@ def get_daily_returns(
                 if tup[1].amortizes_interest:
                     gens.interest_tracker_2.send(regs.interest.current + regs.principal.amortization_ratio.current * regs.interest.deferred)
 
-                # Ends the interest accumulator from the previous period.
-                regs.interest.current = _0
+                # Se o principal reduz, os fatores tem que ser renivelados.
+                if tup[1].amortization_ratio > 0:
+                    lvl = f_s[0]
 
                 # The period only increments in the case of regular amortizations.
                 p, cnt = p + 1, 1
@@ -2064,32 +2181,39 @@ def get_daily_returns(
             # Case of an advance (extraordinary amortization). See comments of the similar block in "get_payments_table".
             else:
                 ent = t.cast(Amortization.Bare, tup[1])  # O Mypy não consegue inferir o tipo da variável "ent" aqui.
-                val0 = min(ent.value, calc_balance(f_c[1]))
+                val0 = min(ent.value, calc_balance(f_c[1]) + regs.interest.current)
                 val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)
-                val3 = val0 - val1
-
-                # Checks if the value of the irregular amortization does not exceed the remaining balance.
-                if ent.value != Amortization.Bare.MAX_VALUE and ent.value > _Q(calc_balance(f_c[1])):
-                    raise Exception(f'the value of the amortization, {ent.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(f_c[1]))}')
+                val2 = val0 - val1
 
                 # Registers the amortization percentage.
-                gens.principal_tracker_1.send(val3 / principal)
+                gens.principal_tracker_1.send(val2 / principal)
 
                 # Registers the interest value to be settled in the period.
                 gens.interest_tracker_2.send(val1)
 
-                # Ends the interest accumulator from the previous period.
-                regs.interest.current = _0
+                # Checks if we did not amortize more than the remaining principal.
+                if regs.principal.amortized.total > principal:
+                    raise Exception(f'the value of the amortization, {ent.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(f_c[1]))}')
+
+                # Se o principal reduz, os fatores tem que ser renivelados.
+                if val2 > 0:
+                    lvl = f_s[0]
 
             tup = tup[1], next(itr)
 
         # Registers the value of the accrued interest on the day.
         #
-        # The interest have to be calculated after processing all amortizations of the current day. This way we get the
-        # correct balance value to apply the factors on.
         #
-        v0 = calc_balance(f_c[0]) * ((f_s * f_v) ** (cnt - 1) - _1)
-        v1 = calc_balance(f_c[1]) * ((f_s * f_v) ** cnt - _1)
+        # 1. The interest have to be calculated after processing all amortizations of the current day. This way we get
+        # the correct balance value to apply the factors on.
+        #
+        if lvl:
+            f_s = f_s[0] / lvl, f_s[1] / lvl, f_s[2]
+
+        v0 = calc_balance(f_c[0]) * (f_s[0] * f_v[0] - _1)
+        v1 = calc_balance(f_c[1]) * (f_s[1] * f_v[1] - _1)
+        dr = DailyReturn()
+
         gens.interest_tracker_1.send(v1 - v0)
 
         # If the balance is zero, and the current day is a business day, the schedule is over.
@@ -2097,8 +2221,6 @@ def get_daily_returns(
             break
 
         # Builds the daily return instance, output of the routine. Makes rounding.
-        dr = DailyReturn()
-
         dr.no = cnt
         dr.period = p
         dr.date = ref
@@ -2114,9 +2236,9 @@ def get_daily_returns(
 
             dr.bal = _Q(calc_balance(_1) + regs.interest.current)  # Balance at the end of the day.
 
-        dr.fixed_factor = f_s
-        dr.variable_factor = f_v
-        dr.monetary_correction_factor = f_c[1]
+        dr.fixed_factor = f_s[2]
+        dr.variable_factor = f_v[2]
+        dr.monetary_correction_factor = f_c[2]
 
         yield dr
 

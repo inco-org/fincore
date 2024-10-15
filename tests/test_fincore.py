@@ -4728,7 +4728,7 @@ def test_will_create_loan_daily_returns_livre_4():
         date = datetime.date(2023, 9, 29) + _MONTH * i
 
         if i < 30:
-            kwa['amortizations'].append(fincore.Amortization(date, amortization_ratio=0, amortizes_interest=False))
+            kwa['amortizations'].append(fincore.Amortization(date, amortization_ratio=_0, amortizes_interest=False))
 
         else:
             kwa['amortizations'].append(fincore.Amortization(date, amortization_ratio=decimal.Decimal(1), amortizes_interest=True))
