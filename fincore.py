@@ -887,20 +887,20 @@ class InMemoryBackend(IndexStorageBackend):
     '''
 
     _ignore_cdi = [
-        datetime.date(2018, 1, 1),   datetime.date(2018, 2, 12),  datetime.date(2018, 2, 13),  datetime.date(2018, 3, 30),  # NOQA
-        datetime.date(2018, 5, 1),   datetime.date(2018, 5, 31),  datetime.date(2018, 9, 7),   datetime.date(2018, 10, 12), # NOQA
-        datetime.date(2018, 11, 2),  datetime.date(2018, 11, 15), datetime.date(2018, 12, 25), datetime.date(2019, 1, 1),   # NOQA
-        datetime.date(2019, 3, 4),   datetime.date(2019, 3, 5),   datetime.date(2019, 4, 19),  datetime.date(2019, 5, 1),   # NOQA
-        datetime.date(2019, 6, 20),  datetime.date(2019, 11, 15), datetime.date(2019, 12, 25), datetime.date(2020, 1, 1),   # NOQA
-        datetime.date(2020, 2, 24),  datetime.date(2020, 2, 25),  datetime.date(2020, 4, 10),  datetime.date(2020, 4, 21),  # NOQA
-        datetime.date(2020, 5, 1),   datetime.date(2020, 6, 11),  datetime.date(2020, 9, 7),   datetime.date(2020, 10, 12), # NOQA
-        datetime.date(2020, 11, 2),  datetime.date(2020, 12, 25), datetime.date(2021, 1, 1),   datetime.date(2021, 2, 15),  # NOQA
-        datetime.date(2021, 2, 16),  datetime.date(2021, 4, 2),   datetime.date(2021, 4, 21),  datetime.date(2021, 6, 3),   # NOQA
-        datetime.date(2021, 9, 7),   datetime.date(2021, 10, 12), datetime.date(2021, 11, 2),  datetime.date(2021, 11, 15), # NOQA
-        datetime.date(2022, 2, 28),  datetime.date(2022, 3, 1),   datetime.date(2022, 4, 15),  datetime.date(2022, 4, 21),  # NOQA
-        datetime.date(2022, 6, 16),  datetime.date(2022, 9, 7),   datetime.date(2022, 10, 12), datetime.date(2022, 11, 2),  # NOQA
-        datetime.date(2022, 11, 15), datetime.date(2023, 2, 20),  datetime.date(2023, 2, 21),  datetime.date(2023, 4, 7),   # NOQA
-        datetime.date(2023, 4, 21),  datetime.date(2023, 5, 1),   datetime.date(2023, 6, 8)                                 # NOQA
+        datetime.date(2018, 1, 1),   datetime.date(2018, 2, 12),  datetime.date(2018, 2, 13),  datetime.date(2018, 3, 30),   # NOQA
+        datetime.date(2018, 5, 1),   datetime.date(2018, 5, 31),  datetime.date(2018, 9, 7),   datetime.date(2018, 10, 12),  # NOQA
+        datetime.date(2018, 11, 2),  datetime.date(2018, 11, 15), datetime.date(2018, 12, 25), datetime.date(2019, 1, 1),    # NOQA
+        datetime.date(2019, 3, 4),   datetime.date(2019, 3, 5),   datetime.date(2019, 4, 19),  datetime.date(2019, 5, 1),    # NOQA
+        datetime.date(2019, 6, 20),  datetime.date(2019, 11, 15), datetime.date(2019, 12, 25), datetime.date(2020, 1, 1),    # NOQA
+        datetime.date(2020, 2, 24),  datetime.date(2020, 2, 25),  datetime.date(2020, 4, 10),  datetime.date(2020, 4, 21),   # NOQA
+        datetime.date(2020, 5, 1),   datetime.date(2020, 6, 11),  datetime.date(2020, 9, 7),   datetime.date(2020, 10, 12),  # NOQA
+        datetime.date(2020, 11, 2),  datetime.date(2020, 12, 25), datetime.date(2021, 1, 1),   datetime.date(2021, 2, 15),   # NOQA
+        datetime.date(2021, 2, 16),  datetime.date(2021, 4, 2),   datetime.date(2021, 4, 21),  datetime.date(2021, 6, 3),    # NOQA
+        datetime.date(2021, 9, 7),   datetime.date(2021, 10, 12), datetime.date(2021, 11, 2),  datetime.date(2021, 11, 15),  # NOQA
+        datetime.date(2022, 2, 28),  datetime.date(2022, 3, 1),   datetime.date(2022, 4, 15),  datetime.date(2022, 4, 21),   # NOQA
+        datetime.date(2022, 6, 16),  datetime.date(2022, 9, 7),   datetime.date(2022, 10, 12), datetime.date(2022, 11, 2),   # NOQA
+        datetime.date(2022, 11, 15), datetime.date(2023, 2, 20),  datetime.date(2023, 2, 21),  datetime.date(2023, 4, 7),    # NOQA
+        datetime.date(2023, 4, 21),  datetime.date(2023, 5, 1),   datetime.date(2023, 6, 8)                                  # NOQA
     ]
 
     # A repository of CDI indexes.
@@ -934,35 +934,35 @@ class InMemoryBackend(IndexStorageBackend):
 
     # A repository of IPCA indexes.
     _registry_ipca = [
-        (datetime.date(2018, 1, 1),  decimal.Decimal('0.29')),  (datetime.date(2018, 2, 1),  decimal.Decimal('0.32')),  # NOQA
-        (datetime.date(2018, 3, 1),  decimal.Decimal('0.09')),  (datetime.date(2018, 4, 1),  decimal.Decimal('0.22')),  # NOQA
-        (datetime.date(2018, 5, 1),  decimal.Decimal('0.40')),  (datetime.date(2018, 6, 1),  decimal.Decimal('1.26')),  # NOQA
-        (datetime.date(2018, 7, 1),  decimal.Decimal('0.33')),  (datetime.date(2018, 8, 1),  decimal.Decimal('-0.09')), # NOQA
-        (datetime.date(2018, 9, 1),  decimal.Decimal('0.48')),  (datetime.date(2018, 10, 1), decimal.Decimal('0.45')),  # NOQA
-        (datetime.date(2018, 11, 1), decimal.Decimal('-0.21')), (datetime.date(2018, 12, 1), decimal.Decimal('0.15')),  # NOQA
-        (datetime.date(2019, 1, 1),  decimal.Decimal('0.32')),  (datetime.date(2019, 2, 1),  decimal.Decimal('0.43')),  # NOQA
-        (datetime.date(2019, 3, 1),  decimal.Decimal('0.75')),  (datetime.date(2019, 4, 1),  decimal.Decimal('0.57')),  # NOQA
-        (datetime.date(2019, 5, 1),  decimal.Decimal('0.13')),  (datetime.date(2019, 6, 1),  decimal.Decimal('0.01')),  # NOQA
-        (datetime.date(2019, 7, 1),  decimal.Decimal('0.19')),  (datetime.date(2019, 8, 1),  decimal.Decimal('0.11')),  # NOQA
-        (datetime.date(2019, 9, 1),  decimal.Decimal('-0.04')), (datetime.date(2019, 10, 1), decimal.Decimal('0.10')),  # NOQA
-        (datetime.date(2019, 11, 1), decimal.Decimal('0.51')),  (datetime.date(2019, 12, 1), decimal.Decimal('1.15')),  # NOQA
-        (datetime.date(2020, 1, 1),  decimal.Decimal('0.21')),  (datetime.date(2020, 2, 1),  decimal.Decimal('0.25')),  # NOQA
-        (datetime.date(2020, 3, 1),  decimal.Decimal('0.07')),  (datetime.date(2020, 4, 1),  decimal.Decimal('-0.31')), # NOQA
-        (datetime.date(2020, 5, 1),  decimal.Decimal('-0.38')), (datetime.date(2020, 6, 1),  decimal.Decimal('0.26')),  # NOQA
-        (datetime.date(2020, 7, 1),  decimal.Decimal('0.36')),  (datetime.date(2020, 8, 1),  decimal.Decimal('0.24')),  # NOQA
-        (datetime.date(2020, 9, 1),  decimal.Decimal('0.64')),  (datetime.date(2020, 10, 1), decimal.Decimal('0.86')),  # NOQA
-        (datetime.date(2020, 11, 1), decimal.Decimal('0.89')),  (datetime.date(2020, 12, 1), decimal.Decimal('1.35')),  # NOQA
-        (datetime.date(2021, 1, 1),  decimal.Decimal('0.25')),  (datetime.date(2021, 2, 1),  decimal.Decimal('0.86')),  # NOQA
-        (datetime.date(2021, 3, 1),  decimal.Decimal('0.93')),  (datetime.date(2021, 4, 1),  decimal.Decimal('0.31')),  # NOQA
-        (datetime.date(2021, 5, 1),  decimal.Decimal('0.83')),  (datetime.date(2021, 6, 1),  decimal.Decimal('0.53')),  # NOQA
-        (datetime.date(2021, 7, 1),  decimal.Decimal('0.96')),  (datetime.date(2021, 8, 1),  decimal.Decimal('0.87')),  # NOQA
-        (datetime.date(2021, 9, 1),  decimal.Decimal('1.16')),  (datetime.date(2021, 10, 1), decimal.Decimal('1.25')),  # NOQA
-        (datetime.date(2021, 11, 1), decimal.Decimal('0.95')),  (datetime.date(2021, 12, 1), decimal.Decimal('0.73')),  # NOQA
-        (datetime.date(2022, 1, 1),  decimal.Decimal('0.54')),  (datetime.date(2022, 2, 1),  decimal.Decimal('1.01')),  # NOQA
-        (datetime.date(2022, 3, 1),  decimal.Decimal('1.62')),  (datetime.date(2022, 4, 1),  decimal.Decimal('1.06')),  # NOQA
-        (datetime.date(2022, 5, 1),  decimal.Decimal('0.47')),  (datetime.date(2022, 6, 1),  decimal.Decimal('0.67')),  # NOQA
-        (datetime.date(2022, 7, 1),  decimal.Decimal('-0.68')), (datetime.date(2022, 8, 1),  decimal.Decimal('-0.36')), # NOQA
-        (datetime.date(2022, 9, 1),  decimal.Decimal('-0.29')), (datetime.date(2022, 10, 1), decimal.Decimal('0.59')),  # NOQA
+        (datetime.date(2018, 1, 1),  decimal.Decimal('0.29')),  (datetime.date(2018, 2, 1),  decimal.Decimal('0.32')),   # NOQA
+        (datetime.date(2018, 3, 1),  decimal.Decimal('0.09')),  (datetime.date(2018, 4, 1),  decimal.Decimal('0.22')),   # NOQA
+        (datetime.date(2018, 5, 1),  decimal.Decimal('0.40')),  (datetime.date(2018, 6, 1),  decimal.Decimal('1.26')),   # NOQA
+        (datetime.date(2018, 7, 1),  decimal.Decimal('0.33')),  (datetime.date(2018, 8, 1),  decimal.Decimal('-0.09')),  # NOQA
+        (datetime.date(2018, 9, 1),  decimal.Decimal('0.48')),  (datetime.date(2018, 10, 1), decimal.Decimal('0.45')),   # NOQA
+        (datetime.date(2018, 11, 1), decimal.Decimal('-0.21')), (datetime.date(2018, 12, 1), decimal.Decimal('0.15')),   # NOQA
+        (datetime.date(2019, 1, 1),  decimal.Decimal('0.32')),  (datetime.date(2019, 2, 1),  decimal.Decimal('0.43')),   # NOQA
+        (datetime.date(2019, 3, 1),  decimal.Decimal('0.75')),  (datetime.date(2019, 4, 1),  decimal.Decimal('0.57')),   # NOQA
+        (datetime.date(2019, 5, 1),  decimal.Decimal('0.13')),  (datetime.date(2019, 6, 1),  decimal.Decimal('0.01')),   # NOQA
+        (datetime.date(2019, 7, 1),  decimal.Decimal('0.19')),  (datetime.date(2019, 8, 1),  decimal.Decimal('0.11')),   # NOQA
+        (datetime.date(2019, 9, 1),  decimal.Decimal('-0.04')), (datetime.date(2019, 10, 1), decimal.Decimal('0.10')),   # NOQA
+        (datetime.date(2019, 11, 1), decimal.Decimal('0.51')),  (datetime.date(2019, 12, 1), decimal.Decimal('1.15')),   # NOQA
+        (datetime.date(2020, 1, 1),  decimal.Decimal('0.21')),  (datetime.date(2020, 2, 1),  decimal.Decimal('0.25')),   # NOQA
+        (datetime.date(2020, 3, 1),  decimal.Decimal('0.07')),  (datetime.date(2020, 4, 1),  decimal.Decimal('-0.31')),  # NOQA
+        (datetime.date(2020, 5, 1),  decimal.Decimal('-0.38')), (datetime.date(2020, 6, 1),  decimal.Decimal('0.26')),   # NOQA
+        (datetime.date(2020, 7, 1),  decimal.Decimal('0.36')),  (datetime.date(2020, 8, 1),  decimal.Decimal('0.24')),   # NOQA
+        (datetime.date(2020, 9, 1),  decimal.Decimal('0.64')),  (datetime.date(2020, 10, 1), decimal.Decimal('0.86')),   # NOQA
+        (datetime.date(2020, 11, 1), decimal.Decimal('0.89')),  (datetime.date(2020, 12, 1), decimal.Decimal('1.35')),   # NOQA
+        (datetime.date(2021, 1, 1),  decimal.Decimal('0.25')),  (datetime.date(2021, 2, 1),  decimal.Decimal('0.86')),   # NOQA
+        (datetime.date(2021, 3, 1),  decimal.Decimal('0.93')),  (datetime.date(2021, 4, 1),  decimal.Decimal('0.31')),   # NOQA
+        (datetime.date(2021, 5, 1),  decimal.Decimal('0.83')),  (datetime.date(2021, 6, 1),  decimal.Decimal('0.53')),   # NOQA
+        (datetime.date(2021, 7, 1),  decimal.Decimal('0.96')),  (datetime.date(2021, 8, 1),  decimal.Decimal('0.87')),   # NOQA
+        (datetime.date(2021, 9, 1),  decimal.Decimal('1.16')),  (datetime.date(2021, 10, 1), decimal.Decimal('1.25')),   # NOQA
+        (datetime.date(2021, 11, 1), decimal.Decimal('0.95')),  (datetime.date(2021, 12, 1), decimal.Decimal('0.73')),   # NOQA
+        (datetime.date(2022, 1, 1),  decimal.Decimal('0.54')),  (datetime.date(2022, 2, 1),  decimal.Decimal('1.01')),   # NOQA
+        (datetime.date(2022, 3, 1),  decimal.Decimal('1.62')),  (datetime.date(2022, 4, 1),  decimal.Decimal('1.06')),   # NOQA
+        (datetime.date(2022, 5, 1),  decimal.Decimal('0.47')),  (datetime.date(2022, 6, 1),  decimal.Decimal('0.67')),   # NOQA
+        (datetime.date(2022, 7, 1),  decimal.Decimal('-0.68')), (datetime.date(2022, 8, 1),  decimal.Decimal('-0.36')),  # NOQA
+        (datetime.date(2022, 9, 1),  decimal.Decimal('-0.29')), (datetime.date(2022, 10, 1), decimal.Decimal('0.59')),   # NOQA
         (datetime.date(2022, 11, 1), decimal.Decimal('0.41'))
     ]
 
@@ -1237,7 +1237,7 @@ def get_payments_table(
     more details about these data structures.
     '''
 
-    def calc_balance(correction_factor=_1) -> decimal.Decimal:
+    def calc_balance(correction_factor: decimal.Decimal = _1) -> decimal.Decimal:
         val = principal * correction_factor + regs.interest.accrued - regs.principal.amortized.total * correction_factor - regs.interest.settled.total
 
         return t.cast(decimal.Decimal, val)
@@ -1590,7 +1590,7 @@ def get_payments_table(
             pmt.date = ent1.date
 
             if type(ent1) is Amortization:
-                pmt.amort = regs.principal.amortized.current * f_c
+                pmt.amort = regs.principal.amortized.current
 
                 if gain_output == 'deferred':
                     pmt.gain = regs.interest.deferred + regs.interest.current
@@ -1621,14 +1621,23 @@ def get_payments_table(
                     pmt.raw = _0
                     pmt.tax = _0
 
+                pmt.bal = calc_balance(f_c)
+
+                # Monetary correction.
+                #
+                # Notice that "pmt.pla" is the monetary correction of the principal amortization. This value does not account for
+                # the corrections to the interest paid in the current period, "pmt.gain".
+                #
+                # Applies the price level adjustment to the gross value, and to the revenue tax.
+                #
                 if vir and vir.code == 'IPCA':
                     pmt = t.cast(PriceAdjustedPayment, pmt)
 
-                    pmt.pla = calc_balance(f_c) - calc_balance()
+                    pmt.pla = pmt.amort * (f_c - 1)
+                    pmt.raw = pmt.raw + pmt.pla
+                    pmt.tax = pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
 
-                pmt.bal = calc_balance(f_c)
-
-            else:
+            else:  # Implies "type(ent1) is Amortization.Bare".
                 pmt.amort = regs.principal.amortized.current
 
                 if gain_output == 'deferred':
@@ -1643,11 +1652,12 @@ def get_payments_table(
                 pmt.raw = pmt.amort + (y := regs.interest.settled.current)
                 pmt.tax = _0 if tax_exempt else y * calculate_revenue_tax(amortizations[0].date, due)
 
-                # Applies the price level adjustment to the gross value and the revenue tax.
                 if vir and vir.code == 'IPCA':
                     pmt = t.cast(PriceAdjustedPayment, pmt)
 
-                    pmt.pla = calc_balance(f_c) - calc_balance()
+                    pmt.pla = pmt.amort * (f_c - 1)
+                    pmt.raw = pmt.raw + pmt.pla
+                    pmt.tax = pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
 
                 pmt.bal = calc_balance(f_c)
 
@@ -1851,10 +1861,11 @@ def get_daily_returns(
       • "variable_factor", is the interest factor used to calculate the variable component of the day's yield.
     '''
 
-    def calc_balance(correction_factor) -> decimal.Decimal:
-        val = (principal - regs.principal.amortized.total) * correction_factor
+    def calc_balance(correction_factor: decimal.Decimal = _1) -> decimal.Decimal:
+        return (principal - regs.principal.amortized.total) * correction_factor + regs.interest.current
 
-        return t.cast(decimal.Decimal, val)
+    def get_principal_outstanding(correction_factor: decimal.Decimal = _1) -> decimal.Decimal:
+        return (principal - regs.principal.amortized.total) * correction_factor
 
     # First generator for principal values.
     #
@@ -1959,10 +1970,9 @@ def get_daily_returns(
 
     # Poupança is a monthly index. This function will normalize it to daily values.
     def get_normalized_savings_indexes(backend: IndexStorageBackend) -> t.Generator[t.Tuple[decimal.Decimal, decimal.Decimal, decimal.Decimal], None, None]:
-        ls = [x for x in amortizations if type(x) is Amortization and x.amortizes_interest]
         dt = amortizations[0].date
 
-        for amort0, amort1 in itertools.pairwise([amortizations[0]] + ls):
+        for amort0, amort1 in itertools.pairwise([x for x in amortizations if type(x) is Amortization]):
             pct = t.cast(VariableIndex, vir).percentage  # Mypy fails to detect that, despite "vir" being optional, here it can't be None.
             fac = backend.calculate_savings_factor(amort0.date, amort1.date, pct).value - _1
             val = calculate_interest_factor(fac, _1 / (amort1.date - amort0.date).days, False)
@@ -1977,10 +1987,9 @@ def get_daily_returns(
 
     # IPCA is a monthly index. This function will normalize it to daily values.
     def get_normalized_ipca_indexes(backend: IndexStorageBackend) -> t.Generator[t.Tuple[decimal.Decimal, decimal.Decimal, decimal.Decimal], None, None]:
-        ls = [x for x in amortizations if type(x) is Amortization]
         dt = amortizations[0].date
 
-        for amort0, amort1 in itertools.pairwise([amortizations[0]] + ls):
+        for amort0, amort1 in itertools.pairwise([x for x in amortizations if type(x) is Amortization]):
             if x := t.cast(Amortization, amort1).price_level_adjustment:
                 kwa: t.Dict[str, t.Any] = {}
 
@@ -2171,7 +2180,14 @@ def get_daily_returns(
                 if tup[1].amortizes_interest:
                     gens.interest_tracker_2.send(regs.interest.current + regs.principal.amortization_ratio.current * regs.interest.deferred)
 
-                # Se o principal reduz, os fatores tem que ser renivelados.
+                # The spread triplet has to be renormalized if the principal decreases.
+                #
+                # Normalization is done by dividing the triplet by the factor accumulated since the last payment, up to
+                # the previous day, "f_s[0]". This is referred to as the normalization value, or "lvl". This is
+                # basically resetting the current accumulated values, "f_s[1]", to their last discrete components.
+                #
+                # Notice that at this point, "lvl" is just recorded. The actual division happens below. See [FS-NORM].
+                #
                 if tup[1].amortization_ratio > 0:
                     lvl = f_s[0]
 
@@ -2181,7 +2197,7 @@ def get_daily_returns(
             # Case of an advance (extraordinary amortization). See comments of the similar block in "get_payments_table".
             else:
                 ent = t.cast(Amortization.Bare, tup[1])  # O Mypy não consegue inferir o tipo da variável "ent" aqui.
-                val0 = min(ent.value, calc_balance(f_c[1]) + regs.interest.current)
+                val0 = min(ent.value, calc_balance(f_c[1]))
                 val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)
                 val2 = val0 - val1
 
@@ -2195,32 +2211,26 @@ def get_daily_returns(
                 if regs.principal.amortized.total > principal:
                     raise Exception(f'the value of the amortization, {ent.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(f_c[1]))}')
 
-                # Se o principal reduz, os fatores tem que ser renivelados.
+                # Normalizes the factors. See comments on the previous block.
                 if val2 > 0:
                     lvl = f_s[0]
 
             tup = tup[1], next(itr)
 
-        # Registers the value of the accrued interest on the day.
-        #
-        #
-        # 1. The interest have to be calculated after processing all amortizations of the current day. This way we get
-        # the correct balance value to apply the factors on.
-        #
+        # [FS-NORM] Normalizes the spread triplet.
         if lvl:
             f_s = f_s[0] / lvl, f_s[1] / lvl, f_s[2]
 
-        v0 = calc_balance(f_c[0]) * (f_s[0] * f_v[0] - _1)
-        v1 = calc_balance(f_c[1]) * (f_s[1] * f_v[1] - _1)
-        dr = DailyReturn()
-
-        gens.interest_tracker_1.send(v1 - v0)
-
-        # If the balance is zero, and the current day is a business day, the schedule is over.
-        if _Q(calc_balance(_1)) == _0 and is_bizz_day_cb(ref):
-            break
+        # Registers the value of the accrued interest on the day.
+        #
+        # The interest have to be calculated after processing all amortizations of the current day, i.e., after phase
+        # B.1 above. This way we get the correct balance value to apply the factors on.
+        #
+        gens.interest_tracker_1.send(get_principal_outstanding(f_c[1]) * (f_s[1] * f_v[1] - _1) - get_principal_outstanding(f_c[0]) * (f_s[0] * f_v[0] - _1))
 
         # Builds the daily return instance, output of the routine. Makes rounding.
+        dr = DailyReturn()
+
         dr.no = cnt
         dr.period = p
         dr.date = ref
@@ -2234,15 +2244,20 @@ def get_daily_returns(
         else:
             buf = _0
 
-            dr.bal = _Q(calc_balance(_1) + regs.interest.current)  # Balance at the end of the day.
+            dr.bal = _Q(calc_balance())  # Balance at the end of the day.
 
         dr.fixed_factor = f_s[2]
         dr.variable_factor = f_v[2]
         dr.monetary_correction_factor = f_c[2]
 
-        yield dr
+        # If the outstanding principal is zero, and the current day is a business day, the schedule is over.
+        if _Q(get_principal_outstanding()) != _0 or not is_bizz_day_cb(ref):
+            yield dr
 
-        cnt += 1
+            cnt += 1
+
+        else:
+            break
 # }}}
 
 # Public API. Factories. {{{

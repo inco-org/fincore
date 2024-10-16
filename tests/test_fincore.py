@@ -56,6 +56,53 @@ def _tail(n, iterable):
 
     return iter(collections.deque(iterable, maxlen=n))
 
+class _AsadIpcaBackend(fincore.InMemoryBackend):
+    '''A richer ICPA backend to test the loan to ASAD Energia.'''
+
+    # FIXME: enrich "fincore.InMemoryBackend" with this data. Might break some test cases.
+    _registry_ipca = [
+        (datetime.date(2018, 1, 1),  decimal.Decimal('0.29')),  (datetime.date(2018, 2, 1),  decimal.Decimal('0.32')),   # NOQA
+        (datetime.date(2018, 3, 1),  decimal.Decimal('0.09')),  (datetime.date(2018, 4, 1),  decimal.Decimal('0.22')),   # NOQA
+        (datetime.date(2018, 5, 1),  decimal.Decimal('0.40')),  (datetime.date(2018, 6, 1),  decimal.Decimal('1.26')),   # NOQA
+        (datetime.date(2018, 7, 1),  decimal.Decimal('0.33')),  (datetime.date(2018, 8, 1),  decimal.Decimal('-0.09')),  # NOQA
+        (datetime.date(2018, 9, 1),  decimal.Decimal('0.48')),  (datetime.date(2018, 10, 1), decimal.Decimal('0.45')),   # NOQA
+        (datetime.date(2018, 11, 1), decimal.Decimal('-0.21')), (datetime.date(2018, 12, 1), decimal.Decimal('0.15')),   # NOQA
+        (datetime.date(2019, 1, 1),  decimal.Decimal('0.32')),  (datetime.date(2019, 2, 1),  decimal.Decimal('0.43')),   # NOQA
+        (datetime.date(2019, 3, 1),  decimal.Decimal('0.75')),  (datetime.date(2019, 4, 1),  decimal.Decimal('0.57')),   # NOQA
+        (datetime.date(2019, 5, 1),  decimal.Decimal('0.13')),  (datetime.date(2019, 6, 1),  decimal.Decimal('0.01')),   # NOQA
+        (datetime.date(2019, 7, 1),  decimal.Decimal('0.19')),  (datetime.date(2019, 8, 1),  decimal.Decimal('0.11')),   # NOQA
+        (datetime.date(2019, 9, 1),  decimal.Decimal('-0.04')), (datetime.date(2019, 10, 1), decimal.Decimal('0.10')),   # NOQA
+        (datetime.date(2019, 11, 1), decimal.Decimal('0.51')),  (datetime.date(2019, 12, 1), decimal.Decimal('1.15')),   # NOQA
+        (datetime.date(2020, 1, 1),  decimal.Decimal('0.21')),  (datetime.date(2020, 2, 1),  decimal.Decimal('0.25')),   # NOQA
+        (datetime.date(2020, 3, 1),  decimal.Decimal('0.07')),  (datetime.date(2020, 4, 1),  decimal.Decimal('-0.31')),  # NOQA
+        (datetime.date(2020, 5, 1),  decimal.Decimal('-0.38')), (datetime.date(2020, 6, 1),  decimal.Decimal('0.26')),   # NOQA
+        (datetime.date(2020, 7, 1),  decimal.Decimal('0.36')),  (datetime.date(2020, 8, 1),  decimal.Decimal('0.24')),   # NOQA
+        (datetime.date(2020, 9, 1),  decimal.Decimal('0.64')),  (datetime.date(2020, 10, 1), decimal.Decimal('0.86')),   # NOQA
+        (datetime.date(2020, 11, 1), decimal.Decimal('0.89')),  (datetime.date(2020, 12, 1), decimal.Decimal('1.35')),   # NOQA
+        (datetime.date(2021, 1, 1),  decimal.Decimal('0.25')),  (datetime.date(2021, 2, 1),  decimal.Decimal('0.86')),   # NOQA
+        (datetime.date(2021, 3, 1),  decimal.Decimal('0.93')),  (datetime.date(2021, 4, 1),  decimal.Decimal('0.31')),   # NOQA
+        (datetime.date(2021, 5, 1),  decimal.Decimal('0.83')),  (datetime.date(2021, 6, 1),  decimal.Decimal('0.53')),   # NOQA
+        (datetime.date(2021, 7, 1),  decimal.Decimal('0.96')),  (datetime.date(2021, 8, 1),  decimal.Decimal('0.87')),   # NOQA
+        (datetime.date(2021, 9, 1),  decimal.Decimal('1.16')),  (datetime.date(2021, 10, 1), decimal.Decimal('1.25')),   # NOQA
+        (datetime.date(2021, 11, 1), decimal.Decimal('0.95')),  (datetime.date(2021, 12, 1), decimal.Decimal('0.73')),   # NOQA
+        (datetime.date(2022, 1, 1),  decimal.Decimal('0.54')),  (datetime.date(2022, 2, 1),  decimal.Decimal('1.01')),   # NOQA
+        (datetime.date(2022, 3, 1),  decimal.Decimal('1.62')),  (datetime.date(2022, 4, 1),  decimal.Decimal('1.06')),   # NOQA
+        (datetime.date(2022, 5, 1),  decimal.Decimal('0.47')),  (datetime.date(2022, 6, 1),  decimal.Decimal('0.67')),   # NOQA
+        (datetime.date(2022, 7, 1),  decimal.Decimal('-0.68')), (datetime.date(2022, 8, 1),  decimal.Decimal('-0.36')),  # NOQA
+        (datetime.date(2022, 9, 1),  decimal.Decimal('-0.29')), (datetime.date(2022, 10, 1), decimal.Decimal('0.59')),   # NOQA
+        (datetime.date(2022, 11, 1), decimal.Decimal('0.41')),  (datetime.date(2022, 12, 1), decimal.Decimal('0.62')),   # NOQA
+        (datetime.date(2023, 1, 1), decimal.Decimal('0.53')),   (datetime.date(2023, 2, 1), decimal.Decimal('0.84')),    # NOQA
+        (datetime.date(2023, 3, 1), decimal.Decimal('0.71')),   (datetime.date(2023, 4, 1), decimal.Decimal('0.61')),    # NOQA
+        (datetime.date(2023, 5, 1), decimal.Decimal('0.23')),   (datetime.date(2023, 6, 1), decimal.Decimal('-0.08')),   # NOQA
+        (datetime.date(2023, 7, 1), decimal.Decimal('0.12')),   (datetime.date(2023, 8, 1), decimal.Decimal('0.23')),    # NOQA
+        (datetime.date(2023, 9, 1), decimal.Decimal('0.26')),   (datetime.date(2023, 10, 1), decimal.Decimal('0.24')),   # NOQA
+        (datetime.date(2023, 11, 1), decimal.Decimal('0.28')),  (datetime.date(2023, 12, 1), decimal.Decimal('0.56')),   # NOQA
+        (datetime.date(2024, 1, 1), decimal.Decimal('0.42')),   (datetime.date(2024, 2, 1), decimal.Decimal('0.83')),    # NOQA
+        (datetime.date(2024, 3, 1), decimal.Decimal('0.16')),   (datetime.date(2024, 4, 1), decimal.Decimal('0.38')),    # NOQA
+        (datetime.date(2024, 5, 1), decimal.Decimal('0.46')),   (datetime.date(2024, 6, 1), decimal.Decimal('0.21')),    # NOQA
+        (datetime.date(2024, 7, 1), decimal.Decimal('0.38')),   (datetime.date(2024, 8, 1), decimal.Decimal('-0.02'))    # NOQA
+]
+
 # 🚩 Parametrizações inválidas. {{{
 def test_wont_create_sched_1():
     with pytest.raises(TypeError, match=r"build_bullet\(\) missing 4 required positional arguments: 'principal', 'apy', 'zero_date', and 'term'"):
@@ -2566,7 +2613,6 @@ def test_will_create_livre_3b():
 
     assert i == len(tab1) - 1 == len(tab2)
 
-@pytest.mark.skip(reason='Algoritmo de IPCA mudou. Teste defasado e precisa ser atualizado.')
 def test_will_create_livre_4():
     '''
     Operação pré-fixada modalidade Livre c/ correção monetária por IPCA.
@@ -2828,7 +2874,6 @@ def test_will_create_livre_5b():
 
     assert i == len(tab1) - 1 == len(tab2)
 
-@pytest.mark.skip(reason='Algoritmo de IPCA mudou. Teste defasado e precisa ser atualizado.')
 def test_will_create_livre_6a():
     '''
     Operação pós-fixada IPCA, modalidade Livre.
@@ -2908,7 +2953,6 @@ def test_will_create_livre_6a():
 # No caso abaixo, o empréstimo sofre antecipação total no dia 6 de janeiro de
 # 2022.
 #
-@pytest.mark.skip(reason='Algoritmo de IPCA mudou. Teste defasado e precisa ser atualizado.')
 @pytest.mark.parametrize('calc_date', [
     None,
     fincore.CalcDate(value=datetime.date(2023, 1, 6), runaway=False),
@@ -4691,8 +4735,6 @@ def test_will_create_loan_daily_returns_livre_3():
     tst[125] = datetime.date(2023, 10, 21), 5, 1, '1.00053469', '329284.99', '176.06'
     tst[126] = datetime.date(2023, 10, 22), 5, 2, '1.00053469', '329461.06', '176.16'
 
-    bal = decimal.Decimal('660000')
-
     for i, entry in enumerate(fincore.get_livre_daily_returns(**kwa), 1):
         assert entry.date == tst[i][0]
         assert entry.period == tst[i][1]
@@ -5014,8 +5056,6 @@ def test_will_create_loan_daily_returns_livre_4():
     tst[273] = datetime.date(2024, 6, 27), 9, 30, '1.00053469', '168840.40', '90.28'
     tst[274] = datetime.date(2024, 6, 28), 9, 31, '1.00053469', '168930.68', '0.00'
 
-    bal = decimal.Decimal('988000')
-
     for i, entry in enumerate(fincore.get_livre_daily_returns(**kwa), 1):
         assert entry.date == tst[i][0]
         assert entry.period == tst[i][1]
@@ -5028,6 +5068,310 @@ def test_will_create_loan_daily_returns_livre_4():
 
         # Memoriza o saldo para a próxima iteração.
         bal = entry.bal
+
+def test_will_create_loan_daily_returns_livre_5():
+    '''
+    Operação ASAD Energia.
+
+    Ref File: https://docs.google.com/spreadsheets/d/1vzW6Kz_NvLRHj8WZv2dSSGSvHauwhM7eCS5YfQ_ohng
+    Tab.....: ASAD Energia
+    '''
+
+    pla = functools.partial(fincore.PriceLevelAdjustment, 'IPCA', base_date=datetime.date(2021, 7, 1), shift='AUTO')
+    kwa = {}
+    tst = {}
+
+    kwa['principal'] = decimal.Decimal('145000')
+    kwa['apy'] = decimal.Decimal('10')
+    kwa['vir'] = fincore.VariableIndex(code='IPCA', backend=_AsadIpcaBackend())
+    kwa['amortizations'] = []
+
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2022, 4, 5), amortizes_interest=False))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2022, 5, 5), amortization_ratio=decimal.Decimal('0.0130614411')))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2022, 6, 5), amortization_ratio=decimal.Decimal('0.0131655949')))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2022, 7, 5), amortization_ratio=decimal.Decimal('0.0132705792')))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2022, 8, 5), amortization_ratio=decimal.Decimal('0.0133764006')))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2022, 9, 5), amortization_ratio=decimal.Decimal('0.0134830659'), price_level_adjustment=pla(period=12)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2022, 10, 5), amortization_ratio=decimal.Decimal('0.0135905818'), price_level_adjustment=pla(period=12)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2022, 11, 5), amortization_ratio=decimal.Decimal('0.0136989550'), price_level_adjustment=pla(period=12)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2022, 12, 5), amortization_ratio=decimal.Decimal('0.0138081924'), price_level_adjustment=pla(period=12)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2023, 1, 5), amortization_ratio=decimal.Decimal('0.0139183008'), price_level_adjustment=pla(period=12)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2023, 2, 5), amortization_ratio=decimal.Decimal('0.0140292873'), price_level_adjustment=pla(period=12)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2023, 3, 5), amortization_ratio=decimal.Decimal('0.0141411588'), price_level_adjustment=pla(period=12)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2023, 4, 5), amortization_ratio=decimal.Decimal('0.0142539224'), price_level_adjustment=pla(period=12)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2023, 5, 5), amortization_ratio=decimal.Decimal('0.0143675852'), price_level_adjustment=pla(period=12)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2023, 6, 5), amortization_ratio=decimal.Decimal('0.0144821543'), price_level_adjustment=pla(period=12)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2023, 7, 5), amortization_ratio=decimal.Decimal('0.0145976371'), price_level_adjustment=pla(period=12)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2023, 8, 5), amortization_ratio=decimal.Decimal('0.0147140407'), price_level_adjustment=pla(period=12)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2023, 9, 5), amortization_ratio=decimal.Decimal('0.0148313725'), price_level_adjustment=pla(period=24)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2023, 10, 5), amortization_ratio=decimal.Decimal('0.0149496400'), price_level_adjustment=pla(period=24)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2023, 11, 5), amortization_ratio=decimal.Decimal('0.0150688505'), price_level_adjustment=pla(period=24)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2023, 12, 5), amortization_ratio=decimal.Decimal('0.0151890116'), price_level_adjustment=pla(period=24)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2024, 1, 5), amortization_ratio=decimal.Decimal('0.0153101309'), price_level_adjustment=pla(period=24)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2024, 2, 5), amortization_ratio=decimal.Decimal('0.0154322161'), price_level_adjustment=pla(period=24)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2024, 3, 5), amortization_ratio=decimal.Decimal('0.0155552747'), price_level_adjustment=pla(period=24)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2024, 4, 5), amortization_ratio=decimal.Decimal('0.0156793147'), price_level_adjustment=pla(period=24)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2024, 5, 5), amortization_ratio=decimal.Decimal('0.0158043437'), price_level_adjustment=pla(period=24)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2024, 6, 5), amortization_ratio=decimal.Decimal('0.0159303698'), price_level_adjustment=pla(period=24)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2024, 7, 5), amortization_ratio=decimal.Decimal('0.0160574008'), price_level_adjustment=pla(period=24)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2024, 8, 5), amortization_ratio=decimal.Decimal('0.0161854448'), price_level_adjustment=pla(period=24)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2024, 9, 5), amortization_ratio=decimal.Decimal('0.0163145098'), price_level_adjustment=pla(period=36)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2024, 10, 5), amortization_ratio=decimal.Decimal('0.0164446040'), price_level_adjustment=pla(period=36)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2024, 11, 5), amortization_ratio=decimal.Decimal('0.0165757355'), price_level_adjustment=pla(period=36)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2024, 12, 5), amortization_ratio=decimal.Decimal('0.0167079128'), price_level_adjustment=pla(period=36)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2025, 1, 5), amortization_ratio=decimal.Decimal('0.0168411440'), price_level_adjustment=pla(period=36)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2025, 2, 5), amortization_ratio=decimal.Decimal('0.0169754377'), price_level_adjustment=pla(period=36)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2025, 3, 5), amortization_ratio=decimal.Decimal('0.0171108022'), price_level_adjustment=pla(period=36)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2025, 4, 5), amortization_ratio=decimal.Decimal('0.0172472461'), price_level_adjustment=pla(period=36)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2025, 5, 5), amortization_ratio=decimal.Decimal('0.0173847781'), price_level_adjustment=pla(period=36)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2025, 6, 5), amortization_ratio=decimal.Decimal('0.0175234068'), price_level_adjustment=pla(period=36)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2025, 7, 5), amortization_ratio=decimal.Decimal('0.0176631409'), price_level_adjustment=pla(period=36)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2025, 8, 5), amortization_ratio=decimal.Decimal('0.0178039892'), price_level_adjustment=pla(period=36)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2025, 9, 5), amortization_ratio=decimal.Decimal('0.0179459608'), price_level_adjustment=pla(period=48)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2025, 10, 5), amortization_ratio=decimal.Decimal('0.0180890644'), price_level_adjustment=pla(period=48)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2025, 11, 5), amortization_ratio=decimal.Decimal('0.0182333091'), price_level_adjustment=pla(period=48)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2025, 12, 5), amortization_ratio=decimal.Decimal('0.0183787041'), price_level_adjustment=pla(period=48)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2026, 1, 5), amortization_ratio=decimal.Decimal('0.0185252584'), price_level_adjustment=pla(period=48)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2026, 2, 5), amortization_ratio=decimal.Decimal('0.0186729814'), price_level_adjustment=pla(period=48)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2026, 3, 5), amortization_ratio=decimal.Decimal('0.0188218824'), price_level_adjustment=pla(period=48)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2026, 4, 5), amortization_ratio=decimal.Decimal('0.0189719708'), price_level_adjustment=pla(period=48)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2026, 5, 5), amortization_ratio=decimal.Decimal('0.0191232559'), price_level_adjustment=pla(period=48)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2026, 6, 5), amortization_ratio=decimal.Decimal('0.0192757474'), price_level_adjustment=pla(period=48)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2026, 7, 5), amortization_ratio=decimal.Decimal('0.0194294550'), price_level_adjustment=pla(period=48)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2026, 8, 5), amortization_ratio=decimal.Decimal('0.0195843882'), price_level_adjustment=pla(period=48)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2026, 9, 5), amortization_ratio=decimal.Decimal('0.0197405568'), price_level_adjustment=pla(period=60)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2026, 10, 5), amortization_ratio=decimal.Decimal('0.0198979708'), price_level_adjustment=pla(period=60)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2026, 11, 5), amortization_ratio=decimal.Decimal('0.0200566400'), price_level_adjustment=pla(period=60)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2026, 12, 5), amortization_ratio=decimal.Decimal('0.0202165745'), price_level_adjustment=pla(period=60)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2027, 1, 5), amortization_ratio=decimal.Decimal('0.0203777843'), price_level_adjustment=pla(period=60)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2027, 2, 5), amortization_ratio=decimal.Decimal('0.0205402796'), price_level_adjustment=pla(period=60)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2027, 3, 5), amortization_ratio=decimal.Decimal('0.0207040707'), price_level_adjustment=pla(period=60)))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2027, 4, 5), amortization_ratio=decimal.Decimal('0.0208691707'), price_level_adjustment=pla(period=60)))
+
+    tst[1] = datetime.date(2022, 4, 5), 1, 1, '0.000264786', '0', '38.39', '145038.39'
+    tst[2] = datetime.date(2022, 4, 6), 1, 2, '0.000264786', '0', '38.40', '145076.80'
+    tst[3] = datetime.date(2022, 4, 7), 1, 3, '0.000264786', '0', '38.41', '145115.21'
+    tst[4] = datetime.date(2022, 4, 8), 1, 4, '0.000264786', '0', '38.42', '145153.64'
+    tst[5] = datetime.date(2022, 4, 9), 1, 5, '0.000264786', '0', '38.43', '145192.07'
+    tst[6] = datetime.date(2022, 4, 10), 1, 6, '0.000264786', '0', '38.44', '145230.52'
+    tst[7] = datetime.date(2022, 4, 11), 1, 7, '0.000264786', '0', '38.45', '145268.97'
+    tst[8] = datetime.date(2022, 4, 12), 1, 8, '0.000264786', '0', '38.47', '145307.44'
+    tst[9] = datetime.date(2022, 4, 13), 1, 9, '0.000264786', '0', '38.48', '145345.91'
+    tst[10] = datetime.date(2022, 4, 14), 1, 10, '0.000264786', '0', '38.49', '145384.40'
+    tst[11] = datetime.date(2022, 4, 15), 1, 11, '0.000264786', '0', '38.50', '145422.89'
+    tst[12] = datetime.date(2022, 4, 16), 1, 12, '0.000264786', '0', '38.51', '145461.40'
+    tst[13] = datetime.date(2022, 4, 17), 1, 13, '0.000264786', '0', '38.52', '145499.91'
+    tst[14] = datetime.date(2022, 4, 18), 1, 14, '0.000264786', '0', '38.53', '145538.44'
+    tst[15] = datetime.date(2022, 4, 19), 1, 15, '0.000264786', '0', '38.54', '145576.98'
+    tst[16] = datetime.date(2022, 4, 20), 1, 16, '0.000264786', '0', '38.55', '145615.52'
+    tst[17] = datetime.date(2022, 4, 21), 1, 17, '0.000264786', '0', '38.56', '145654.08'
+    tst[18] = datetime.date(2022, 4, 22), 1, 18, '0.000264786', '0', '38.57', '145692.65'
+    tst[19] = datetime.date(2022, 4, 23), 1, 19, '0.000264786', '0', '38.58', '145731.23'
+    tst[20] = datetime.date(2022, 4, 24), 1, 20, '0.000264786', '0', '38.59', '145769.81'
+    tst[21] = datetime.date(2022, 4, 25), 1, 21, '0.000264786', '0', '38.60', '145808.41'
+    tst[22] = datetime.date(2022, 4, 26), 1, 22, '0.000264786', '0', '38.61', '145847.02'
+    tst[23] = datetime.date(2022, 4, 27), 1, 23, '0.000264786', '0', '38.62', '145885.64'
+    tst[24] = datetime.date(2022, 4, 28), 1, 24, '0.000264786', '0', '38.63', '145924.27'
+    tst[25] = datetime.date(2022, 4, 29), 1, 25, '0.000264786', '0', '38.64', '145962.90'
+    tst[26] = datetime.date(2022, 4, 30), 1, 26, '0.000264786', '0', '38.65', '146001.55'
+    tst[27] = datetime.date(2022, 5, 1), 1, 27, '0.000264786', '0', '38.66', '146040.21'
+    tst[28] = datetime.date(2022, 5, 2), 1, 28, '0.000264786', '0', '38.67', '146078.88'
+    tst[29] = datetime.date(2022, 5, 3), 1, 29, '0.000264786', '0', '38.68', '146117.56'
+    tst[30] = datetime.date(2022, 5, 4), 1, 30, '0.000264786', '0', '38.69', '146156.25'
+    tst[31] = datetime.date(2022, 5, 5), 2, 1, '0.000256243', '0', '36.67', '143142.76'
+    tst[32] = datetime.date(2022, 5, 6), 2, 2, '0.000256243', '0', '36.68', '143179.44'
+    tst[33] = datetime.date(2022, 5, 7), 2, 3, '0.000256243', '0', '36.69', '143216.13'
+    tst[34] = datetime.date(2022, 5, 8), 2, 4, '0.000256243', '0', '36.70', '143252.83'
+    tst[35] = datetime.date(2022, 5, 9), 2, 5, '0.000256243', '0', '36.71', '143289.53'
+    tst[36] = datetime.date(2022, 5, 10), 2, 6, '0.000256243', '0', '36.72', '143326.25'
+    tst[37] = datetime.date(2022, 5, 11), 2, 7, '0.000256243', '0', '36.73', '143362.98'
+    tst[38] = datetime.date(2022, 5, 12), 2, 8, '0.000256243', '0', '36.74', '143399.71'
+    tst[39] = datetime.date(2022, 5, 13), 2, 9, '0.000256243', '0', '36.75', '143436.46'
+    tst[40] = datetime.date(2022, 5, 14), 2, 10, '0.000256243', '0', '36.75', '143473.21'
+    tst[41] = datetime.date(2022, 5, 15), 2, 11, '0.000256243', '0', '36.76', '143509.98'
+    tst[42] = datetime.date(2022, 5, 16), 2, 12, '0.000256243', '0', '36.77', '143546.75'
+    tst[43] = datetime.date(2022, 5, 17), 2, 13, '0.000256243', '0', '36.78', '143583.53'
+    tst[44] = datetime.date(2022, 5, 18), 2, 14, '0.000256243', '0', '36.79', '143620.33'
+    tst[45] = datetime.date(2022, 5, 19), 2, 15, '0.000256243', '0', '36.80', '143657.13'
+    tst[46] = datetime.date(2022, 5, 20), 2, 16, '0.000256243', '0', '36.81', '143693.94'
+    tst[47] = datetime.date(2022, 5, 21), 2, 17, '0.000256243', '0', '36.82', '143730.76'
+    tst[48] = datetime.date(2022, 5, 22), 2, 18, '0.000256243', '0', '36.83', '143767.59'
+    tst[49] = datetime.date(2022, 5, 23), 2, 19, '0.000256243', '0', '36.84', '143804.43'
+    tst[50] = datetime.date(2022, 5, 24), 2, 20, '0.000256243', '0', '36.85', '143841.28'
+    tst[51] = datetime.date(2022, 5, 25), 2, 21, '0.000256243', '0', '36.86', '143878.14'
+    tst[52] = datetime.date(2022, 5, 26), 2, 22, '0.000256243', '0', '36.87', '143915.00'
+    tst[53] = datetime.date(2022, 5, 27), 2, 23, '0.000256243', '0', '36.88', '143951.88'
+    tst[54] = datetime.date(2022, 5, 28), 2, 24, '0.000256243', '0', '36.89', '143988.77'
+    tst[55] = datetime.date(2022, 5, 29), 2, 25, '0.000256243', '0', '36.90', '144025.66'
+    tst[56] = datetime.date(2022, 5, 30), 2, 26, '0.000256243', '0', '36.91', '144062.57'
+    tst[57] = datetime.date(2022, 5, 31), 2, 27, '0.000256243', '0', '36.92', '144099.48'
+    tst[58] = datetime.date(2022, 6, 1), 2, 28, '0.000256243', '0', '36.92', '144136.41'
+    tst[59] = datetime.date(2022, 6, 2), 2, 29, '0.000256243', '0', '36.93', '144173.34'
+    tst[60] = datetime.date(2022, 6, 3), 2, 30, '0.000256243', '0', '36.94', '144210.29'
+    tst[61] = datetime.date(2022, 6, 4), 2, 31, '0.000256243', '0', '36.95', '144247.24'
+    tst[62] = datetime.date(2022, 6, 5), 3, 1, '0.000264786', '0', '37.39', '141234.47'
+    tst[63] = datetime.date(2022, 6, 6), 3, 2, '0.000264786', '0', '37.40', '141271.86'
+    tst[64] = datetime.date(2022, 6, 7), 3, 3, '0.000264786', '0', '37.41', '141309.27'
+    tst[65] = datetime.date(2022, 6, 8), 3, 4, '0.000264786', '0', '37.42', '141346.69'
+    tst[66] = datetime.date(2022, 6, 9), 3, 5, '0.000264786', '0', '37.43', '141384.11'
+    tst[67] = datetime.date(2022, 6, 10), 3, 6, '0.000264786', '0', '37.44', '141421.55'
+    tst[68] = datetime.date(2022, 6, 11), 3, 7, '0.000264786', '0', '37.45', '141459.00'
+    tst[69] = datetime.date(2022, 6, 12), 3, 8, '0.000264786', '0', '37.46', '141496.45'
+    tst[70] = datetime.date(2022, 6, 13), 3, 9, '0.000264786', '0', '37.47', '141533.92'
+    tst[71] = datetime.date(2022, 6, 14), 3, 10, '0.000264786', '0', '37.48', '141571.40'
+    tst[72] = datetime.date(2022, 6, 15), 3, 11, '0.000264786', '0', '37.49', '141608.88'
+    tst[73] = datetime.date(2022, 6, 16), 3, 12, '0.000264786', '0', '37.50', '141646.38'
+    tst[74] = datetime.date(2022, 6, 17), 3, 13, '0.000264786', '0', '37.51', '141683.88'
+    tst[75] = datetime.date(2022, 6, 18), 3, 14, '0.000264786', '0', '37.52', '141721.40'
+    tst[76] = datetime.date(2022, 6, 19), 3, 15, '0.000264786', '0', '37.53', '141758.92'
+    tst[77] = datetime.date(2022, 6, 20), 3, 16, '0.000264786', '0', '37.54', '141796.46'
+    tst[78] = datetime.date(2022, 6, 21), 3, 17, '0.000264786', '0', '37.55', '141834.01'
+    tst[79] = datetime.date(2022, 6, 22), 3, 18, '0.000264786', '0', '37.56', '141871.56'
+    tst[80] = datetime.date(2022, 6, 23), 3, 19, '0.000264786', '0', '37.57', '141909.13'
+    tst[81] = datetime.date(2022, 6, 24), 3, 20, '0.000264786', '0', '37.58', '141946.70'
+    tst[82] = datetime.date(2022, 6, 25), 3, 21, '0.000264786', '0', '37.59', '141984.29'
+    tst[83] = datetime.date(2022, 6, 26), 3, 22, '0.000264786', '0', '37.60', '142021.88'
+    tst[84] = datetime.date(2022, 6, 27), 3, 23, '0.000264786', '0', '37.61', '142059.49'
+    tst[85] = datetime.date(2022, 6, 28), 3, 24, '0.000264786', '0', '37.62', '142097.10'
+    tst[86] = datetime.date(2022, 6, 29), 3, 25, '0.000264786', '0', '37.63', '142134.73'
+    tst[87] = datetime.date(2022, 6, 30), 3, 26, '0.000264786', '0', '37.64', '142172.36'
+    tst[88] = datetime.date(2022, 7, 1), 3, 27, '0.000264786', '0', '37.65', '142210.01'
+    tst[89] = datetime.date(2022, 7, 2), 3, 28, '0.000264786', '0', '37.66', '142247.66'
+    tst[90] = datetime.date(2022, 7, 3), 3, 29, '0.000264786', '0', '37.67', '142285.33'
+    tst[91] = datetime.date(2022, 7, 4), 3, 30, '0.000264786', '0', '37.68', '142323.01'
+    tst[92] = datetime.date(2022, 7, 5), 4, 1, '0.000256243', '0', '35.69', '139308.53'
+    tst[93] = datetime.date(2022, 7, 6), 4, 2, '0.000256243', '0', '35.70', '139344.23'
+    tst[94] = datetime.date(2022, 7, 7), 4, 3, '0.000256243', '0', '35.71', '139379.94'
+    tst[95] = datetime.date(2022, 7, 8), 4, 4, '0.000256243', '0', '35.72', '139415.65'
+    tst[96] = datetime.date(2022, 7, 9), 4, 5, '0.000256243', '0', '35.72', '139451.38'
+    tst[97] = datetime.date(2022, 7, 10), 4, 6, '0.000256243', '0', '35.73', '139487.11'
+    tst[98] = datetime.date(2022, 7, 11), 4, 7, '0.000256243', '0', '35.74', '139522.85'
+    tst[99] = datetime.date(2022, 7, 12), 4, 8, '0.000256243', '0', '35.75', '139558.60'
+    tst[100] = datetime.date(2022, 7, 13), 4, 9, '0.000256243', '0', '35.76', '139594.36'
+    tst[101] = datetime.date(2022, 7, 14), 4, 10, '0.000256243', '0', '35.77', '139630.13'
+    tst[102] = datetime.date(2022, 7, 15), 4, 11, '0.000256243', '0', '35.78', '139665.91'
+    tst[103] = datetime.date(2022, 7, 16), 4, 12, '0.000256243', '0', '35.79', '139701.70'
+    tst[104] = datetime.date(2022, 7, 17), 4, 13, '0.000256243', '0', '35.80', '139737.50'
+    tst[105] = datetime.date(2022, 7, 18), 4, 14, '0.000256243', '0', '35.81', '139773.31'
+    tst[106] = datetime.date(2022, 7, 19), 4, 15, '0.000256243', '0', '35.82', '139809.12'
+    tst[107] = datetime.date(2022, 7, 20), 4, 16, '0.000256243', '0', '35.83', '139844.95'
+    tst[108] = datetime.date(2022, 7, 21), 4, 17, '0.000256243', '0', '35.83', '139880.78'
+    tst[109] = datetime.date(2022, 7, 22), 4, 18, '0.000256243', '0', '35.84', '139916.63'
+    tst[110] = datetime.date(2022, 7, 23), 4, 19, '0.000256243', '0', '35.85', '139952.48'
+    tst[111] = datetime.date(2022, 7, 24), 4, 20, '0.000256243', '0', '35.86', '139988.34'
+    tst[112] = datetime.date(2022, 7, 25), 4, 21, '0.000256243', '0', '35.87', '140024.21'
+    tst[113] = datetime.date(2022, 7, 26), 4, 22, '0.000256243', '0', '35.88', '140060.09'
+    tst[114] = datetime.date(2022, 7, 27), 4, 23, '0.000256243', '0', '35.89', '140095.98'
+    tst[115] = datetime.date(2022, 7, 28), 4, 24, '0.000256243', '0', '35.90', '140131.88'
+    tst[116] = datetime.date(2022, 7, 29), 4, 25, '0.000256243', '0', '35.91', '140167.79'
+    tst[117] = datetime.date(2022, 7, 30), 4, 26, '0.000256243', '0', '35.92', '140203.70'
+    tst[118] = datetime.date(2022, 7, 31), 4, 27, '0.000256243', '0', '35.93', '140239.63'
+    tst[119] = datetime.date(2022, 8, 1), 4, 28, '0.000256243', '0', '35.94', '140275.57'
+    tst[120] = datetime.date(2022, 8, 2), 4, 29, '0.000256243', '0', '35.94', '140311.51'
+    tst[121] = datetime.date(2022, 8, 3), 4, 30, '0.000256243', '0', '35.95', '140347.46'
+    tst[122] = datetime.date(2022, 8, 4), 4, 31, '0.000256243', '0', '35.96', '140383.43'
+    tst[123] = datetime.date(2022, 8, 5), 5, 1, '0.000256243', '0.003629695', '35.32', '137368.59'
+    tst[124] = datetime.date(2022, 8, 6), 5, 2, '0.000256243', '0.003629695', '35.58', '137404.17'
+    tst[125] = datetime.date(2022, 8, 7), 5, 3, '0.000256243', '0.003629695', '35.85', '137440.02'
+    tst[126] = datetime.date(2022, 8, 8), 5, 4, '0.000256243', '0.003629695', '36.12', '137476.14'
+    tst[127] = datetime.date(2022, 8, 9), 5, 5, '0.000256243', '0.003629695', '36.39', '137512.53'
+    tst[128] = datetime.date(2022, 8, 10), 5, 6, '0.000256243', '0.003629695', '36.66', '137549.19'
+    tst[129] = datetime.date(2022, 8, 11), 5, 7, '0.000256243', '0.003629695', '36.93', '137586.12'
+    tst[130] = datetime.date(2022, 8, 12), 5, 8, '0.000256243', '0.003629695', '37.21', '137623.33'
+    tst[131] = datetime.date(2022, 8, 13), 5, 9, '0.000256243', '0.003629695', '37.48', '137660.82'
+    tst[132] = datetime.date(2022, 8, 14), 5, 10, '0.000256243', '0.003629695', '37.76', '137698.58'
+    tst[133] = datetime.date(2022, 8, 15), 5, 11, '0.000256243', '0.003629695', '38.04', '137736.62'
+    tst[134] = datetime.date(2022, 8, 16), 5, 12, '0.000256243', '0.003629695', '38.32', '137774.94'
+    tst[135] = datetime.date(2022, 8, 17), 5, 13, '0.000256243', '0.003629695', '38.60', '137813.55'
+    tst[136] = datetime.date(2022, 8, 18), 5, 14, '0.000256243', '0.003629695', '38.89', '137852.44'
+    tst[137] = datetime.date(2022, 8, 19), 5, 15, '0.000256243', '0.003629695', '39.17', '137891.61'
+    tst[138] = datetime.date(2022, 8, 20), 5, 16, '0.000256243', '0.003629695', '39.46', '137931.07'
+    tst[139] = datetime.date(2022, 8, 21), 5, 17, '0.000256243', '0.003629695', '39.75', '137970.82'
+    tst[140] = datetime.date(2022, 8, 22), 5, 18, '0.000256243', '0.003629695', '40.04', '138010.86'
+    tst[141] = datetime.date(2022, 8, 23), 5, 19, '0.000256243', '0.003629695', '40.33', '138051.19'
+    tst[142] = datetime.date(2022, 8, 24), 5, 20, '0.000256243', '0.003629695', '40.63', '138091.82'
+    tst[143] = datetime.date(2022, 8, 25), 5, 21, '0.000256243', '0.003629695', '40.92', '138132.74'
+    tst[144] = datetime.date(2022, 8, 26), 5, 22, '0.000256243', '0.003629695', '41.22', '138173.96'
+    tst[145] = datetime.date(2022, 8, 27), 5, 23, '0.000256243', '0.003629695', '41.52', '138215.48'
+    tst[146] = datetime.date(2022, 8, 28), 5, 24, '0.000256243', '0.003629695', '41.82', '138257.29'
+    tst[147] = datetime.date(2022, 8, 29), 5, 25, '0.000256243', '0.003629695', '42.12', '138299.41'
+    tst[148] = datetime.date(2022, 8, 30), 5, 26, '0.000256243', '0.003629695', '42.42', '138341.83'
+    tst[149] = datetime.date(2022, 8, 31), 5, 27, '0.000256243', '0.003629695', '42.73', '138384.56'
+    tst[150] = datetime.date(2022, 9, 1), 5, 28, '0.000256243', '0.003629695', '43.03', '138427.59'
+    tst[151] = datetime.date(2022, 9, 2), 5, 29, '0.000256243', '0.003629695', '43.34', '138470.94'
+    tst[152] = datetime.date(2022, 9, 3), 5, 30, '0.000256243', '0.003629695', '43.65', '138514.59'
+    tst[153] = datetime.date(2022, 9, 4), 5, 31, '0.000256243', '0.003629695', '43.97', '138558.56'
+    tst[154] = datetime.date(2022, 9, 5), 6, 1, '0.000264786', '0.003750911', '35.98', '135414.20'
+    tst[155] = datetime.date(2022, 9, 6), 6, 2, '0.000264786', '0.003750911', '36.26', '135450.46'
+    tst[156] = datetime.date(2022, 9, 7), 6, 3, '0.000264786', '0.003750911', '36.54', '135487.01'
+    tst[157] = datetime.date(2022, 9, 8), 6, 4, '0.000264786', '0.003750911', '36.82', '135523.83'
+    tst[158] = datetime.date(2022, 9, 9), 6, 5, '0.000264786', '0.003750911', '37.11', '135560.94'
+    tst[159] = datetime.date(2022, 9, 10), 6, 6, '0.000264786', '0.003750911', '37.39', '135598.33'
+    tst[160] = datetime.date(2022, 9, 11), 6, 7, '0.000264786', '0.003750911', '37.68', '135636.01'
+    tst[161] = datetime.date(2022, 9, 12), 6, 8, '0.000264786', '0.003750911', '37.97', '135673.99'
+    tst[162] = datetime.date(2022, 9, 13), 6, 9, '0.000264786', '0.003750911', '38.26', '135712.25'
+    tst[163] = datetime.date(2022, 9, 14), 6, 10, '0.000264786', '0.003750911', '38.56', '135750.80'
+    tst[164] = datetime.date(2022, 9, 15), 6, 11, '0.000264786', '0.003750911', '38.85', '135789.65'
+    tst[165] = datetime.date(2022, 9, 16), 6, 12, '0.000264786', '0.003750911', '39.15', '135828.80'
+    tst[166] = datetime.date(2022, 9, 17), 6, 13, '0.000264786', '0.003750911', '39.44', '135868.24'
+    tst[167] = datetime.date(2022, 9, 18), 6, 14, '0.000264786', '0.003750911', '39.74', '135907.99'
+    tst[168] = datetime.date(2022, 9, 19), 6, 15, '0.000264786', '0.003750911', '40.04', '135948.03'
+    tst[169] = datetime.date(2022, 9, 20), 6, 16, '0.000264786', '0.003750911', '40.35', '135988.38'
+    tst[170] = datetime.date(2022, 9, 21), 6, 17, '0.000264786', '0.003750911', '40.65', '136029.03'
+    tst[171] = datetime.date(2022, 9, 22), 6, 18, '0.000264786', '0.003750911', '40.96', '136069.99'
+    tst[172] = datetime.date(2022, 9, 23), 6, 19, '0.000264786', '0.003750911', '41.27', '136111.26'
+    tst[173] = datetime.date(2022, 9, 24), 6, 20, '0.000264786', '0.003750911', '41.58', '136152.84'
+    tst[174] = datetime.date(2022, 9, 25), 6, 21, '0.000264786', '0.003750911', '41.89', '136194.73'
+    tst[175] = datetime.date(2022, 9, 26), 6, 22, '0.000264786', '0.003750911', '42.20', '136236.93'
+    tst[176] = datetime.date(2022, 9, 27), 6, 23, '0.000264786', '0.003750911', '42.52', '136279.45'
+    tst[177] = datetime.date(2022, 9, 28), 6, 24, '0.000264786', '0.003750911', '42.84', '136322.28'
+    tst[178] = datetime.date(2022, 9, 29), 6, 25, '0.000264786', '0.003750911', '43.16', '136365.44'
+    tst[179] = datetime.date(2022, 9, 30), 6, 26, '0.000264786', '0.003750911', '43.48', '136408.92'
+    tst[180] = datetime.date(2022, 10, 1), 6, 27, '0.000264786', '0.003750911', '43.80', '136452.72'
+    tst[181] = datetime.date(2022, 10, 2), 6, 28, '0.000264786', '0.003750911', '44.12', '136496.84'
+    tst[182] = datetime.date(2022, 10, 3), 6, 29, '0.000264786', '0.003750911', '44.45', '136541.29'
+    tst[183] = datetime.date(2022, 10, 4), 6, 30, '0.000264786', '0.003750911', '44.78', '136586.07'
+    tst[184] = datetime.date(2022, 10, 5), 7, 1, '0.000256243', '0.003629695', '34.31', '133441.90'
+    tst[185] = datetime.date(2022, 10, 6), 7, 2, '0.000256243', '0.003629695', '34.57', '133476.46'
+    tst[186] = datetime.date(2022, 10, 7), 7, 3, '0.000256243', '0.003629695', '34.83', '133511.29'
+    tst[187] = datetime.date(2022, 10, 8), 7, 4, '0.000256243', '0.003629695', '35.09', '133546.38'
+    tst[188] = datetime.date(2022, 10, 9), 7, 5, '0.000256243', '0.003629695', '35.35', '133581.73'
+    tst[189] = datetime.date(2022, 10, 10), 7, 6, '0.000256243', '0.003629695', '35.61', '133617.34'
+    tst[190] = datetime.date(2022, 10, 11), 7, 7, '0.000256243', '0.003629695', '35.88', '133653.22'
+    tst[191] = datetime.date(2022, 10, 12), 7, 8, '0.000256243', '0.003629695', '36.14', '133689.36'
+    tst[192] = datetime.date(2022, 10, 13), 7, 9, '0.000256243', '0.003629695', '36.41', '133725.78'
+    tst[193] = datetime.date(2022, 10, 14), 7, 10, '0.000256243', '0.003629695', '36.68', '133762.46'
+    tst[194] = datetime.date(2022, 10, 15), 7, 11, '0.000256243', '0.003629695', '36.95', '133799.41'
+    tst[195] = datetime.date(2022, 10, 16), 7, 12, '0.000256243', '0.003629695', '37.23', '133836.64'
+    tst[196] = datetime.date(2022, 10, 17), 7, 13, '0.000256243', '0.003629695', '37.50', '133874.14'
+    tst[197] = datetime.date(2022, 10, 18), 7, 14, '0.000256243', '0.003629695', '37.78', '133911.92'
+    tst[198] = datetime.date(2022, 10, 19), 7, 15, '0.000256243', '0.003629695', '38.05', '133949.97'
+    tst[199] = datetime.date(2022, 10, 20), 7, 16, '0.000256243', '0.003629695', '38.33', '133988.30'
+    tst[200] = datetime.date(2022, 10, 21), 7, 17, '0.000256243', '0.003629695', '38.61', '134026.92'
+    tst[201] = datetime.date(2022, 10, 22), 7, 18, '0.000256243', '0.003629695', '38.90', '134065.81'
+    tst[202] = datetime.date(2022, 10, 23), 7, 19, '0.000256243', '0.003629695', '39.18', '134104.99'
+    tst[203] = datetime.date(2022, 10, 24), 7, 20, '0.000256243', '0.003629695', '39.46', '134144.46'
+    tst[204] = datetime.date(2022, 10, 25), 7, 21, '0.000256243', '0.003629695', '39.75', '134184.21'
+    tst[205] = datetime.date(2022, 10, 26), 7, 22, '0.000256243', '0.003629695', '40.04', '134224.25'
+    tst[206] = datetime.date(2022, 10, 27), 7, 23, '0.000256243', '0.003629695', '40.33', '134264.58'
+    tst[207] = datetime.date(2022, 10, 28), 7, 24, '0.000256243', '0.003629695', '40.62', '134305.20'
+    tst[208] = datetime.date(2022, 10, 29), 7, 25, '0.000256243', '0.003629695', '40.91', '134346.11'
+    tst[209] = datetime.date(2022, 10, 30), 7, 26, '0.000256243', '0.003629695', '41.21', '134387.32'
+    tst[210] = datetime.date(2022, 10, 31), 7, 27, '0.000256243', '0.003629695', '41.51', '134428.83'
+    tst[211] = datetime.date(2022, 11, 1), 7, 28, '0.000256243', '0.003629695', '41.80', '134470.63'
+    tst[212] = datetime.date(2022, 11, 2), 7, 29, '0.000256243', '0.003629695', '42.10', '134512.74'
+    tst[213] = datetime.date(2022, 11, 3), 7, 30, '0.000256243', '0.003629695', '42.41', '134555.14'
+    tst[214] = datetime.date(2022, 11, 4), 7, 31, '0.000256243', '0.003629695', '42.71', '134597.85'
+
+    for i, entry in enumerate(fincore.get_livre_daily_returns(**kwa), 1):
+        if i < 215:
+            assert entry.date == tst[i][0]
+            assert entry.period == tst[i][1]
+            assert entry.no == tst[i][2]
+            assert math.isclose(entry.fixed_factor, decimal.Decimal(tst[i][3]) + _1, rel_tol=1e-8)
+            assert math.isclose(entry.monetary_correction_factor, decimal.Decimal(tst[i][4]) + _1, rel_tol=1e-8)
+            assert entry.value == decimal.Decimal(tst[i][5])
+            assert entry.bal == decimal.Decimal(tst[i][6])
 # }}}
 
 # Cronograma de pagamentos mensal x retornos diários. {{{
