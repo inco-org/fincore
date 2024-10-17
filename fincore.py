@@ -1966,7 +1966,7 @@ def get_daily_returns(
                     idx = next(lst, None)
 
                 else:
-                    yield _1, _1, _1
+                    yield acc[1], acc[1], _1
 
     # Poupança is a monthly index. This function will normalize it to daily values.
     def get_normalized_savings_indexes(backend: IndexStorageBackend) -> t.Generator[t.Tuple[decimal.Decimal, decimal.Decimal, decimal.Decimal], None, None]:
@@ -2012,7 +2012,7 @@ def get_daily_returns(
 
             else:
                 while dt < amort1.date:
-                    yield _1, _1, _1
+                    yield acc[1], acc[1], _1
 
                     dt += datetime.timedelta(days=1)
 
@@ -2083,18 +2083,19 @@ def get_daily_returns(
     itr = iter(amortizations)
     tup = next(itr), next(itr)
     end = amortizations[-1].date
-    buf = lvl = _0
+    lvl = _0, _0
     cnt = p = 1
+    buf = _0
 
     # Extend the end date to the next business day.
     while not is_bizz_day_cb(end):
         end = end + datetime.timedelta(days=1)
 
-    for ref in _date_range(amortizations[0].date, end):
-        f_c = _1, _1, _1  # Correction factor, FC.
-        f_v = _1, _1, _1  # Variable factor, FV.
-        f_s = _1, _1, _1  # Spread factor, FS.
+    f_c = _1, _1, _1  # Correction factor, FC.
+    f_v = _1, _1, _1  # Variable factor, FV.
+    f_s = _1, _1, _1  # Spread factor, FS.
 
+    for ref in _date_range(amortizations[0].date, end):
         # Phase B.0, FZA NG, or Phase Zille-Anna, next gen.
         #
         # This phase has a single purpose of calculating the factors that will be used in the next phase.
@@ -2120,7 +2121,7 @@ def get_daily_returns(
             f_s = next(fixd)
 
         elif ref < amortizations[-1].date and vir and vir.code == 'CDI' and capitalisation == '252':  # Bullet, Juros mensais, Livre.
-            f_v = next(vars) * vir.percentage
+            f_v = tuple(x * vir.percentage / decimal.Decimal(100) for x in next(vars))
 
             # Note that the index on a 252 basis only earns on a business day. This is how the CDI works. In this case
             # the fixed factor must follow the variable. It should only be calculated on a business day.
@@ -2130,8 +2131,11 @@ def get_daily_returns(
             # The correct thing to do below is to test if the day is a business day, not if the value of the factor "f_c"
             # is greater than one.
             #
-            if f_v[1] > _1:
+            if f_v[2] > _1:
                 f_s = next(fixd)
+
+            else:
+                f_s = f_s[1], f_s[1], _1
 
         elif ref < amortizations[-1].date and vir and vir.code == 'Poupança' and capitalisation == '360':  # Poupança is supported only with Bullet.
             f_s = next(fixd)
@@ -2165,7 +2169,7 @@ def get_daily_returns(
         #
         while ref < amortizations[-1].date and ref == tup[1].date:
             if not buf and not is_bizz_day_cb(ref):
-                buf = _Q(calc_balance(f_c[1]))
+                buf = _Q(calc_balance())
 
             if type(tup[1]) is Amortization:  # Case of a regular amortization.
                 adj = (_1 - regs.principal.amortization_ratio.current) / (_1 - regs.principal.amortization_ratio.regular)  # [FATOR-AJUSTE].
@@ -2189,7 +2193,7 @@ def get_daily_returns(
                 # Notice that at this point, "lvl" is just recorded. The actual division happens below. See [FS-NORM].
                 #
                 if tup[1].amortization_ratio > 0:
-                    lvl = f_s[0]
+                    lvl = f_s[0], f_v[0]
 
                 # The period only increments in the case of regular amortizations.
                 p, cnt = p + 1, 1
@@ -2213,13 +2217,16 @@ def get_daily_returns(
 
                 # Normalizes the factors. See comments on the previous block.
                 if val2 > 0:
-                    lvl = f_s[0]
+                    lvl = f_s[0], f_v[0]
 
             tup = tup[1], next(itr)
 
         # [FS-NORM] Normalizes the spread triplet.
-        if lvl:
-            f_s = f_s[0] / lvl, f_s[1] / lvl, f_s[2]
+        if lvl[0] > _1:
+            f_s = f_s[0] / lvl[0], f_s[1] / lvl[0], f_s[2]
+
+        if lvl[1] > _1:
+            f_v = f_v[0] / lvl[1], f_v[1] / lvl[1], f_v[2]
 
         # Registers the value of the accrued interest on the day.
         #
