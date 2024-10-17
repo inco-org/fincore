@@ -101,7 +101,7 @@ class _AsadIpcaBackend(fincore.InMemoryBackend):
         (datetime.date(2024, 3, 1), decimal.Decimal('0.16')),   (datetime.date(2024, 4, 1), decimal.Decimal('0.38')),    # NOQA
         (datetime.date(2024, 5, 1), decimal.Decimal('0.46')),   (datetime.date(2024, 6, 1), decimal.Decimal('0.21')),    # NOQA
         (datetime.date(2024, 7, 1), decimal.Decimal('0.38')),   (datetime.date(2024, 8, 1), decimal.Decimal('-0.02'))    # NOQA
-]
+    ]
 
 # 🚩 Parametrizações inválidas. {{{
 def test_wont_create_sched_1():

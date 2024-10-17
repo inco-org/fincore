@@ -1928,7 +1928,7 @@ def get_daily_returns(
             regs.interest.settled.total += regs.interest.settled.current
             regs.interest.current -= regs.interest.settled.current
 
-    def get_normalized_interest_factors() -> t.Generator[t.Tuple[decimal.Decimal, decimal.Decimal, decimal.Decimal], None, None]:
+    def get_normalized_fixed_factors() -> t.Generator[t.Tuple[decimal.Decimal, decimal.Decimal, decimal.Decimal], None, None]:
         lst = [x for x in amortizations if type(x) is Amortization]
         acc = _1, _1, _1
 
@@ -1988,6 +1988,7 @@ def get_daily_returns(
     # IPCA is a monthly index. This function will normalize it to daily values.
     def get_normalized_ipca_indexes(backend: IndexStorageBackend) -> t.Generator[t.Tuple[decimal.Decimal, decimal.Decimal, decimal.Decimal], None, None]:
         dt = amortizations[0].date
+        acc = _1, _1, _1
 
         for amort0, amort1 in itertools.pairwise([x for x in amortizations if type(x) is Amortization]):
             if x := t.cast(Amortization, amort1).price_level_adjustment:
@@ -2001,12 +2002,11 @@ def get_daily_returns(
                 # Ensure the price level factor is at least one, i.e., the correction value must be positive.
                 fac = max(backend.calculate_ipca_factor(**kwa), _1) - _1
                 fac = calculate_interest_factor(fac, _1 / (amort1.date - amort0.date).days, False)
-                acc = _1, fac, fac
 
                 while dt < amort1.date:
-                    yield acc
-
                     acc = acc[1], acc[1] * fac, fac
+
+                    yield acc
 
                     dt += datetime.timedelta(days=1)
 
@@ -2065,7 +2065,7 @@ def get_daily_returns(
     gens.interest_tracker_1.send(None)
     gens.interest_tracker_2.send(None)
 
-    fixd = get_normalized_interest_factors()
+    fixd = get_normalized_fixed_factors()
 
     if vir and vir.code == 'CDI':
         vars = get_normalized_cdi_indexes(vir.backend)
@@ -2083,7 +2083,7 @@ def get_daily_returns(
     itr = iter(amortizations)
     tup = next(itr), next(itr)
     end = amortizations[-1].date
-    lvl = _0, _0
+    lvl = _0, _0, _0
     cnt = p = 1
     buf = _0
 
@@ -2135,7 +2135,7 @@ def get_daily_returns(
                 f_s = next(fixd)
 
             else:
-                f_s = f_s[1], f_s[1], _1
+                f_s = f_s[1] * lvl[0], f_s[1] * lvl[0], _1
 
         elif ref < amortizations[-1].date and vir and vir.code == 'Poupança' and capitalisation == '360':  # Poupança is supported only with Bullet.
             f_s = next(fixd)
@@ -2184,16 +2184,20 @@ def get_daily_returns(
                 if tup[1].amortizes_interest:
                     gens.interest_tracker_2.send(regs.interest.current + regs.principal.amortization_ratio.current * regs.interest.deferred)
 
-                # The spread triplet has to be renormalized if the principal decreases.
+                # The interest factors have to be renormalized if the principal decreases.
                 #
                 # Normalization is done by dividing the triplet by the factor accumulated since the last payment, up to
-                # the previous day, "f_s[0]". This is referred to as the normalization value, or "lvl". This is
-                # basically resetting the current accumulated values, "f_s[1]", to their last discrete components.
+                # the previous day. This is referred to as the normalization value, or "lvl". This is basically
+                # resetting the current accumulated values, to the last of its discrete components.
+                #
+                # The "lvl" variable itself is a triplet T, where T[0] is the normalization value of the spread, T[1]
+                # is the normalization value of the variable factor, and T[2] is the normalization value of the
+                # correction factor.
                 #
                 # Notice that at this point, "lvl" is just recorded. The actual division happens below. See [FS-NORM].
                 #
                 if tup[1].amortization_ratio > 0:
-                    lvl = f_s[0], f_v[0]
+                    lvl = f_s[0], f_v[0], f_c[0]
 
                 # The period only increments in the case of regular amortizations.
                 p, cnt = p + 1, 1
@@ -2217,16 +2221,19 @@ def get_daily_returns(
 
                 # Normalizes the factors. See comments on the previous block.
                 if val2 > 0:
-                    lvl = f_s[0], f_v[0]
+                    lvl = f_s[0], f_v[0], f_c[0]
 
             tup = tup[1], next(itr)
 
-        # [FS-NORM] Normalizes the spread triplet.
+        # [FS-NORM] Normalizes the triplets.
         if lvl[0] > _1:
             f_s = f_s[0] / lvl[0], f_s[1] / lvl[0], f_s[2]
 
         if lvl[1] > _1:
             f_v = f_v[0] / lvl[1], f_v[1] / lvl[1], f_v[2]
+
+        if lvl[2] > _1:
+            f_c = f_c[0] / lvl[2], f_c[1] / lvl[2], f_c[2]
 
         # Registers the value of the accrued interest on the day.
         #
