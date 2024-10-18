@@ -464,6 +464,46 @@ def _interleave(a: t.Iterable[_T], b: t.Iterable[_T], *, key: t.Callable[..., t.
                 val_b = next(iter_b)
 
                 idx_b += 1
+
+@dataclasses.dataclass(frozen=True)
+class FactorTriplet:
+    # The three values of the triplet.
+    _lagged_accumulator: decimal.Decimal = dataclasses.field(default=_1)
+    _current_accumulator: decimal.Decimal = dataclasses.field(default=_1)
+    _current_value: decimal.Decimal = dataclasses.field(default=_1)
+
+    # The normalization value.
+    _normalization_value: decimal.Decimal = dataclasses.field(default=_1)
+
+    @property
+    def lagged_accumulator(self) -> decimal.Decimal:
+        return self._lagged_accumulator / self._normalization_value
+
+    @property
+    def current_accumulator(self) -> decimal.Decimal:
+        return self._current_accumulator / self._normalization_value
+
+    @property
+    def current_value(self) -> decimal.Decimal:
+        return self._current_value
+
+    @property
+    def normalization_value(self) -> decimal.Decimal:
+        return self._normalization_value
+
+    @typeguard.typechecked
+    def __mul__(self, value: decimal.Decimal) -> 'FactorTriplet':
+        return FactorTriplet(_lagged_accumulator=self._current_accumulator, _current_accumulator=self._current_accumulator * value, _current_value=value, _normalization_value=self._normalization_value)
+
+    def normalize(self, value: t.Optional['FactorTriplet'] = None) -> 'FactorTriplet':
+        if value:
+            return FactorTriplet(_lagged_accumulator=value._lagged_accumulator, _current_accumulator=value._current_accumulator, _current_value=value._current_value, _normalization_value=self._normalization_value)
+
+        else:
+            return FactorTriplet(_lagged_accumulator=self._lagged_accumulator, _current_accumulator=self._current_accumulator, _current_value=self._current_value, _normalization_value=self._lagged_accumulator)
+
+    def __str__(self) -> str:
+        return f'({self.lagged_accumulator:.5f}/{self._normalization_value:.5f}, {self.current_accumulator:.5f}/{self._normalization_value:.5f}, {self.current_value:.5f})'
 # }}}
 
 # Public API. Main classes. {{{
@@ -1928,9 +1968,9 @@ def get_daily_returns(
             regs.interest.settled.total += regs.interest.settled.current
             regs.interest.current -= regs.interest.settled.current
 
-    def get_normalized_fixed_factors() -> t.Generator[t.Tuple[decimal.Decimal, decimal.Decimal, decimal.Decimal], None, None]:
+    def get_normalized_fixed_factors() -> t.Generator[FactorTriplet, None, None]:
         lst = [x for x in amortizations if type(x) is Amortization]
-        acc = _1, _1, _1
+        acc = FactorTriplet()
 
         for amort0, amort1 in itertools.pairwise(lst):
             if capitalisation in ['360', '365', '252']:
@@ -1940,7 +1980,7 @@ def get_daily_returns(
                 fac = calculate_interest_factor(apy, _1 / decimal.Decimal(12 * (amort1.date - amort0.date).days))
 
             for _ in _date_range(amort0.date, amort1.date):
-                acc = acc[1], acc[1] * fac, fac
+                acc = acc * fac
 
                 yield acc
 
@@ -1950,45 +1990,47 @@ def get_daily_returns(
     # Some implementations of "IndexStorageBackend.get_cdi_indexes" return a generator, others might return a list.
     # Hence the cast to "iter" below.
     #
-    def get_normalized_cdi_indexes(backend: IndexStorageBackend) -> t.Generator[t.Tuple[decimal.Decimal, decimal.Decimal, decimal.Decimal], None, None]:
+    def get_normalized_cdi_indexes(backend: IndexStorageBackend) -> t.Generator[FactorTriplet, None, None]:
         lst = iter(backend.get_cdi_indexes(amortizations[0].date, amortizations[-1].date))
+        pct = vir.percentage / decimal.Decimal(100) if vir else _1
         idx = next(lst, None)
+        acc = FactorTriplet()
 
         for amort0, amort1 in itertools.pairwise(amortizations):
-            acc = _1, _1, _1
-
             for ref in _date_range(amort0.date, amort1.date):
                 if idx and ref == idx.date:
-                    acc = acc[1], (idx.value / decimal.Decimal(100) + _1) * acc[1], idx.value / decimal.Decimal(100) + _1
+                    acc = acc * (idx.value * pct / decimal.Decimal(100) + _1)
 
                     yield acc
 
                     idx = next(lst, None)
 
                 else:
-                    yield acc[1], acc[1], _1
+                    acc = acc * _1  # This Multiplication is not a no-op!
+
+                    yield acc
 
     # Poupança is a monthly index. This function will normalize it to daily values.
-    def get_normalized_savings_indexes(backend: IndexStorageBackend) -> t.Generator[t.Tuple[decimal.Decimal, decimal.Decimal, decimal.Decimal], None, None]:
+    def get_normalized_savings_indexes(backend: IndexStorageBackend) -> t.Generator[FactorTriplet, None, None]:
         dt = amortizations[0].date
 
         for amort0, amort1 in itertools.pairwise([x for x in amortizations if type(x) is Amortization]):
             pct = t.cast(VariableIndex, vir).percentage  # Mypy fails to detect that, despite "vir" being optional, here it can't be None.
             fac = backend.calculate_savings_factor(amort0.date, amort1.date, pct).value - _1
             val = calculate_interest_factor(fac, _1 / (amort1.date - amort0.date).days, False)
-            acc = _1, val, val
+            acc = FactorTriplet()
 
             while dt < amort1.date:
-                yield acc
+                acc = acc * val
 
-                acc = acc[1], acc[1] * val, val
+                yield acc
 
                 dt += datetime.timedelta(days=1)
 
     # IPCA is a monthly index. This function will normalize it to daily values.
-    def get_normalized_ipca_indexes(backend: IndexStorageBackend) -> t.Generator[t.Tuple[decimal.Decimal, decimal.Decimal, decimal.Decimal], None, None]:
+    def get_normalized_ipca_indexes(backend: IndexStorageBackend) -> t.Generator[FactorTriplet, None, None]:
         dt = amortizations[0].date
-        acc = _1, _1, _1
+        acc = FactorTriplet()
 
         for amort0, amort1 in itertools.pairwise([x for x in amortizations if type(x) is Amortization]):
             if x := t.cast(Amortization, amort1).price_level_adjustment:
@@ -2004,7 +2046,7 @@ def get_daily_returns(
                 fac = calculate_interest_factor(fac, _1 / (amort1.date - amort0.date).days, False)
 
                 while dt < amort1.date:
-                    acc = acc[1], acc[1] * fac, fac
+                    acc = acc * fac
 
                     yield acc
 
@@ -2012,7 +2054,9 @@ def get_daily_returns(
 
             else:
                 while dt < amort1.date:
-                    yield acc[1], acc[1], _1
+                    acc = acc * _1  # This Multiplication is not a no-op!
+
+                    yield acc
 
                     dt += datetime.timedelta(days=1)
 
@@ -2083,17 +2127,15 @@ def get_daily_returns(
     itr = iter(amortizations)
     tup = next(itr), next(itr)
     end = amortizations[-1].date
-    lvl = _0, _0, _0
+    f_s = FactorTriplet()  # Spread factor, FS.
+    f_v = FactorTriplet()  # Variable factor, FV.
+    f_c = FactorTriplet()  # Correction factor, FC.
     cnt = p = 1
     buf = _0
 
     # Extend the end date to the next business day.
     while not is_bizz_day_cb(end):
         end = end + datetime.timedelta(days=1)
-
-    f_c = _1, _1, _1  # Correction factor, FC.
-    f_v = _1, _1, _1  # Variable factor, FV.
-    f_s = _1, _1, _1  # Spread factor, FS.
 
     for ref in _date_range(amortizations[0].date, end):
         # Phase B.0, FZA NG, or Phase Zille-Anna, next gen.
@@ -2107,10 +2149,10 @@ def get_daily_returns(
         # Simplified form of FZA from "get_payments_table".
         #
         if ref < amortizations[-1].date and not vir and capitalisation == '360':  # Bullet.
-            f_s = next(fixd)
+            f_s = f_s.normalize(next(fixd))
 
         elif ref < amortizations[-1].date and not vir and capitalisation == '365':  # Bullet in legacy mode.
-            f_s = next(fixd)
+            f_s = f_s.normalize(next(fixd))
 
         # Monthly fixed rate, 30/360.
         #
@@ -2118,10 +2160,10 @@ def get_daily_returns(
         # a factor, a day.
         #
         elif ref < amortizations[-1].date and not vir and capitalisation == '30/360':  # Juros mensais, Price, Livre.
-            f_s = next(fixd)
+            f_s = f_s.normalize(next(fixd))
 
         elif ref < amortizations[-1].date and vir and vir.code == 'CDI' and capitalisation == '252':  # Bullet, Juros mensais, Livre.
-            f_v = tuple(x * vir.percentage / decimal.Decimal(100) for x in next(vars))
+            f_v = f_v.normalize(next(vars))
 
             # Note that the index on a 252 basis only earns on a business day. This is how the CDI works. In this case
             # the fixed factor must follow the variable. It should only be calculated on a business day.
@@ -2131,35 +2173,33 @@ def get_daily_returns(
             # The correct thing to do below is to test if the day is a business day, not if the value of the factor "f_c"
             # is greater than one.
             #
-            if f_v[2] > _1:
-                f_s = next(fixd)
+            if f_v.current_value > _1:
+                f_s = f_s.normalize(next(fixd))
 
             else:
-                f_s = f_s[1] * lvl[0], f_s[1] * lvl[0], _1
+                f_s = f_s.normalize(f_s * _1)  # This Multiplication is not a no-op!
 
         elif ref < amortizations[-1].date and vir and vir.code == 'Poupança' and capitalisation == '360':  # Poupança is supported only with Bullet.
-            f_s = next(fixd)
-            f_v = next(vars)
+            f_s = f_s.normalize(next(fixd))
+            f_v = f_v.normalize(next(vars))
 
         elif ref < amortizations[-1].date and vir and vir.code == 'IPCA' and capitalisation == '360':  # Bullet.
-            f_s = next(fixd)
-            f_c = next(vars)
+            f_s = f_s.normalize(next(fixd))
+            f_c = f_c.normalize(next(vars))
 
         # Monthly IPCA rate, 30/360.
         #
         # Same logic as the monthly fixed rate, 30/360, but with the added price level adjustment. See comments above.
         #
         elif ref < amortizations[-1].date and vir and vir.code == 'IPCA' and capitalisation == '30/360':  # Juros mensais, Livre.
-            f_s = next(fixd)
-            f_c = next(vars)
+            f_s = f_s.normalize(next(fixd))
+            f_c = f_c.normalize(next(vars))
 
         elif ref < amortizations[-1].date and vir:
             raise NotImplementedError(f'combination of variable interest rate {vir} and capitalisation {capitalisation} unsupported')
 
         elif ref < amortizations[-1].date:
             raise NotImplementedError(f'unsupported capitalisation {capitalisation} for fixed interest rate')
-
-        _LOG.debug(f'T={p}, f_s={f_s[1]:.8f}, f_v={f_v[1]:.8f} f_c={f_c[1]:.8f}')
 
         # Phase B.1, FRU NG, or Phase Rafa Um, next gen.
         #
@@ -2187,17 +2227,14 @@ def get_daily_returns(
                 # The interest factors have to be renormalized if the principal decreases.
                 #
                 # Normalization is done by dividing the triplet by the factor accumulated since the last payment, up to
-                # the previous day. This is referred to as the normalization value, or "lvl". This is basically
-                # resetting the current accumulated values, to the last of its discrete components.
-                #
-                # The "lvl" variable itself is a triplet T, where T[0] is the normalization value of the spread, T[1]
-                # is the normalization value of the variable factor, and T[2] is the normalization value of the
-                # correction factor.
-                #
-                # Notice that at this point, "lvl" is just recorded. The actual division happens below. See [FS-NORM].
+                # the previous day. This is referred to as the normalization value, and is the "_normalization_value"
+                # member of a FactorTriplet instance. This is basically resetting the current accumulated values to
+                # the last of its discrete components.
                 #
                 if tup[1].amortization_ratio > 0:
-                    lvl = f_s[0], f_v[0], f_c[0]
+                    f_s = f_s.normalize()
+                    f_v = f_v.normalize()
+                    f_c = f_c.normalize()
 
                 # The period only increments in the case of regular amortizations.
                 p, cnt = p + 1, 1
@@ -2205,7 +2242,7 @@ def get_daily_returns(
             # Case of an advance (extraordinary amortization). See comments of the similar block in "get_payments_table".
             else:
                 ent = t.cast(Amortization.Bare, tup[1])  # O Mypy não consegue inferir o tipo da variável "ent" aqui.
-                val0 = min(ent.value, calc_balance(f_c[1]))
+                val0 = min(ent.value, calc_balance(f_c.current_accumulator))
                 val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)
                 val2 = val0 - val1
 
@@ -2217,30 +2254,27 @@ def get_daily_returns(
 
                 # Checks if we did not amortize more than the remaining principal.
                 if regs.principal.amortized.total > principal:
-                    raise Exception(f'the value of the amortization, {ent.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(f_c[1]))}')
+                    raise Exception(f'the value of the amortization, {ent.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(f_c.current_accumulator))}')
 
                 # Normalizes the factors. See comments on the previous block.
                 if val2 > 0:
-                    lvl = f_s[0], f_v[0], f_c[0]
+                    f_s = f_s.normalize()
+                    f_v = f_v.normalize()
+                    f_c = f_c.normalize()
 
             tup = tup[1], next(itr)
 
-        # [FS-NORM] Normalizes the triplets.
-        if lvl[0] > _1:
-            f_s = f_s[0] / lvl[0], f_s[1] / lvl[0], f_s[2]
-
-        if lvl[1] > _1:
-            f_v = f_v[0] / lvl[1], f_v[1] / lvl[1], f_v[2]
-
-        if lvl[2] > _1:
-            f_c = f_c[0] / lvl[2], f_c[1] / lvl[2], f_c[2]
+        _LOG.debug(f'T={p}, n={cnt}, f_s={f_s} f_v={f_v} f_c={f_c}')
 
         # Registers the value of the accrued interest on the day.
         #
         # The interest have to be calculated after processing all amortizations of the current day, i.e., after phase
         # B.1 above. This way we get the correct balance value to apply the factors on.
         #
-        gens.interest_tracker_1.send(get_principal_outstanding(f_c[1]) * (f_s[1] * f_v[1] - _1) - get_principal_outstanding(f_c[0]) * (f_s[0] * f_v[0] - _1))
+        v1 = get_principal_outstanding(f_c.current_accumulator) * (f_s.current_accumulator * f_v.current_accumulator - _1)
+        v0 = get_principal_outstanding(f_c.lagged_accumulator) * (f_s.lagged_accumulator * f_v.lagged_accumulator - _1)
+
+        gens.interest_tracker_1.send(v1 - v0)
 
         # Builds the daily return instance, output of the routine. Makes rounding.
         dr = DailyReturn()
@@ -2260,9 +2294,9 @@ def get_daily_returns(
 
             dr.bal = _Q(calc_balance())  # Balance at the end of the day.
 
-        dr.fixed_factor = f_s[2]
-        dr.variable_factor = f_v[2]
-        dr.monetary_correction_factor = f_c[2]
+        dr.fixed_factor = f_s.current_value
+        dr.variable_factor = f_v.current_value
+        dr.monetary_correction_factor = f_c.current_value
 
         # If the outstanding principal is zero, and the current day is a business day, the schedule is over.
         if _Q(get_principal_outstanding()) != _0 or not is_bizz_day_cb(ref):

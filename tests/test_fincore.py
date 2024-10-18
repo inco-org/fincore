@@ -5069,7 +5069,20 @@ def test_will_create_loan_daily_returns_livre_4():
         # Memoriza o saldo para a próxima iteração.
         bal = entry.bal
 
+@pytest.mark.skip(reason='Not implemented yet.')
 def test_will_create_loan_daily_returns_livre_5():
+    '''
+    Operação LIVRE CDI 2.
+
+    Múltiplos pagamentos em fins de semana.
+
+    Ref File: https://docs.google.com/spreadsheets/d/1vzW6Kz_NvLRHj8WZv2dSSGSvHauwhM7eCS5YfQ_ohng
+    Tab.....: LIVRE - CDI 2
+    '''
+
+    pass  # FIXME: implementar. Já está em planilha de testes.
+
+def test_will_create_loan_daily_returns_livre_6():
     '''
     Operação ASAD Energia.
 
