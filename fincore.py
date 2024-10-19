@@ -1846,6 +1846,8 @@ def get_payments_table(
 #
 # Navigate to tab "ASAD Energia".
 #
+# A conversation with ChatGPT about price level: https://chatgpt.com/share/670ff365-87a4-800f-a89b-50b37a6a052d.
+#
 @typeguard.typechecked
 def get_daily_returns(
     principal: decimal.Decimal,
@@ -1902,7 +1904,7 @@ def get_daily_returns(
     '''
 
     def calc_balance(correction_factor: decimal.Decimal = _1) -> decimal.Decimal:
-        return (principal - regs.principal.amortized.total) * correction_factor + regs.interest.current
+        return principal * correction_factor + regs.interest.accrued - regs.principal.amortized.total * correction_factor - regs.interest.settled.total
 
     def get_principal_outstanding(correction_factor: decimal.Decimal = _1) -> decimal.Decimal:
         return (principal - regs.principal.amortized.total) * correction_factor
@@ -1946,27 +1948,37 @@ def get_daily_returns(
     # Generator for interest values.
     #
     #   • "interest.daily" is the accrued interest (produced) on the day.
-    #   • "interest.current" is the accrued interest (produced) on the current period.
+    #
+    #   • "interest.current" is the accrued interest (produced) on the current period. Notice that a period is not
+    #      necessarily a month. If there is an advancement, for example, the period will be shorter.
+    #
     #   • "interest.accrued" is the total of accrued interest since the start of the payments schedule.
-    #   • "interest.deferred" is the total of deferred interest from past periods.
+    #
+    # This generator is called once per day.
     #
     def track_interest_1() -> t.Generator[None, decimal.Decimal | None, None]:
         while True:
             regs.interest.daily = yield
             regs.interest.current += regs.interest.daily
             regs.interest.accrued += regs.interest.daily
-            regs.interest.deferred = regs.interest.accrued - (regs.interest.current + regs.interest.settled.total)
 
-    # Generator for settled interest values.
+    # Keeps track of settled and deferred interest values.
     #
     #   • "interest.settled.current" are the settled interest on the current period.
+    #
     #   • "interest.settled.total" is the total of settled interest since the start of the payments schedule.
+    #
+    #   • "interest.deferred" is the total of deferred interest from past periods.
+    #
+    # This generator is called once per payment, not per period. On the end of a grace period, for example, this
+    # generator will not be called. On the day an advancement is made, this generator will be called. So it is usually
+    # a call per period, but this is not a strict rule.
     #
     def track_interest_2() -> t.Generator[None, decimal.Decimal | None, None]:
         while True:
             regs.interest.settled = types.SimpleNamespace(current=(yield), total=regs.interest.settled.total)
             regs.interest.settled.total += regs.interest.settled.current
-            regs.interest.current -= regs.interest.settled.current
+            regs.interest.deferred = regs.interest.accrued - regs.interest.settled.total
 
     def get_normalized_fixed_factors() -> t.Generator[FactorTriplet, None, None]:
         lst = [x for x in amortizations if type(x) is Amortization]
@@ -2222,7 +2234,10 @@ def get_daily_returns(
 
                 # Registers the interest value to be settled in the period.
                 if tup[1].amortizes_interest:
-                    gens.interest_tracker_2.send(regs.interest.current + regs.principal.amortization_ratio.current * regs.interest.deferred)
+                    pct = regs.principal.amortization_ratio.current * adj
+                    pt2 = pct * (regs.interest.accrued - regs.interest.settled.total - regs.interest.current)
+
+                    gens.interest_tracker_2.send(regs.interest.current + pt2)
 
                 # The interest factors have to be renormalized if the principal decreases.
                 #
@@ -2239,7 +2254,16 @@ def get_daily_returns(
                 # The period only increments in the case of regular amortizations.
                 p, cnt = p + 1, 1
 
+                regs.interest.current = _0
+
             # Case of an advance (extraordinary amortization). See comments of the similar block in "get_payments_table".
+            #
+            # FIXME: create a test case simulating a partial anticipation on day 2024-11-10 for project Mirante da Mata
+            # - Parcelas Amortizadas - 36 meses. This project has a grace period of six months, and it starts on day
+            # 2024-02-26. This means that there is deferred interest on November 2024. The advanced value value should
+            # be greater than the interest of the month, so it also takes a part of the deferred interest. I want to
+            # see if this block will behave properly.
+            #
             else:
                 ent = t.cast(Amortization.Bare, tup[1])  # O Mypy não consegue inferir o tipo da variável "ent" aqui.
                 val0 = min(ent.value, calc_balance(f_c.current_accumulator))
@@ -2262,17 +2286,22 @@ def get_daily_returns(
                     f_v = f_v.normalize()
                     f_c = f_c.normalize()
 
+                regs.interest.current = _0
+
             tup = tup[1], next(itr)
 
         _LOG.debug(f'T={p}, n={cnt}, f_s={f_s} f_v={f_v} f_c={f_c}')
+        _LOG.debug(f'T={p}, n={cnt}, regs={regs.interest}')
 
         # Registers the value of the accrued interest on the day.
         #
         # The interest have to be calculated after processing all amortizations of the current day, i.e., after phase
         # B.1 above. This way we get the correct balance value to apply the factors on.
         #
-        v1 = get_principal_outstanding(f_c.current_accumulator) * (f_s.current_accumulator * f_v.current_accumulator - _1)
-        v0 = get_principal_outstanding(f_c.lagged_accumulator) * (f_s.lagged_accumulator * f_v.lagged_accumulator - _1)
+        p0 = get_principal_outstanding(f_c.lagged_accumulator) + regs.interest.deferred
+        p1 = get_principal_outstanding(f_c.current_accumulator) + regs.interest.deferred
+        v0 = (f_s.lagged_accumulator * f_v.lagged_accumulator - _1) * p0
+        v1 = (f_s.current_accumulator * f_v.current_accumulator - _1) * p1
 
         gens.interest_tracker_1.send(v1 - v0)
 
