@@ -467,43 +467,55 @@ def _interleave(a: t.Iterable[_T], b: t.Iterable[_T], *, key: t.Callable[..., t.
 
 @dataclasses.dataclass(frozen=True)
 class FactorTriplet:
+    '''
+    A factor triplet, FT, has four members:
+
+     • The accumulated value, "FT.value", up to day D.
+
+     • The accumulated value, "FT.prev_value", up to D-1.
+
+     • The latest discrete component value, "FT.discrete".
+
+     • The normalization value, "FT.normalizer".
+    '''
+
     # The three values of the triplet.
-    _lagged_accumulator: decimal.Decimal = dataclasses.field(default=_1)
-    _current_accumulator: decimal.Decimal = dataclasses.field(default=_1)
-    _current_value: decimal.Decimal = dataclasses.field(default=_1)
+    _acc_lag: decimal.Decimal = dataclasses.field(default=_1)
+    _acc_val: decimal.Decimal = dataclasses.field(default=_1)
+    _ldc_val: decimal.Decimal = dataclasses.field(default=_1)
 
     # The normalization value.
-    _normalization_value: decimal.Decimal = dataclasses.field(default=_1)
+    _norm: decimal.Decimal = dataclasses.field(default=_1)
 
     @property
-    def lagged_accumulator(self) -> decimal.Decimal:
-        return self._lagged_accumulator / self._normalization_value
+    def prev_value(self) -> decimal.Decimal:
+        return self._acc_lag / self._norm
 
     @property
-    def current_accumulator(self) -> decimal.Decimal:
-        return self._current_accumulator / self._normalization_value
+    def value(self) -> decimal.Decimal:
+        return self._acc_val / self._norm
 
     @property
-    def current_value(self) -> decimal.Decimal:
-        return self._current_value
+    def discrete(self) -> decimal.Decimal:
+        return self._ldc_val
 
     @property
-    def normalization_value(self) -> decimal.Decimal:
-        return self._normalization_value
+    def normalizer(self) -> decimal.Decimal:
+        return self._norm
 
     @typeguard.typechecked
     def __mul__(self, value: decimal.Decimal) -> 'FactorTriplet':
-        return FactorTriplet(_lagged_accumulator=self._current_accumulator, _current_accumulator=self._current_accumulator * value, _current_value=value, _normalization_value=self._normalization_value)
+        return FactorTriplet(_acc_lag=self._acc_val, _acc_val=self._acc_val * value, _ldc_val=value, _norm=self._norm)
 
     def normalize(self, value: t.Optional['FactorTriplet'] = None) -> 'FactorTriplet':
         if value:
-            return FactorTriplet(_lagged_accumulator=value._lagged_accumulator, _current_accumulator=value._current_accumulator, _current_value=value._current_value, _normalization_value=self._normalization_value)
+            return FactorTriplet(_acc_lag=value._acc_lag, _acc_val=value._acc_val, _ldc_val=value._ldc_val, _norm=self._norm)
 
         else:
-            return FactorTriplet(_lagged_accumulator=self._lagged_accumulator, _current_accumulator=self._current_accumulator, _current_value=self._current_value, _normalization_value=self._lagged_accumulator)
+            return FactorTriplet(_acc_lag=self._acc_lag, _acc_val=self._acc_val, _ldc_val=self._ldc_val, _norm=self._acc_lag)
 
     def __str__(self) -> str:
-        return f'({self.lagged_accumulator:.5f}/{self._normalization_value:.5f}, {self.current_accumulator:.5f}/{self._normalization_value:.5f}, {self.current_value:.5f})'
+        return f'({self.prev_value:.5f}/{self.normalizer:.5f}, {self.value:.5f}/{self.normalizer:.5f}, {self.discrete:.5f})'
 # }}}
 
 # Public API. Main classes. {{{
@@ -1831,11 +1843,55 @@ def get_payments_table(
 #
 #   Rn = B₀ * Fⁿ - B₀ * Fⁿ⁻¹
 #
-# The formula above is not precise. The algorithm will not exponentiate factors. An accumulated factor is
+# The formula above is an abstraction. The algorithm will not exponentiate factors. An accumulated factor is
 # actually the product of all the previous factors, since they change from one period to another. This happens
 # especially on loans with 30/360 capitalisation, because the monthly rate, when converted to a daily rate,
 # will be proportional to the amount of days in the period. And two subsequent payments might comprise more
 # than one period, if there are grace periods.
+#
+# About Periods
+# -------------
+#
+# The concept of a period is extremely important on understanding the daily returns algorithm. Up until now, period was
+# a general mathematical concept. But the algorithm requires specialized concepts of period:
+#
+#   • A macro period. This is the period between two regular payments; or between a regular payment and a grace period;
+#     or between subsequent grace periods. This function will output the macro period as a number on each iteration, as
+#     "DR.period", where DR is an instance of DailyReturn. The macro period starts with the number one. Notice that the
+#     macro period does not increment every time a payment is made. Particularly, an advancement has no effect on the
+#     macro period. But it does increment if a period ends without a payment, i.e, on a grace period.
+#
+#   • A micro period. This the period that arises from an advancement. An advancement within a macro period will
+#     subdivide it into two micro periods. As stated above, this function will use the micro period as the basis for
+#     computing the daily returns. The interest of day D is the sum of all returns up to day D minus the sum of all
+#     returns up to day D-1.
+#
+# Notice that although the description of how the interest of a day D is calculated is quite simple, the implementation
+# a lot more complex. Computing the total accumulated return since the start of the loan, or from the last payment, up
+# to day D-1, is easy. Those values are given by the "regs.interest.accrued" and "regs.interest.current +
+# regs.interest.deferred" expressions, respectively. But neither the computation of the current daily return, nor the
+# computation of the total return, up to day D, are trivial tasks.
+#
+# This algorithm will work with the accumulated interest factors instead of the accumulated return values. As stated,
+# to rely only on the daily factors, the balance would have to be a function of its previous day counterpart, and this
+# cannot be accomplished with IPCA. And since accumulated factors cannot be applied over a variable principal, they
+# must reset, or normalize, every time the principal changes. The rule of thumb is: whenever a principal decreases by
+# a payment, or increases by incorporating deferred interest, the accumulated factors must reset.
+#
+# Factors are represented by triplets. This algorithm will rely on a combination of the spread factor triplet, the
+# variable index factor triplet, and the monetary correction factor triplet, to calculate daily interests, depending on
+# the APY rate, and whether the loan is benchmarked, or undergoes monetary correction. A factor triplet, FT, has four
+# members:
+#
+#   • The accumulated value up to day D, "FT.value".
+#   • The accumulated value up to D-1, "FT.prev_value".
+#   • The latest discrete component value, "FT.discrete".
+#   • The normalization value, "FT.normalizer".
+#
+# The accumulated values of the triplets are the product of all the factors up to the previous and current day.
+# Normalization is done by dividing the triplet accumulated values by the lagged accumulator. This is basically
+# resetting the current accumulated values to the last of its discrete components. By doing this,
+# "FT.prev_value" becomes one, and "FT.value" becomes "FT.discrete".
 #
 # References
 # ----------
@@ -1911,48 +1967,66 @@ def get_daily_returns(
 
     # First generator for principal values.
     #
-    #  • "principal.amortization_ratio.current", is the percentage of amortization of the current period.
-    #  • "principal.amortized.current", is the value amortized in the current period.
-    #  • "principal.amortized.total", is the total amortized value (current period plus past periods).
+    #  • "regs.principal.amortization_ratio.adjusted", is the adjusted accumulated percentage of amortization since the start of the loan.
+    #
+    #  • "regs.principal.amortized.current", is the value amortized in the current micro period.
+    #
+    #  • "regs.principal.amortized.total", is the total amortized value since the start of the loan.
+    #
+    # Adjusting Amortization Ratios
+    # -----------------------------
+    #
+    # Inserting a partial advancement in the payment schedule affects the principal amortization percentages after that
+    # advancement. The new amortization percentage (Pn) of an arbitrary subsequent payment should be equal to its old
+    # percentage (Pa) multiplied by an adjustment factor (ADJ).
+    #
+    #                                                  ACUR
+    #                                          ADJ = ————————
+    #                                                  AREG
+    #
+    # Where ACUR is the total remaining amortization percentage of the loan, including extraordinary payments
+    # (advancements), and AREG is the total remaining amortization percentage of regular payments. See phase FRU (Phase
+    # Rafa Um) below
     #
     def track_principal_1() -> t.Generator[None, decimal.Decimal | None, None]:
         while True:
             ratio = yield
 
-            # Se o percentual de amortização atual somado ao acumulado ultrapassar 100%, um reajuste deve ser feito.
-            if regs.principal.amortization_ratio.current + ratio > _1:
-                ratio = _1 - regs.principal.amortization_ratio.current
+            # O percentual de amortização não deve ultrapassar 100%.
+            if regs.principal.amortization_ratio.adjusted + ratio > _1:
+                ratio = _1 - regs.principal.amortization_ratio.adjusted
 
             if ratio:
-                regs.principal.amortization_ratio.current += ratio
-                regs.principal.amortized = types.SimpleNamespace(current=ratio * principal, total=regs.principal.amortization_ratio.current * principal)
+                regs.principal.amortization_ratio.adjusted += ratio
+                regs.principal.amortized = types.SimpleNamespace(current=ratio * principal, total=regs.principal.amortization_ratio.adjusted * principal)
 
             else:
                 regs.principal.amortized = types.SimpleNamespace(current=_0, total=regs.principal.amortized.total)
 
     # Second generator for principal values.
     #
-    #  • "principal.amortization_ratio.regular", is the regular amortization percentage accumulated (current period plus past periods)
+    #  • "regs.principal.amortization_ratio.nominal", is the adjusted nominal amortization percentage.
     #
     def track_principal_2() -> t.Generator[None, decimal.Decimal | None, None]:
         while True:
             ratio = yield
 
-            # Se o percentual de amortização regular somado ao acumulado ultrapassar 100%, um reajuste deve ser feito.
-            if regs.principal.amortization_ratio.regular + ratio > _1:
-                ratio = _1 - regs.principal.amortization_ratio.regular
+            # O percentual de amortização não deve ultrapassar 100%.
+            if regs.principal.amortization_ratio.nominal + ratio > _1:
+                ratio = _1 - regs.principal.amortization_ratio.nominal
 
             if ratio:
-                regs.principal.amortization_ratio.regular += ratio
+                regs.principal.amortization_ratio.nominal += ratio
 
     # Generator for interest values.
     #
-    #   • "interest.daily" is the accrued interest (produced) on the day.
+    #   • "regs.interest.daily" is the accrued interest (produced) on the day.
     #
-    #   • "interest.current" is the accrued interest (produced) on the current period. Notice that a period is not
-    #      necessarily a month. If there is an advancement, for example, the period will be shorter.
+    #   • "regs.interest.current" is the accrued interest (produced) on the current micro period. Regardless of whether a
+    #      payment was made in the previous period. If the previous period was a grace period, its interest won't
+    #      accumulate on "interest.current". It will be available as "regs.interest.deferred".
     #
-    #   • "interest.accrued" is the total of accrued interest since the start of the payments schedule.
+    #   • "regs.interest.accrued" is the total of accrued interest since the start of the loan.
     #
     # This generator is called once per day.
     #
@@ -1964,15 +2038,14 @@ def get_daily_returns(
 
     # Keeps track of settled and deferred interest values.
     #
-    #   • "interest.settled.current" are the settled interest on the current period.
+    #   • "regs.interest.settled.current" are the settled interest on the current micro period.
     #
-    #   • "interest.settled.total" is the total of settled interest since the start of the payments schedule.
+    #   • "regs.interest.settled.total" is the total settled interest since the start of the loan.
     #
-    #   • "interest.deferred" is the total of deferred interest from past periods.
+    #   • "regs.interest.deferred" is the total deferred interest from past periods.
     #
-    # This generator is called once per payment, not per period. On the end of a grace period, for example, this
-    # generator will not be called. On the day an advancement is made, this generator will be called. So it is usually
-    # a call per period, but this is not a strict rule.
+    # This generator will be called on micro periods ending by regular or advanced payments. On grace periods, it will
+    # not be called.
     #
     def track_interest_2() -> t.Generator[None, decimal.Decimal | None, None]:
         while True:
@@ -2075,7 +2148,13 @@ def get_daily_returns(
     # A. Valida e prepara para execução.
     gens = types.SimpleNamespace()
     regs = types.SimpleNamespace()
+    idxs = types.SimpleNamespace()
+    facs = types.SimpleNamespace()
     aux = _0
+
+    facs.spread = FactorTriplet()  # Spread factor, FS.
+    facs.variable = FactorTriplet()  # Variable factor, FV.
+    facs.correction = FactorTriplet()  # Correction factor, FC.
 
     if principal == _0:
         return
@@ -2106,7 +2185,7 @@ def get_daily_returns(
         raise ValueError('the accumulated percentage of the amortizations does not reach 1.0')
 
     # Registradores.
-    regs.principal = types.SimpleNamespace(amortization_ratio=types.SimpleNamespace(current=_0, regular=_0), amortized=types.SimpleNamespace(current=_0, total=_0))
+    regs.principal = types.SimpleNamespace(amortization_ratio=types.SimpleNamespace(adjusted=_0, nominal=_0), amortized=types.SimpleNamespace(current=_0, total=_0))
     regs.interest = types.SimpleNamespace(daily=_0, current=_0, accrued=_0, settled=types.SimpleNamespace(current=_0, total=_0), deferred=_0)
 
     # Control, create generators.
@@ -2121,16 +2200,16 @@ def get_daily_returns(
     gens.interest_tracker_1.send(None)
     gens.interest_tracker_2.send(None)
 
-    fixd = get_normalized_fixed_factors()
+    idxs.fixed = get_normalized_fixed_factors()
 
     if vir and vir.code == 'CDI':
-        vars = get_normalized_cdi_indexes(vir.backend)
+        idxs.variable = get_normalized_cdi_indexes(vir.backend)
 
     elif vir and vir.code == 'IPCA':
-        vars = get_normalized_ipca_indexes(vir.backend)
+        idxs.variable = get_normalized_ipca_indexes(vir.backend)
 
     elif vir and vir.code == 'Poupança':
-        vars = get_normalized_savings_indexes(vir.backend)
+        idxs.variable = get_normalized_savings_indexes(vir.backend)
 
     elif vir:
         raise NotImplementedError(f'unsupported variable index {vir}')
@@ -2139,9 +2218,6 @@ def get_daily_returns(
     itr = iter(amortizations)
     tup = next(itr), next(itr)
     end = amortizations[-1].date
-    f_s = FactorTriplet()  # Spread factor, FS.
-    f_v = FactorTriplet()  # Variable factor, FV.
-    f_c = FactorTriplet()  # Correction factor, FC.
     cnt = p = 1
     buf = _0
 
@@ -2161,10 +2237,10 @@ def get_daily_returns(
         # Simplified form of FZA from "get_payments_table".
         #
         if ref < amortizations[-1].date and not vir and capitalisation == '360':  # Bullet.
-            f_s = f_s.normalize(next(fixd))
+            facs.spread = facs.spread.normalize(next(idxs.fixed))
 
         elif ref < amortizations[-1].date and not vir and capitalisation == '365':  # Bullet in legacy mode.
-            f_s = f_s.normalize(next(fixd))
+            facs.spread = facs.spread.normalize(next(idxs.fixed))
 
         # Monthly fixed rate, 30/360.
         #
@@ -2172,40 +2248,40 @@ def get_daily_returns(
         # a factor, a day.
         #
         elif ref < amortizations[-1].date and not vir and capitalisation == '30/360':  # Juros mensais, Price, Livre.
-            f_s = f_s.normalize(next(fixd))
+            facs.spread = facs.spread.normalize(next(idxs.fixed))
 
         elif ref < amortizations[-1].date and vir and vir.code == 'CDI' and capitalisation == '252':  # Bullet, Juros mensais, Livre.
-            f_v = f_v.normalize(next(vars))
+            facs.variable = facs.variable.normalize(next(idxs.variable))
 
             # Note that the index on a 252 basis only earns on a business day. This is how the CDI works. In this case
             # the fixed factor must follow the variable. It should only be calculated on a business day.
             #
-            # FIXME: if by chance the variable factor, "next(vars)", is zero, and if it happens to be a business day, the
-            # fixed factor will not be calculated. I've never seen the CDI be zero, but it's worth considering this case.
-            # The correct thing to do below is to test if the day is a business day, not if the value of the factor "f_c"
-            # is greater than one.
+            # FIXME: if by chance the variable factor, "next(idxs.variable)", is zero, and if it happens to be a
+            # business day, the fixed factor will not be calculated. I've never seen the CDI be zero, but it's worth
+            # considering this case. The correct thing to do below is to test if the day is a business day, not if the
+            # value of the factor "facs.correction" is greater than one.
             #
-            if f_v.current_value > _1:
-                f_s = f_s.normalize(next(fixd))
+            if facs.variable.discrete > _1:
+                facs.spread = facs.spread.normalize(next(idxs.fixed))
 
             else:
-                f_s = f_s.normalize(f_s * _1)  # This Multiplication is not a no-op!
+                facs.spread = facs.spread.normalize(facs.spread * _1)  # This Multiplication is not a no-op!
 
         elif ref < amortizations[-1].date and vir and vir.code == 'Poupança' and capitalisation == '360':  # Poupança is supported only with Bullet.
-            f_s = f_s.normalize(next(fixd))
-            f_v = f_v.normalize(next(vars))
+            facs.spread = facs.spread.normalize(next(idxs.fixed))
+            facs.variable = facs.variable.normalize(next(idxs.variable))
 
         elif ref < amortizations[-1].date and vir and vir.code == 'IPCA' and capitalisation == '360':  # Bullet.
-            f_s = f_s.normalize(next(fixd))
-            f_c = f_c.normalize(next(vars))
+            facs.spread = facs.spread.normalize(next(idxs.fixed))
+            facs.correction = facs.correction.normalize(next(idxs.variable))
 
         # Monthly IPCA rate, 30/360.
         #
         # Same logic as the monthly fixed rate, 30/360, but with the added price level adjustment. See comments above.
         #
         elif ref < amortizations[-1].date and vir and vir.code == 'IPCA' and capitalisation == '30/360':  # Juros mensais, Livre.
-            f_s = f_s.normalize(next(fixd))
-            f_c = f_c.normalize(next(vars))
+            facs.spread = facs.spread.normalize(next(idxs.fixed))
+            facs.correction = facs.correction.normalize(next(idxs.variable))
 
         elif ref < amortizations[-1].date and vir:
             raise NotImplementedError(f'combination of variable interest rate {vir} and capitalisation {capitalisation} unsupported')
@@ -2224,34 +2300,28 @@ def get_daily_returns(
                 buf = _Q(calc_balance())
 
             if type(tup[1]) is Amortization:  # Case of a regular amortization.
-                adj = (_1 - regs.principal.amortization_ratio.current) / (_1 - regs.principal.amortization_ratio.regular)  # [FATOR-AJUSTE].
+                adj = (_1 - regs.principal.amortization_ratio.adjusted) / (_1 - regs.principal.amortization_ratio.nominal)  # [FATOR-AJUSTE].
 
-                # Registers the amortization percentage.
+                # Registers the adjusted amortization percentage.
                 gens.principal_tracker_1.send(tup[1].amortization_ratio * adj)
 
-                # Registers the non adjusted amortization percentage.
+                # Registers the nominal amortization percentage.
                 gens.principal_tracker_2.send(tup[1].amortization_ratio)
 
                 # Registers the interest value to be settled in the period.
                 if tup[1].amortizes_interest:
-                    pct = regs.principal.amortization_ratio.current * adj
+                    pct = regs.principal.amortization_ratio.adjusted * adj
                     pt2 = pct * (regs.interest.accrued - regs.interest.settled.total - regs.interest.current)
 
                     gens.interest_tracker_2.send(regs.interest.current + pt2)
 
-                # The interest factors have to be renormalized if the principal decreases.
-                #
-                # Normalization is done by dividing the triplet by the factor accumulated since the last payment, up to
-                # the previous day. This is referred to as the normalization value, and is the "_normalization_value"
-                # member of a FactorTriplet instance. This is basically resetting the current accumulated values to
-                # the last of its discrete components.
-                #
+                # The interest factors have to be renormalized on principal changes. See comments above.
                 if tup[1].amortization_ratio > 0:
-                    f_s = f_s.normalize()
-                    f_v = f_v.normalize()
-                    f_c = f_c.normalize()
+                    facs.spread = facs.spread.normalize()
+                    facs.variable = facs.variable.normalize()
+                    facs.correction = facs.correction.normalize()
 
-                # The period only increments in the case of regular amortizations.
+                # The macro period only increments in the case of regular amortizations.
                 p, cnt = p + 1, 1
 
                 regs.interest.current = _0
@@ -2266,7 +2336,7 @@ def get_daily_returns(
             #
             else:
                 ent = t.cast(Amortization.Bare, tup[1])  # O Mypy não consegue inferir o tipo da variável "ent" aqui.
-                val0 = min(ent.value, calc_balance(f_c.current_accumulator))
+                val0 = min(ent.value, calc_balance(facs.correction.value))
                 val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)
                 val2 = val0 - val1
 
@@ -2278,30 +2348,27 @@ def get_daily_returns(
 
                 # Checks if we did not amortize more than the remaining principal.
                 if regs.principal.amortized.total > principal:
-                    raise Exception(f'the value of the amortization, {ent.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(f_c.current_accumulator))}')
+                    raise Exception(f'the value of the amortization, {ent.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(facs.correction.value))}')
 
-                # Normalizes the factors. See comments on the previous block.
+                # The interest factors have to be renormalized on principal changes. See comments above.
                 if val2 > 0:
-                    f_s = f_s.normalize()
-                    f_v = f_v.normalize()
-                    f_c = f_c.normalize()
+                    facs.spread = facs.spread.normalize()
+                    facs.variable = facs.variable.normalize()
+                    facs.correction = facs.correction.normalize()
 
                 regs.interest.current = _0
 
             tup = tup[1], next(itr)
-
-        _LOG.debug(f'T={p}, n={cnt}, f_s={f_s} f_v={f_v} f_c={f_c}')
-        _LOG.debug(f'T={p}, n={cnt}, regs={regs.interest}')
 
         # Registers the value of the accrued interest on the day.
         #
         # The interest have to be calculated after processing all amortizations of the current day, i.e., after phase
         # B.1 above. This way we get the correct balance value to apply the factors on.
         #
-        p0 = get_principal_outstanding(f_c.lagged_accumulator) + regs.interest.deferred
-        p1 = get_principal_outstanding(f_c.current_accumulator) + regs.interest.deferred
-        v0 = (f_s.lagged_accumulator * f_v.lagged_accumulator - _1) * p0
-        v1 = (f_s.current_accumulator * f_v.current_accumulator - _1) * p1
+        p0 = get_principal_outstanding(facs.correction.prev_value) + regs.interest.deferred
+        p1 = get_principal_outstanding(facs.correction.value) + regs.interest.deferred
+        v0 = (facs.spread.prev_value * facs.variable.prev_value - _1) * p0
+        v1 = (facs.spread.value * facs.variable.value - _1) * p1
 
         gens.interest_tracker_1.send(v1 - v0)
 
@@ -2323,9 +2390,12 @@ def get_daily_returns(
 
             dr.bal = _Q(calc_balance())  # Balance at the end of the day.
 
-        dr.fixed_factor = f_s.current_value
-        dr.variable_factor = f_v.current_value
-        dr.monetary_correction_factor = f_c.current_value
+        dr.fixed_factor = facs.spread.discrete
+        dr.variable_factor = facs.variable.discrete
+        dr.monetary_correction_factor = facs.correction.discrete
+
+        _LOG.debug(f'T={p}, n={cnt}, f_s={facs.spread} f_v={facs.variable} f_c={facs.correction}')
+        _LOG.debug(f'T={p}, n={cnt}, regs={regs}')
 
         # If the outstanding principal is zero, and the current day is a business day, the schedule is over.
         if _Q(get_principal_outstanding()) != _0 or not is_bizz_day_cb(ref):
