@@ -1218,7 +1218,7 @@ class VariableIndex:
     backend: IndexStorageBackend = dataclasses.field(default=InMemoryBackend(), compare=False)
 # }}}
 
-# Public API. Payments. {{{
+# Public API. Payments table. {{{
 @typeguard.typechecked
 def get_payments_table(
     principal: decimal.Decimal,
@@ -1411,9 +1411,9 @@ def get_payments_table(
 
         # Phase B.0, FZA, or Phase Zille-Anna.
         #
-        #  • Calculates FS (spread factor) for fixed-rate index; and both FS and FC for price level index.
-        #  • Calculates FS for post-fixed index (CDI, Brazilian Savings etc). In this case, there's no price level
-        #  adjustment.
+        #  • Calculates FS (spread factor) for fixed rate index; and both FS and FC for price level index.
+        #
+        #  • Calculates FS for post fixed index (CDI, Brazilian Savings etc).
         #
         if ent0.date < calc_date.value or ent1.date <= calc_date.value:
             if not vir and capitalisation == '360':  # Bullet.
@@ -1426,15 +1426,12 @@ def get_payments_table(
                 dcp = (due - ent0.date).days
                 dct = (ent1.date - ent0.date).days
 
-                # Exclusively for the first anniversary date, "DCT" will be considered as the difference in calendar days
-                # between the 24th day before and the 24th day after the disbursement date (start of accrual).
+                # Exclusively for the first anniversary date, "DCT" will be considered as the difference in calendar
+                # days between the 24th day before and the 24th day after the start of the loan.
                 #
                 if ent1.dct_override and num == 1:
                     dct = _diff_surrounding_dates(ent0.date, 24)
 
-                # When there are extraordinary advancements in the schedule, "DCT" will be calculated using the regular
-                # flow dates.
-                #
                 elif ent1.dct_override:
                     dct = (ent1.dct_override.date_to - ent1.dct_override.date_from).days
 
@@ -1466,7 +1463,7 @@ def get_payments_table(
                     kwa['base'] = ent1.price_level_adjustment.base_date
                     kwa['period'] = ent1.price_level_adjustment.period
                     kwa['shift'] = ent1.price_level_adjustment.shift
-                    kwa['ratio'] = _1  # Adjustment for the last correction rate.
+                    kwa['ratio'] = _1
 
                     # Ensure the price level factor is at least one, i.e., the correction value must be positive.
                     f_c = max(vir.backend.calculate_ipca_factor(**kwa), _1)
@@ -1479,24 +1476,18 @@ def get_payments_table(
                     kwb['base'] = amortizations[0].date.replace(day=1)
                     kwb['period'] = _delta_months(ent1.date, amortizations[0].date)
                     kwb['shift'] = 'M-1'  # FIXME.
-                    kwb['ratio'] = _1  # Adjustment for the last correction rate.
+                    kwb['ratio'] = _1
 
                     # Ensure the price level factor is at least one, i.e., the correction value must be positive.
                     f_c = max(vir.backend.calculate_ipca_factor(**kwb), _1)
 
-            elif vir and vir.code == 'IPCA' and capitalisation == '30/360':  # American and other monthly amortization systems.
+            elif vir and vir.code == 'IPCA' and capitalisation == '30/360':  # American and Custom Amortization systems. See comments of the 30/360, fixed rate, block above.
                 dcp = (due - ent0.date).days
                 dct = (ent1.date - ent0.date).days
 
-                # Exclusively for the first anniversary date, "DCT" will be considered as the difference in calendar days
-                # between the 24th day before and the 24th day after the disbursement date (start of accrual).
-                #
                 if ent1.dct_override and num == 1:
                     dct = _diff_surrounding_dates(ent0.date, 24)
 
-                # When there are extraordinary advancements in the schedule, "DCT" will be calculated using the regular
-                # flow dates.
-                #
                 elif ent1.dct_override:
                     dct = (ent1.dct_override.date_to - ent1.dct_override.date_from).days
 
@@ -1512,30 +1503,6 @@ def get_payments_table(
                 f_s = calculate_interest_factor(apy, decimal.Decimal(dcp) / (12 * decimal.Decimal(dct)))
 
                 if type(ent1) is Amortization.Bare or type(ent1) is Amortization and ent1.price_level_adjustment:
-                    dcp = (due - ent0.date).days  # "30/360" spec needs a ratio for the IPCA factor.
-                    dct = (ent1.date - ent0.date).days
-
-                    # Exclusively for the first anniversary date, "DCT" will be considered as the difference in calendar
-                    # days between the 24th day before and the 24th day after the disbursement date (start of accrual).
-                    #
-                    if ent1.dct_override and num == 1:
-                        dct = _diff_surrounding_dates(ent0.date, 24)
-
-                    # When there are extraordinary advancements in the schedule, "DCT" will be calculated using the regular
-                    # flow dates.
-                    #
-                    elif ent1.dct_override:
-                        dct = (ent1.dct_override.date_to - ent1.dct_override.date_from).days
-
-                        if ent1.dct_override.predates_first_amortization:
-                            dct = _diff_surrounding_dates(ent1.dct_override.date_from, 24)
-
-                    if ent0.dct_override:
-                        dct = (ent1.date - ent0.dct_override.date_from).days
-
-                        if ent0.dct_override.predates_first_amortization:
-                            dct = _diff_surrounding_dates(ent0.dct_override.date_from, 24)
-
                     if type(ent1) is Amortization and ent1.price_level_adjustment:
                         kwc: t.Dict[str, t.Any] = {}
 
@@ -1562,9 +1529,7 @@ def get_payments_table(
             else:
                 raise NotImplementedError(f'Unsupported capitalisation {capitalisation} for fixed interest rate')
 
-        _LOG.debug(f'T={num}, f_s={f_s:.8f}, f_c={f_c:.8f}')
-
-        # Phase B.1, FRU, or Phase Rafa Um.
+        # Phase B.1, FRO, or Phase Rafa One.
         #
         # Using the factors calculated in the previous phase, calculates and registers the variations in principal, interest,
         # and price level adjustment.
@@ -1985,8 +1950,8 @@ def get_daily_returns(
     #                                                  AREG
     #
     # Where ACUR is the total remaining amortization percentage of the loan, including extraordinary payments
-    # (advancements), and AREG is the total remaining amortization percentage of regular payments. See phase FRU (Phase
-    # Rafa Um) below
+    # (advancements), and AREG is the total remaining amortization percentage of regular payments. See phase FRO (Phase
+    # Rafa One) below
     #
     def track_principal_1() -> t.Generator[None, decimal.Decimal | None, None]:
         while True:
@@ -2226,12 +2191,14 @@ def get_daily_returns(
         end = end + datetime.timedelta(days=1)
 
     for ref in _date_range(amortizations[0].date, end):
-        # Phase B.0, FZA NG, or Phase Zille-Anna, next gen.
+        # Phase B.0, FRZ, or Phase Rafa Zero.
         #
         # This phase has a single purpose of calculating the factors that will be used in the next phase.
         #
         #  • Calculates FS (spread factor) for fixed-rate and post-fixed loans.
+        #
         #  • Calculates FV for post-fixed loans (CDI, Brazilian Savings, etc).
+        #
         #  • Calculates FC for price level adjusted loans.
         #
         # Simplified form of FZA from "get_payments_table".
@@ -2289,11 +2256,11 @@ def get_daily_returns(
         elif ref < amortizations[-1].date:
             raise NotImplementedError(f'unsupported capitalisation {capitalisation} for fixed interest rate')
 
-        # Phase B.1, FRU NG, or Phase Rafa Um, next gen.
+        # Phase B.1, FRONG, or Phase Rafa One, Next Gen.
         #
         # In this phase we process amortizations, interest payments etc.
         #
-        # Slightly altered with respect to FRU from the "get_payments_table" routine.
+        # Slightly altered with respect to FRO from the "get_payments_table" routine.
         #
         while ref < amortizations[-1].date and ref == tup[1].date:
             if not buf and not is_bizz_day_cb(ref):
