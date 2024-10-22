@@ -2056,7 +2056,7 @@ def get_daily_returns(
                     idx = next(lst, None)
 
                 else:
-                    acc = acc * _1  # This Multiplication is not a no-op!
+                    acc = acc * _1  # This multiplication is not a no-op!
 
                     yield acc
 
@@ -2104,7 +2104,7 @@ def get_daily_returns(
 
             else:
                 while dt < amort1.date:
-                    acc = acc * _1  # This Multiplication is not a no-op!
+                    acc = acc * _1  # This multiplication is not a no-op!
 
                     yield acc
 
@@ -2232,7 +2232,7 @@ def get_daily_returns(
                 facs.spread = facs.spread.normalize(next(idxs.fixed))
 
             else:
-                facs.spread = facs.spread.normalize(facs.spread * _1)  # This Multiplication is not a no-op!
+                facs.spread = facs.spread.normalize(facs.spread * _1)  # This multiplication is not a no-op!
 
         elif ref < amortizations[-1].date and vir and vir.code == 'Poupança' and capitalisation == '360':  # Poupança is supported only with Bullet.
             facs.spread = facs.spread.normalize(next(idxs.fixed))
@@ -2283,7 +2283,7 @@ def get_daily_returns(
                     gens.interest_tracker_2.send(regs.interest.current + pt2)
 
                 # The interest factors have to be renormalized on principal changes. See comments above.
-                if tup[1].amortization_ratio > 0:
+                if tup[1].amortization_ratio > 0 or tup[1].amortizes_interest:
                     facs.spread = facs.spread.normalize()
                     facs.variable = facs.variable.normalize()
                     facs.correction = facs.correction.normalize()
@@ -2318,10 +2318,9 @@ def get_daily_returns(
                     raise Exception(f'the value of the amortization, {ent.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(facs.correction.value))}')
 
                 # The interest factors have to be renormalized on principal changes. See comments above.
-                if val2 > 0:
-                    facs.spread = facs.spread.normalize()
-                    facs.variable = facs.variable.normalize()
-                    facs.correction = facs.correction.normalize()
+                facs.spread = facs.spread.normalize()
+                facs.variable = facs.variable.normalize()
+                facs.correction = facs.correction.normalize()
 
                 regs.interest.current = _0
 
@@ -2332,10 +2331,8 @@ def get_daily_returns(
         # The interest have to be calculated after processing all amortizations of the current day, i.e., after phase
         # B.1 above. This way we get the correct balance value to apply the factors on.
         #
-        p0 = get_principal_outstanding(facs.correction.prev_value) + regs.interest.deferred
-        p1 = get_principal_outstanding(facs.correction.value) + regs.interest.deferred
-        v0 = (facs.spread.prev_value * facs.variable.prev_value - _1) * p0
-        v1 = (facs.spread.value * facs.variable.value - _1) * p1
+        v0 = (facs.spread.prev_value * facs.variable.prev_value - _1) * get_principal_outstanding(facs.correction.prev_value) + regs.interest.deferred
+        v1 = (facs.spread.value * facs.variable.value - _1) * get_principal_outstanding(facs.correction.value) + regs.interest.deferred
 
         gens.interest_tracker_1.send(v1 - v0)
 
@@ -3129,6 +3126,17 @@ def get_delinquency_charges(
         f_1 = f_v.value * f_s
         f_2 = _1 + (fee_rate / decimal.Decimal(100)) * (dcp / decimal.Decimal(30))
         f_3 = _1 + (fine_rate / decimal.Decimal(100))
+
+    elif loan_vir and loan_vir.code == 'IPCA':
+        dcp = decimal.Decimal((arrears_period[1] - arrears_period[0]).days)
+        f_v = _1  # Como calcular o IPCA, "loan_vir.backend.calculate_ipca_factor(…)"?
+        f_s = calculate_interest_factor(loan_apy, dcp / decimal.Decimal(360))
+        f_1 = f_v * f_s
+        f_2 = _1 + (fee_rate / decimal.Decimal(100)) * (dcp / decimal.Decimal(30))
+        f_3 = _1 + (fine_rate / decimal.Decimal(100))
+
+    elif loan_vir and loan_vir.code == 'Poupança':
+        raise NotImplementedError()  # FIXME: implement.
 
     elif loan_vir:
         raise NotImplementedError()
