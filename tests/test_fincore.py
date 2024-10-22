@@ -5385,6 +5385,19 @@ def test_will_create_loan_daily_returns_livre_6():
             assert math.isclose(entry.monetary_correction_factor, decimal.Decimal(tst[i][4]) + _1, rel_tol=1e-8)
             assert entry.value == decimal.Decimal(tst[i][5])
             assert entry.bal == decimal.Decimal(tst[i][6])
+
+@pytest.mark.skip(reason='Not implemented yet.')
+def test_will_create_loan_daily_returns_jm_1():
+    '''
+    Operação Palazzo Saldanha - Juros mensais - 9 meses.
+
+    Três antecipações, duas parciais e uma total.
+
+    Ref File: https://docs.google.com/spreadsheets/d/1vzW6Kz_NvLRHj8WZv2dSSGSvHauwhM7eCS5YfQ_ohng
+    Tab.....:  Palazzo Saldanha
+    '''
+
+    pass  # FIXME: implementar. Já está em planilha de testes.
 # }}}
 
 # Cronograma de pagamentos mensal x retornos diários. {{{
