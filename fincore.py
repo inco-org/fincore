@@ -1925,10 +1925,14 @@ def get_daily_returns(
     '''
 
     def calc_balance(correction_factor: decimal.Decimal = _1) -> decimal.Decimal:
-        return principal * correction_factor + regs.interest.accrued - regs.principal.amortized.total * correction_factor - regs.interest.settled.total
+        val = principal * correction_factor + regs.interest.accrued - regs.principal.amortized.total * correction_factor - regs.interest.settled.total
+
+        return t.cast(decimal.Decimal, val)
 
     def get_principal_outstanding(correction_factor: decimal.Decimal = _1) -> decimal.Decimal:
-        return (principal - regs.principal.amortized.total) * correction_factor
+        val = (principal - regs.principal.amortized.total) * correction_factor
+
+        return t.cast(decimal.Decimal, val)
 
     # First generator for principal values.
     #
@@ -2083,10 +2087,10 @@ def get_daily_returns(
         acc = FactorTriplet()
 
         for amort0, amort1 in itertools.pairwise([x for x in amortizations if type(x) is Amortization]):
-            if x := t.cast(Amortization, amort1).price_level_adjustment:
+            if pla := amort1.price_level_adjustment:
                 kwa: t.Dict[str, t.Any] = {}
 
-                kwa['base'] = (pla := t.cast(PriceLevelAdjustment, x)).base_date
+                kwa['base'] = pla.base_date
                 kwa['period'] = pla.period
                 kwa['shift'] = pla.shift
                 kwa['ratio'] = _1
@@ -3121,17 +3125,17 @@ def get_delinquency_charges(
 
     elif loan_vir and loan_vir.code == 'CDI':
         dcp = decimal.Decimal((arrears_period[1] - arrears_period[0]).days)
-        f_v = loan_vir.backend.calculate_cdi_factor(arrears_period[0], arrears_period[1], loan_vir.percentage)
-        f_s = calculate_interest_factor(loan_apy, decimal.Decimal(f_v.amount) / decimal.Decimal(252))
-        f_1 = f_v.value * f_s
+        fv1 = loan_vir.backend.calculate_cdi_factor(arrears_period[0], arrears_period[1], loan_vir.percentage)
+        f_s = calculate_interest_factor(loan_apy, decimal.Decimal(fv1.amount) / decimal.Decimal(252))
+        f_1 = fv1.value * f_s
         f_2 = _1 + (fee_rate / decimal.Decimal(100)) * (dcp / decimal.Decimal(30))
         f_3 = _1 + (fine_rate / decimal.Decimal(100))
 
     elif loan_vir and loan_vir.code == 'IPCA':
         dcp = decimal.Decimal((arrears_period[1] - arrears_period[0]).days)
-        f_v = _1  # Como calcular o IPCA, "loan_vir.backend.calculate_ipca_factor(…)"?
+        fv2 = _1  # Como calcular o IPCA, "loan_vir.backend.calculate_ipca_factor(…)"?
         f_s = calculate_interest_factor(loan_apy, dcp / decimal.Decimal(360))
-        f_1 = f_v * f_s
+        f_1 = fv2 * f_s
         f_2 = _1 + (fee_rate / decimal.Decimal(100)) * (dcp / decimal.Decimal(30))
         f_3 = _1 + (fine_rate / decimal.Decimal(100))
 
