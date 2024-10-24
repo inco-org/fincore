@@ -250,6 +250,19 @@ def _date_range(start_date: datetime.date, end_date: datetime.date) -> t.Generat
 
         iterator += datetime.timedelta(days=1)
 
+def _generate_monthly_dates(date0: datetime.date, date1: datetime.date) -> t.Generator[t.Tuple[datetime.date, datetime.date, int], None, None]:
+    delta = dateutil.relativedelta.relativedelta(date1, date0)
+    total = delta.years * 12 + delta.months
+    index = date0
+
+    while index < date1:
+        next_date = index + dateutil.relativedelta.relativedelta(months=+1)
+        next_date = next_date.replace(day=date1.day)
+
+        yield (index, next_date, total)
+
+        index = next_date
+
 @typeguard.typechecked
 def _diff_surrounding_dates(base: datetime.date, day_of_month: int) -> int:
     '''
@@ -938,7 +951,7 @@ class IndexStorageBackend:
         return types.SimpleNamespace(value=fac, amount=len(mem))
 
     @typeguard.typechecked
-    def calculate_ipca_factor(self, base: datetime.date, period: int, shift: _PL_SHIFT, ratio: decimal.Decimal = _1) -> decimal.Decimal:
+    def calculate_ipca_factor(self, base: datetime.date, period: int, shift: _PL_SHIFT, ratio: decimal.Decimal = _1) -> types.SimpleNamespace:
         '''
         Calculates the IPCA correction factor.
 
@@ -955,7 +968,7 @@ class IndexStorageBackend:
 
             fac = fac * (_1 + x.value / decimal.Decimal(100)) ** exp
 
-        return fac
+        return types.SimpleNamespace(value=fac, mem=mem)
 
     @typeguard.typechecked
     def calculate_igpm_factor(self, base: datetime.date, period: int, shift: _PL_SHIFT, ratio: decimal.Decimal = _1) -> decimal.Decimal:
@@ -1505,7 +1518,7 @@ def get_payments_table(
                     kwa['ratio'] = _1
 
                     # Ensure the price level factor is at least one, i.e., the correction value must be positive.
-                    f_c = max(vir.backend.calculate_ipca_factor(**kwa), _1)
+                    f_c = max(vir.backend.calculate_ipca_factor(**kwa).value, _1)
 
                 # In the case of an advancement, the price level adjustment must be paid – "ent1" doesn't
                 # need to have the "price_level_adjustment" attribute.
@@ -1518,7 +1531,7 @@ def get_payments_table(
                     kwb['ratio'] = _1
 
                     # Ensure the price level factor is at least one, i.e., the correction value must be positive.
-                    f_c = max(vir.backend.calculate_ipca_factor(**kwb), _1)
+                    f_c = max(vir.backend.calculate_ipca_factor(**kwb).value, _1)
 
             elif vir and vir.code == 'IPCA' and capitalisation == '30/360':  # American and Custom Amortization systems. See comments of the 30/360, fixed rate, block above.
                 dcp = (due - ent0.date).days
@@ -1550,7 +1563,7 @@ def get_payments_table(
                         kwc['shift'] = ent1.price_level_adjustment.shift
                         kwc['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)  # Adjustment for the last correction rate.
 
-                        f_c = max(vir.backend.calculate_ipca_factor(**kwc), _1)  # Lock the price level factor.
+                        f_c = max(vir.backend.calculate_ipca_factor(**kwc).value, _1)  # Lock the price level factor.
 
                     else:
                         kwd: t.Dict[str, t.Any] = {}
@@ -1560,7 +1573,7 @@ def get_payments_table(
                         kwd['shift'] = 'M-1'  # FIXME.
                         kwd['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)  # Adjustment for the last correction rate.
 
-                        f_c = max(vir.backend.calculate_ipca_factor(**kwd), _1)  # Lock the price level factor.
+                        f_c = max(vir.backend.calculate_ipca_factor(**kwd).value, _1)  # Lock the price level factor.
 
             elif vir:
                 raise NotImplementedError(f'Combination of variable interest rate {vir} and capitalisation {capitalisation} unsupported')
@@ -2124,36 +2137,46 @@ def get_daily_returns(
 
     # IPCA is a monthly index. This function will normalize it to daily values.
     def get_normalized_ipca_indexes(backend: IndexStorageBackend) -> t.Generator[FactorTriplet, None, None]:
-        dt = amortizations[0].date
+        dt0 = amortizations[0].date
         acc = FactorTriplet()
 
         for amort0, amort1 in itertools.pairwise([x for x in amortizations if type(x) is Amortization]):
-            if pla := amort1.price_level_adjustment:
-                kwa: t.Dict[str, t.Any] = {}
+            for i, (dt0, dt1, div) in enumerate(_generate_monthly_dates(amort0.date, amort1.date)):
+                if (pla := amort1.price_level_adjustment) and pla.base_date:
+                    kwa: t.Dict[str, t.Any] = {}
+                    fac = _1
 
-                kwa['base'] = pla.base_date
-                kwa['period'] = pla.period
-                kwa['shift'] = pla.shift
-                kwa['ratio'] = _1
+                    kwa['base'] = pla.base_date + _MONTH * i
+                    kwa['period'] = pla.period if div == 1 else 1
+                    kwa['shift'] = pla.shift
+                    kwa['ratio'] = _1
 
-                # Ensure the price level factor is at least one, i.e., the correction value must be positive.
-                fac = max(backend.calculate_ipca_factor(**kwa), _1) - _1
-                fac = calculate_interest_factor(fac, _1 / (amort1.date - amort0.date).days, False)
+                    if (sns := backend.calculate_ipca_factor(**kwa)).mem:
+                        fac = max(sns.value, _1) - _1
+                        fac = calculate_interest_factor(fac, _1 / (dt1 - dt0).days, False)
 
-                while dt < amort1.date:
-                    acc = acc * fac
+                        while dt0 < dt1:
+                            acc = acc * fac
 
-                    yield acc
+                            yield acc
 
-                    dt += datetime.timedelta(days=1)
+                            dt0 += datetime.timedelta(days=1)
 
-            else:
-                while dt < amort1.date:
-                    acc = acc * _1  # This multiplication is not a no-op!
+                    else:
+                        while dt0 < dt1:
+                            acc = acc * _1  # This multiplication is not a no-op!
 
-                    yield acc
+                            yield acc
 
-                    dt += datetime.timedelta(days=1)
+                            dt0 += datetime.timedelta(days=1)
+
+                else:
+                    while dt0 < amort1.date:
+                        acc = acc * _1  # This multiplication is not a no-op!
+
+                        yield acc
+
+                        dt0 += datetime.timedelta(days=1)
 
     # A. Valida e prepara para execução.
     gens = types.SimpleNamespace()
@@ -3270,7 +3293,7 @@ def get_late_payment(
                 kwa['shift'] = e_1[2].shift
                 kwa['ratio'] = dcp / dct
 
-                f_c = f_c * vir.backend.calculate_ipca_factor(**kwa)
+                f_c = f_c * vir.backend.calculate_ipca_factor(**kwa).value
 
             else:
                 raise NotImplementedError()
