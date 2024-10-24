@@ -573,7 +573,8 @@ class PriceLevelAdjustment:
 
             Jan         Feb       Mar        Apr        May                          M-2
 
-      5. A boolean flag indicating whether the price adjustment will be amortized or incorporated in the debt.
+      5. A boolean flag indicating forcing monetary correction over the period's balance, even if there is no principal
+         amortization.
     '''
 
     code: _PL_INDEX
@@ -584,6 +585,7 @@ class PriceLevelAdjustment:
 
     shift: _PL_SHIFT = 'M-1'
 
+    # This flag forces the monetary correction over the period's balance to be settled, if that period has no principal amortization.
     amortizes_adjustment: bool = True
 
 @dataclasses.dataclass
@@ -1702,7 +1704,14 @@ def get_payments_table(
                 if vir and vir.code == 'IPCA':
                     pmt = t.cast(PriceAdjustedPayment, pmt)
 
-                    pmt.pla = pmt.amort * (f_c - 1)
+                    # Pays monetary correction over the principal amortization.
+                    if pmt.amort:
+                        pmt.pla = pmt.amort * (f_c - 1)
+
+                    # If there is no amortization in the period, monetary correction over the balance (principal) can still be paid.
+                    elif t.cast(PriceLevelAdjustment, ent1.price_level_adjustment).amortizes_adjustment:
+                        pmt.pla = calc_balance(f_c) - calc_balance(_1)
+
                     pmt.raw = pmt.raw + pmt.pla
                     pmt.tax = pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
 
@@ -2537,7 +2546,8 @@ def preprocess_jm(
     term: int,
     insertions: t.List[Amortization.Bare] = [],
     anniversary_date: t.Optional[datetime.date] = None,
-    vir: t.Optional[VariableIndex] = None
+    vir: t.Optional[VariableIndex] = None,
+    amortizes_correction: bool = True
 ) -> t.List[Amortization] | t.List[Amortization | Amortization.Bare]:
     lst1 = []
     lst2 = []
@@ -2579,11 +2589,18 @@ def preprocess_jm(
         if i == 1 and anniversary_date:
             ent.dct_override = DctOverride(anniversary_date, anniversary_date, predates_first_amortization=False)
 
-        if vir and vir.code == 'IPCA':
+        if vir and vir.code == 'IPCA' and amortizes_correction:
+            ent.price_level_adjustment = PriceLevelAdjustment('IPCA')
+
+            ent.price_level_adjustment.base_date = zero_date.replace(day=1) + _MONTH * (i - 1)
+            ent.price_level_adjustment.period = 1
+
+        elif vir and vir.code == 'IPCA':
             ent.price_level_adjustment = PriceLevelAdjustment('IPCA')
 
             ent.price_level_adjustment.base_date = zero_date.replace(day=1)
             ent.price_level_adjustment.period = i
+            ent.price_level_adjustment.amortizes_adjustment = i == term
 
         lst1.append(ent)
 
@@ -2592,7 +2609,13 @@ def preprocess_jm(
         for skel in _interleave(lst1, insertions, key=lambda x: x.date):
             lst2.append(skel.item)
 
-            if skel.from_a and vir and vir.code == 'IPCA':
+            if skel.from_a and vir and vir.code == 'IPCA' and amortizes_correction:
+                skel.item.price_level_adjustment = PriceLevelAdjustment('IPCA')
+
+                skel.item.price_level_adjustment.base_date = zero_date.replace(day=1) + _MONTH * (skel.index_a - 1)
+                skel.item.price_level_adjustment.period = 1
+
+            elif skel.from_a and vir and vir.code == 'IPCA':
                 skel.item.price_level_adjustment = PriceLevelAdjustment('IPCA')
 
                 skel.item.price_level_adjustment.base_date = zero_date.replace(day=1)
