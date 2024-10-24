@@ -3316,7 +3316,7 @@ def get_late_payment(
                 kwa['shift'] = e_1[2].shift
                 kwa['ratio'] = dcp / dct
 
-                f_c = f_c * vir.backend.calculate_ipca_factor(**kwa).value
+                f_c = f_c * max(vir.backend.calculate_ipca_factor(**kwa).value, _1)
 
             else:
                 raise NotImplementedError()

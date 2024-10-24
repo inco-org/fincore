@@ -4370,7 +4370,7 @@ def test_will_create_late_payment_pre_30_360_1():
     Operação na base 30/360.
 
     Ref File: https://docs.google.com/spreadsheets/d/1vNSRo6KO6KIV8ncNKYg_QeYn-vBsHw7PG0qHrGsrL7k
-    Tab.....: 360/360 - 1
+    Tab.....: 30/360 - 1
     '''
 
     pmt = fincore.LatePayment()
@@ -4411,7 +4411,7 @@ def test_will_create_late_payment_pre_30_360_2():
     Operação na base 30/360.
 
     Ref File: https://docs.google.com/spreadsheets/d/1vNSRo6KO6KIV8ncNKYg_QeYn-vBsHw7PG0qHrGsrL7k
-    Tab.....: 360/360 - 2
+    Tab.....: 30/360 - 2
     '''
 
     pmt = fincore.LatePayment()
@@ -4452,7 +4452,7 @@ def test_will_create_late_payment_pre_30_360_3():
     Operação na base 30/360.
 
     Ref File: https://docs.google.com/spreadsheets/d/1vNSRo6KO6KIV8ncNKYg_QeYn-vBsHw7PG0qHrGsrL7k
-    Tab.....: 360/360 - 3
+    Tab.....: 30/360 - 3
     '''
 
     pmt = fincore.LatePayment()
@@ -4487,6 +4487,58 @@ def test_will_create_late_payment_pre_30_360_3():
     assert out.tax == decimal.Decimal('23.19')
     assert out.net == decimal.Decimal('1220.41')
     assert out.bal == pmt.bal
+
+def test_will_create_late_payment_ipca():
+    '''
+    Operação na base 30/360.
+
+    Testa se o valor mínimo da correção será zero, quando o fator é negativo.
+    '''
+
+    pmt = fincore.LatePriceAdjustedPayment()
+    pla = fincore.PriceLevelAdjustment('IPCA')
+    sns = types.SimpleNamespace(value=decimal.Decimal('-0.001'), mem=[])
+    kwa = {}
+
+    pla.base_date = datetime.date(2022, 1, 1)
+    pla.period = 1
+    pla.shift = 'M-1'
+    pla.amortizes_adjustment = True
+
+    # Given.
+    pmt.date = datetime.date(2021, 10, 1)
+    pmt.bal = _0
+    pmt.raw = decimal.Decimal('1123.72')
+    pmt.amort = decimal.Decimal('1111.11')
+    pmt.gain = decimal.Decimal('12.61')
+    pmt.pla = _0
+
+    kwa['in_pmt'] = pmt
+    kwa['apy'] = decimal.Decimal('14.5')
+    kwa['zero_date'] = datetime.date(2021, 1, 1)
+    kwa['calc_date'] = datetime.date(2022, 1, 25)
+    kwa['vir'] = fincore.VariableIndex('IPCA')
+    kwa['pla_operations'] = [(kwa['calc_date'], True, pla)]
+
+    with unittest.mock.patch('fincore.IndexStorageBackend.calculate_ipca_factor', return_value=sns):
+        # When.
+        out = fincore.get_late_payment(**kwa)
+
+        # Then.
+        assert out.no == pmt.no
+        assert out.date == kwa['calc_date']
+
+        assert out.extra_gain == decimal.Decimal('50.11')
+        assert out.penalty == decimal.Decimal('45.39')
+        assert out.fine == decimal.Decimal('24.38')
+
+        assert out.amort == pmt.amort
+        assert out.gain == decimal.Decimal('12.61')
+        assert out.pla == _0
+        assert out.raw == decimal.Decimal('1243.60')
+        assert out.tax == decimal.Decimal('23.19')
+        assert out.net == decimal.Decimal('1220.41')
+        assert out.bal == pmt.bal
 # }}}
 
 # Retornos diários. {{{
