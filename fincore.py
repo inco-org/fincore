@@ -655,7 +655,7 @@ class Payment:
 
     It represents a payment at a given date.
 
-      • "no" is the payment number;
+      • "no" is the payment's number;
 
       • "date" is the date the payment should be done;
 
@@ -665,9 +665,9 @@ class Payment:
 
       • "net" is the net value to be payed;
 
-      • "gain" is the yielded profit;
+      • "gain" is the payment's interest;
 
-      • "amort" is the amortized value;
+      • "amort" is the value amortized by the payment;
 
       • "bal" is the current loan balance.
     '''
@@ -689,7 +689,38 @@ class Payment:
     bal: decimal.Decimal = _0
 
 @dataclasses.dataclass
+class PriceAdjustedPayment(Payment):
+    '''
+    An entry of a payment schedule, with price level adjustment (IPCA or IGPM).
+
+    Besides the fields of the base class, this class has an additional field, "pla", which is the monetary correction
+    of the payment, or its price level adjustment.
+    '''
+
+    pla: decimal.Decimal = _0
+
+@dataclasses.dataclass
 class DailyReturn:
+    '''
+    An entry of a daily returns table.
+
+      • "no", is the number of the entry within a period;
+
+      • "period", is the macro period's number. Refer to the "get_daily_returns" routine for a detailed explanation
+        about periods.
+
+      • "date", is the day of the entry.
+
+      • "value", is the interest earned on the day. This is also the monetary corrected interest in case of instances
+        of PriceAdjustedDailyReturn (see class PriceAdjustedDailyReturn).
+
+      • "bal", is the balance at the end of the day.
+
+      • "sf", is the spread, or fixed factor of the entry.
+
+      • "vf", is the variable factor of the entry.
+    '''
+
     no: int = 0
 
     period: int = 0
@@ -700,17 +731,25 @@ class DailyReturn:
 
     bal: decimal.Decimal = _0
 
-    fixed_factor: decimal.Decimal = _1
+    sf: decimal.Decimal = _1
 
-    variable_factor: decimal.Decimal = _1
-
-    monetary_correction_factor: decimal.Decimal = _1
+    vf: decimal.Decimal = _1
 
 @dataclasses.dataclass
-class PriceAdjustedPayment(Payment):
-    '''An entry of a payment schedule, with price level adjustment (IPCA or IGPM).'''
+class PriceAdjustedDailyReturn(DailyReturn):
+    '''
+    An entry of a daily returns table, with price level adjustment (IPCA or IGPM).
+
+    Besides the fields of the base class, this class has two additional fields, "pla" and "cf".
+
+      • "pla", is the monetary correction of the entry, or its price level adjustment.
+
+      • "cf", is the correction factor of the entry.
+    '''
 
     pla: decimal.Decimal = _0
+
+    cf: decimal.Decimal = _1
 
 @dataclasses.dataclass
 class LatePayment(Payment):
@@ -1919,9 +1958,11 @@ def get_daily_returns(
            rounding errors, for the same reason as the previous item: the routine quantizes internal values only before
            returning them.
 
-      • "fixed_factor", is the interest factor used to calculate the fixed component of the day's yield.
+      • "sf", is the fixed component of the day's yield.
 
-      • "variable_factor", is the interest factor used to calculate the variable component of the day's yield.
+      • "vf", is the variable component of the day's yield.
+
+      • "fc", is the monetary correction component of the day's yield.
     '''
 
     def calc_balance(correction_factor: decimal.Decimal = _1) -> decimal.Decimal:
@@ -2268,7 +2309,7 @@ def get_daily_returns(
         #
         while ref < amortizations[-1].date and ref == tup[1].date:
             if not buf and not is_bizz_day_cb(ref):
-                buf = _Q(calc_balance())
+                buf = _Q(calc_balance(facs.correction.value))
 
             if type(tup[1]) is Amortization:  # Case of a regular amortization.
                 adj = (_1 - regs.principal.amortization_ratio.adjusted) / (_1 - regs.principal.amortization_ratio.nominal)  # [FATOR-AJUSTE].
@@ -2341,7 +2382,7 @@ def get_daily_returns(
         gens.interest_tracker_1.send(v1 - v0)
 
         # Builds the daily return instance, output of the routine. Makes rounding.
-        dr = DailyReturn()
+        dr = PriceAdjustedDailyReturn() if vir and vir.code == 'IPCA' else DailyReturn()
 
         dr.no = cnt
         dr.period = p
@@ -2356,11 +2397,19 @@ def get_daily_returns(
         else:
             buf = _0
 
-            dr.bal = _Q(calc_balance())  # Balance at the end of the day.
+            dr.bal = _Q(calc_balance(facs.correction.value))  # Balance at the end of the day.
 
-        dr.fixed_factor = facs.spread.discrete
-        dr.variable_factor = facs.variable.discrete
-        dr.monetary_correction_factor = facs.correction.discrete
+        dr.sf = facs.spread.discrete
+        dr.vf = facs.variable.discrete
+
+        if vir and vir.code == 'IPCA':
+            dr = t.cast(PriceAdjustedDailyReturn, dr)
+            v0 = get_principal_outstanding(facs.correction.prev_value) + regs.interest.deferred
+            v1 = get_principal_outstanding(facs.correction.value) + regs.interest.deferred
+
+            dr.pla = _Q(v1 - v0)
+
+            dr.cf = facs.correction.discrete
 
         _LOG.debug(f'T={p}, n={cnt}, f_s={facs.spread} f_v={facs.variable} f_c={facs.correction}')
         _LOG.debug(f'T={p}, n={cnt}, regs={regs}')
