@@ -703,6 +703,10 @@ class Payment:
 
     bal: decimal.Decimal = _0
 
+    sf: decimal.Decimal = _1
+
+    vf: decimal.Decimal = _1
+
 @dataclasses.dataclass
 class PriceAdjustedPayment(Payment):
     '''
@@ -713,6 +717,8 @@ class PriceAdjustedPayment(Payment):
     '''
 
     pla: decimal.Decimal = _0
+
+    cf: decimal.Decimal = _1
 
 @dataclasses.dataclass
 class DailyReturn:
@@ -1224,7 +1230,7 @@ class InMemoryBackend(IndexStorageBackend):
     # index, It can't even properly represent months, using their first days to represent them. For example,
     # "2018-01-01" represents January of 2018. Why not use simply "2018-01"???
     #
-    # I do not think that fincore data structures, like MonthlyIndex, should expose these flaws internally. It should
+    # I do not think that Fincore data structures, like MonthlyIndex, should expose these flaws internally. It should
     # be designed to best suit its use by this module.
     #
     @typeguard.typechecked
@@ -1460,6 +1466,7 @@ def get_payments_table(
 
     # B. Execution.
     for num, (ent0, ent1) in enumerate(itertools.pairwise(amortizations), 1):
+        f_v = types.SimpleNamespace(amount=_0, value=_1)
         due = min(calc_date.value, ent1.date)
         f_s = f_c = _1
 
@@ -1761,10 +1768,15 @@ def get_payments_table(
             pmt.net = pmt.raw - pmt.tax
             pmt.bal = _Q(pmt.bal)
 
+            pmt.sf = f_s
+            pmt.vf = f_v.value
+
             if vir and vir.code == 'IPCA':
                 pmt = t.cast(PriceAdjustedPayment, pmt)
 
                 pmt.pla = _Q(pmt.pla)
+
+                pmt.cf = f_c
 
             yield pmt
 
@@ -2129,20 +2141,28 @@ def get_daily_returns(
 
     # Poupança is a monthly index. This function will normalize it to daily values.
     def get_normalized_savings_indexes(backend: IndexStorageBackend) -> t.Generator[FactorTriplet, None, None]:
-        dt = amortizations[0].date
+        pct = t.cast(VariableIndex, vir).percentage  # Mypy fails to detect that, despite "vir" being optional, here it can't be None.
+        acc = FactorTriplet()
 
         for amort0, amort1 in itertools.pairwise([x for x in amortizations if type(x) is Amortization]):
-            pct = t.cast(VariableIndex, vir).percentage  # Mypy fails to detect that, despite "vir" being optional, here it can't be None.
-            fac = backend.calculate_savings_factor(amort0.date, amort1.date, pct).value - _1
-            val = calculate_interest_factor(fac, _1 / (amort1.date - amort0.date).days, False)
-            acc = FactorTriplet()
+            for dt0, dt1, _ in _generate_monthly_dates(amort0.date, amort1.date):
+                if (obj := backend.calculate_savings_factor(dt0, dt1, pct)).amount:
+                    fac = calculate_interest_factor(obj.value - _1, _1 / (dt1 - dt0).days, False)
 
-            while dt < amort1.date:
-                acc = acc * val
+                    while dt0 < dt1:
+                        acc = acc * fac
 
-                yield acc
+                        yield acc
 
-                dt += datetime.timedelta(days=1)
+                        dt0 += datetime.timedelta(days=1)
+
+                else:
+                    while dt0 < dt1:
+                        acc = acc * _1  # This multiplication is not a no-op!
+
+                        yield acc
+
+                        dt0 += datetime.timedelta(days=1)
 
     # IPCA is a monthly index. This function will normalize it to daily values.
     def get_normalized_ipca_indexes(backend: IndexStorageBackend) -> t.Generator[FactorTriplet, None, None]:
@@ -2833,6 +2853,7 @@ def build_jm(
     anniversary_date: t.Optional[datetime.date] = None,
     vir: t.Optional[VariableIndex] = None,
     tax_exempt: t.Optional[bool] = False,
+    amortizes_correction: bool = True,
     calc_date: t.Optional[CalcDate] = None,
     gain_output: _GAIN_OUTPUT_MODE = 'current'
 ) -> t.Generator[Payment, None, None]:
@@ -2867,7 +2888,7 @@ def build_jm(
 
     kwa['principal'] = principal
     kwa['apy'] = apy
-    kwa['amortizations'] = preprocess_jm(zero_date, term, insertions, anniversary_date, vir)
+    kwa['amortizations'] = preprocess_jm(zero_date, term, insertions, anniversary_date, vir, amortizes_correction=amortizes_correction)
 
     kwa['vir'] = vir
     kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else '30/360'
@@ -3023,13 +3044,14 @@ def get_jm_daily_returns(
     insertions: t.List[Amortization.Bare] = [],
     anniversary_date: t.Optional[datetime.date] = None,
     vir: t.Optional[VariableIndex] = None,
+    amortizes_correction: bool = True,
     is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
 ) -> t.Generator[DailyReturn, None, None]:
     kwa: t.Dict[str, t.Any] = {}
 
     kwa['principal'] = principal
     kwa['apy'] = apy
-    kwa['amortizations'] = preprocess_jm(zero_date, term, insertions, anniversary_date, vir)
+    kwa['amortizations'] = preprocess_jm(zero_date, term, insertions, anniversary_date, vir, amortizes_correction=amortizes_correction)
     kwa['vir'] = vir
     kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else '30/360'
     kwa['is_bizz_day_cb'] = is_bizz_day_cb
