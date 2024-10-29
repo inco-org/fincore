@@ -53,6 +53,13 @@
 #
 #   • The module decreased by almost 15% in size. From ~1600 to ~1400 lines of code.
 #
+# [FINCORE V4]
+#
+# Represents a complete rewrite of the daily returns calculation. Released on October 20, 2024.
+#
+# The daily returns function now properly supports IPCA and Brazilian Savings indexers. This was a shortcoming of the
+# previous version.
+#
 # [ANNOTATED_TYPES]
 #
 # Use annotated types instead of explicit checking in code – http://stackoverflow.com/a/72563242.
@@ -250,6 +257,7 @@ def _date_range(start_date: datetime.date, end_date: datetime.date) -> t.Generat
 
         iterator += datetime.timedelta(days=1)
 
+@typeguard.typechecked
 def _generate_monthly_dates(date0: datetime.date, date1: datetime.date) -> t.Generator[t.Tuple[datetime.date, datetime.date, int], None, None]:
     delta = dateutil.relativedelta.relativedelta(date1, date0)
     total = delta.years * 12 + delta.months
@@ -838,13 +846,11 @@ class RangedIndex:
     value: decimal.Decimal = _0
 
 class IndexStorageBackend:
-    def get_cdi_indexes(self, begin: datetime.date, end: datetime.date) -> t.Generator[DailyIndex, None, None]:
+    def get_cdi_indexes(self, begin: datetime.date, end: datetime.date, **kwargs) -> t.Generator[DailyIndex, None, None]:
         '''
         Returns the list of CDI indexes between the begin and end date.
 
         The begin date is inclusive. The end date is exclusive.
-
-        This method should project indexes in the future.
         '''
 
         raise NotImplementedError()
@@ -852,8 +858,6 @@ class IndexStorageBackend:
     def get_savings_indexes(self, begin: datetime.date, end: datetime.date) -> t.Generator[RangedIndex, None, None]:
         '''
         Returns the list of Brazilian Savings indexes between the begin and end date.
-
-        This method should not project indexes in the future.
         '''
 
         raise NotImplementedError()
@@ -861,8 +865,6 @@ class IndexStorageBackend:
     def get_ipca_indexes(self, begin: datetime.date, end: datetime.date) -> t.Generator[MonthlyIndex, None, None]:
         '''
         Returns the list of IPCA indexes between the begin and end date.
-
-        This method should not project indexes in the future.
         '''
 
         raise NotImplementedError()
@@ -870,8 +872,6 @@ class IndexStorageBackend:
     def get_igpm_indexes(self, begin: datetime.date, end: datetime.date) -> t.Generator[MonthlyIndex, None, None]:
         '''
         Returns the list of IGPM indexes between the begin and end date.
-
-        This method should not project indexes in the future.
         '''
 
         raise NotImplementedError()
@@ -881,7 +881,7 @@ class IndexStorageBackend:
         '''
         Calculates the DI (CDI) factor for a given period.
 
-        The CDI correction indices in the tests below were taken from the BACEN website:
+        The CDI indices in the tests below were taken from the BACEN website:
 
           https://www3.bcb.gov.br/CALCIDADAO/publico/exibirFormCorrecaoValores.do?method=exibirFormCorrecaoValores&aba=5
 
@@ -911,52 +911,74 @@ class IndexStorageBackend:
         >>> isclose(idx1, idx2.value, rel_tol=1e-8)
         True
 
-        Note that it's not possible to write tests for projected indices. This function will use the last index published
-        by BACEN to estimate future values. A new index may be published, changing the result of the factor computation,
-        causing the test to fail.
+        >>> idx = bend.calculate_cdi_factor(date(2024, 1, 2), date(2024, 1, 2))
+        >>> idx.amount
+        0
+        >>> idx.value == 1
+        True
         '''
 
         if begin < end:
+            gen = self.get_cdi_indexes(begin, end - datetime.timedelta(days=1))  # Último dia, sempre excludente.
             pct = decimal.Decimal(percentage) / decimal.Decimal(100)
-            end = end - datetime.timedelta(days=1)  # Último dia, sempre excludente.
+            idx = next(gen, None)
             fac = _1
             cnt = 0
 
-            for x in self.get_cdi_indexes(begin, end):
-                fac = fac * (1 + pct * x.value / decimal.Decimal(100))
+            for x in _date_range(begin, end):
+                if idx and x == idx.date and idx.value > 0:
+                    fac = fac * (1 + pct * idx.value / decimal.Decimal(100))
 
-                cnt += 1
+                    _LOG.debug(idx)
 
-                _LOG.debug(x)
+                    cnt = cnt + 1
+
+                    idx = next(gen, None)
+
+                elif idx and x == idx.date:
+                    idx = next(gen, None)
+
+                else:
+                    _LOG.warning(f'CDI index not found for date {x}')
 
             return types.SimpleNamespace(value=fac, amount=cnt)
 
-        return types.SimpleNamespace(value=_1, amount=0)
+        elif begin == end:
+            return types.SimpleNamespace(value=_1, amount=0)
+
+        else:
+            raise ValueError(f'end date {end} is not greater than begin date {begin}')
 
     @typeguard.typechecked
     def calculate_savings_factor(self, begin: datetime.date, end: datetime.date, percentage: int = 100) -> types.SimpleNamespace:
         '''Calculates the Brazilian Savings factor for a given period.'''
 
-        # Usa-se o 1º dia do mês seguinte como o aniversário dos dias 29, 30 e 31.
-        ini = begin if begin.day <= 28 else (begin + _MONTH).replace(day=1)
-        pct = decimal.Decimal(percentage) / decimal.Decimal(100)
-        fac = _1
-        mem = []
+        if begin <= end:
+            # Usa-se o 1º dia do mês seguinte como o aniversário dos dias 29, 30 e 31.
+            ini = begin if begin.day <= 28 else (begin + _MONTH).replace(day=1)
+            pct = decimal.Decimal(percentage) / decimal.Decimal(100)
+            fac = _1
+            mem = []
 
-        # Para cada mês, apenas um dos seus 28 índices será selecionado aqui. Lembrar que apenas nos primeiros 28 dias
-        # do mês tem-se publicação de Poupança. Se a data "begin" cair após do dia 28, considera-se o dia primeiro do
-        # mês subsequente. Considera como o índice do mês, M, aquele em que "M.begin_date.day" seja igual a
-        # "begin.day".
-        #
-        for x in self.get_savings_indexes(ini, end):
-            if ini.day == x.begin_date.day:
-                fac = fac * (_1 + pct * x.value / decimal.Decimal(100))
+            # Para cada mês, apenas um dos seus 28 índices será selecionado aqui. Lembrar que apenas nos primeiros 28 dias
+            # do mês tem-se publicação de Poupança. Se a data "begin" cair após do dia 28, considera-se o dia primeiro do
+            # mês subsequente. Considera como o índice do mês, M, aquele em que "M.begin_date.day" seja igual a
+            # "begin.day".
+            #
+            for x in self.get_savings_indexes(ini, end):
+                if ini.day == x.begin_date.day:
+                    fac = fac * (_1 + pct * x.value / decimal.Decimal(100))
 
-                mem.append(x)
+                    mem.append(x)
 
-                _LOG.debug(x)
+                    _LOG.debug(x)
 
-        return types.SimpleNamespace(value=fac, amount=len(mem))
+            if not mem:
+                _LOG.warning(f'no Savings indexes found between {ini.year:04d}-{ini.month:02d} and {end.year:04d}-{end.month:02d}')
+
+            return types.SimpleNamespace(value=fac, amount=len(mem))
+
+        raise ValueError(f'end date {end} is not greater than begin date {begin}')
 
     @typeguard.typechecked
     def calculate_ipca_factor(self, base: datetime.date, period: int, shift: _PL_SHIFT, ratio: decimal.Decimal = _1) -> types.SimpleNamespace:
@@ -964,6 +986,30 @@ class IndexStorageBackend:
         Calculates the IPCA correction factor.
 
         Takes as parameters the base date, period, shift, and a fraction for the last correction rate.
+
+        >>> from datetime import date
+        >>> from decimal import Decimal
+
+        >>> factor = Decimal('1.0054') * Decimal('1.0101') * Decimal('1.0162') * Decimal('1.0106') * Decimal('1.0047')
+        >>> factor = factor * Decimal('1.0067') * Decimal('0.9932') * Decimal('0.9964') * Decimal('0.9971')
+        >>> factor = factor * Decimal('1.0059') * Decimal('1.0041') * Decimal('1')
+
+        >>> backend = InMemoryBackend()
+        >>> backend.calculate_ipca_factor(date(2022, 1, 1), 12, 'AUTO').mem  # doctest: +NORMALIZE_WHITESPACE
+        [MonthlyIndex(date=datetime.date(2022, 1, 1), value=Decimal('0.54')),
+         MonthlyIndex(date=datetime.date(2022, 2, 1), value=Decimal('1.01')),
+         MonthlyIndex(date=datetime.date(2022, 3, 1), value=Decimal('1.62')),
+         MonthlyIndex(date=datetime.date(2022, 4, 1), value=Decimal('1.06')),
+         MonthlyIndex(date=datetime.date(2022, 5, 1), value=Decimal('0.47')),
+         MonthlyIndex(date=datetime.date(2022, 6, 1), value=Decimal('0.67')),
+         MonthlyIndex(date=datetime.date(2022, 7, 1), value=Decimal('-0.68')),
+         MonthlyIndex(date=datetime.date(2022, 8, 1), value=Decimal('-0.36')),
+         MonthlyIndex(date=datetime.date(2022, 9, 1), value=Decimal('-0.29')),
+         MonthlyIndex(date=datetime.date(2022, 10, 1), value=Decimal('0.59')),
+         MonthlyIndex(date=datetime.date(2022, 11, 1), value=Decimal('0.41')),
+         MonthlyIndex(date=datetime.date(2022, 12, 1), value=Decimal('0'))]
+        >>> backend.calculate_ipca_factor(date(2022, 1, 1), 12, 'AUTO').value == factor
+        True
         '''
 
         ini = base - _MONTH * t.get_args(_PL_SHIFT).index(shift)
@@ -975,6 +1021,12 @@ class IndexStorageBackend:
             exp = _1 if i != len(mem) - 1 else ratio
 
             fac = fac * (_1 + x.value / decimal.Decimal(100)) ** exp
+
+        if not mem and period == 1:
+            _LOG.warning(f'no IPCA indexes found for month {ini.year:04d}-{ini.month:02d} (base date is {base}, period is {period}, shift is {shift}, ratio is {ratio})')
+
+        elif not mem:
+            _LOG.warning(f'no IPCA indexes found between {ini.year:04d}-{ini.month:02d} and {end.year:04d}-{end.month:02d} (base date is {base}, period is {period}, shift is {shift}, ratio is {ratio})')
 
         return types.SimpleNamespace(value=fac, mem=mem)
 
@@ -1020,7 +1072,7 @@ class InMemoryBackend(IndexStorageBackend):
         (datetime.date(2017, 12, 29), datetime.date(2018, 2, 7),   decimal.Decimal('0.026444')),  # NOQA
         (datetime.date(2018, 2, 8),   datetime.date(2018, 3, 21),  decimal.Decimal('0.025515')),  # NOQA
         (datetime.date(2018, 3, 22),  datetime.date(2018, 9, 28),  decimal.Decimal('0.024583')),  # NOQA
-        (datetime.date(2018, 10, 1),  datetime.date(2019, 7, 31),  decimal.Decimal('0.024620')),  # NOQA
+        (datetime.date(2018, 9, 29),  datetime.date(2019, 7, 31),  decimal.Decimal('0.024620')),  # NOQA
         (datetime.date(2019, 8, 1),   datetime.date(2019, 9, 18),  decimal.Decimal('0.022751')),  # NOQA
         (datetime.date(2019, 9, 19),  datetime.date(2019, 10, 30), decimal.Decimal('0.020872')),  # NOQA
         (datetime.date(2019, 10, 31), datetime.date(2019, 12, 11), decimal.Decimal('0.018985')),  # NOQA
@@ -1039,9 +1091,17 @@ class InMemoryBackend(IndexStorageBackend):
         (datetime.date(2021, 12, 9),  datetime.date(2022, 2, 2),   decimal.Decimal('0.034749')),  # NOQA
         (datetime.date(2022, 2, 3),   datetime.date(2022, 3, 16),  decimal.Decimal('0.040168')),  # NOQA
         (datetime.date(2022, 3, 17),  datetime.date(2022, 5, 4),   decimal.Decimal('0.043739')),  # NOQA
-        (datetime.date(2022, 5, 5),   datetime.date(2022, 6, 15),  decimal.Decimal('0.047279')),  # NOQA
+        (datetime.date(2022, 5, 5),   datetime.date(2022, 6, 16),  decimal.Decimal('0.047279')),  # NOQA
         (datetime.date(2022, 6, 17),  datetime.date(2022, 8, 3),   decimal.Decimal('0.049037')),  # NOQA
-        (datetime.date(2022, 8, 4),   datetime.date(2022, 11, 14), decimal.Decimal('0.050788'))   # NOQA
+        (datetime.date(2022, 8, 4),   datetime.date(2023, 8, 2),   decimal.Decimal('0.050788')),  # NOQA
+        (datetime.date(2023, 8, 3),   datetime.date(2023, 9, 20),  decimal.Decimal('0.049037')),  # NOQA
+        (datetime.date(2023, 9, 21),  datetime.date(2023, 11, 2),  decimal.Decimal('0.047279')),  # NOQA
+        (datetime.date(2023, 11, 3),  datetime.date(2023, 12, 13), decimal.Decimal('0.045513')),  # NOQA
+        (datetime.date(2023, 12, 14), datetime.date(2024, 1, 31),  decimal.Decimal('0.043739')),  # NOQA
+        (datetime.date(2024, 2, 1),   datetime.date(2024, 3, 20),  decimal.Decimal('0.041957')),  # NOQA
+        (datetime.date(2024, 3, 21),  datetime.date(2024, 5, 8),   decimal.Decimal('0.040168')),  # NOQA
+        (datetime.date(2024, 5, 9),   datetime.date(2024, 9, 18),  decimal.Decimal('0.039270')),  # NOQA
+        (datetime.date(2024, 9, 19),  datetime.date(2025, 1, 31),  decimal.Decimal('0.040168')),  # NOQA FIXME: projeção aqui.
     ]
 
     # A repository of IPCA indexes.
@@ -1195,27 +1255,25 @@ class InMemoryBackend(IndexStorageBackend):
                                                                    '0.6516', '0.6793', '0.6799', '0.6801', '0.6796'] + ['0.6448'] * 18])  # As 17 taxas finais são estimadas.
     ]
 
+    # This method does not need to compensate for missing indexes (it does not rely on the BACEN API). It also does not
+    # project future indexes, as this is unsafe and should be reserved for specific backend implementations. One could
+    # create a "CdiIndexProjectingBackend" and plug it in the "vir" parameter of Fincore calls if index projection is
+    # desired.
+    #
     @typeguard.typechecked
-    def get_cdi_indexes(self, begin: datetime.date, end: datetime.date) -> t.Generator[DailyIndex, None, None]:
+    def get_cdi_indexes(self, begin: datetime.date, end: datetime.date, **_) -> t.Generator[DailyIndex, None, None]:
         if self._registry_cdi and self._registry_cdi[0] and begin >= self._registry_cdi[0][0] and end >= begin:
-            dzro = self._registry_cdi[0][0]
-            save = self._registry_cdi[0][2]
+            dref = self._registry_cdi[0][0]
 
-            for dzro, done, value in self._registry_cdi:
-                while dzro <= done:
-                    if dzro <= end:
-                        save = value
+            for dref, done, value in self._registry_cdi:
+                while dref <= done:
+                    if begin <= dref <= end and dref.weekday() < 5 and dref not in self._ignore_cdi:
+                        yield DailyIndex(date=dref, value=value)
 
-                    if begin <= dzro <= end and dzro.weekday() < 5 and dzro not in self._ignore_cdi:
-                        yield DailyIndex(date=dzro, value=value)
+                    elif begin <= dref <= end:
+                        yield DailyIndex(date=dref, value=_0)
 
-                    dzro += datetime.timedelta(days=1)
-
-            while dzro <= end:
-                if dzro >= begin and dzro.weekday() < 5 and dzro not in self._ignore_cdi:
-                    yield DailyIndex(date=dzro, value=save)
-
-                dzro += datetime.timedelta(days=1)
+                    dref += datetime.timedelta(days=1)
 
         elif self._registry_cdi and self._registry_cdi[0] and begin >= self._registry_cdi[0][0]:
             raise ValueError('the initial date must be greater than, or equal to, the end date')
@@ -1712,11 +1770,11 @@ def get_payments_table(
                     pmt = t.cast(PriceAdjustedPayment, pmt)
 
                     # Pays monetary correction over the principal amortization.
-                    if pmt.amort:
+                    if (pla := t.cast(PriceLevelAdjustment, ent1.price_level_adjustment)) and pmt.amort:
                         pmt.pla = pmt.amort * (f_c - 1)
 
                     # If there is no amortization in the period, monetary correction over the balance (principal) can still be paid.
-                    elif t.cast(PriceLevelAdjustment, ent1.price_level_adjustment).amortizes_adjustment:
+                    elif pla and pla.amortizes_adjustment:
                         pmt.pla = calc_balance(f_c) - calc_balance(_1)
 
                     pmt.raw = pmt.raw + pmt.pla
@@ -2097,7 +2155,7 @@ def get_daily_returns(
             regs.interest.settled.total += regs.interest.settled.current
             regs.interest.deferred = regs.interest.accrued - regs.interest.settled.total
 
-    def get_normalized_fixed_factors() -> t.Generator[FactorTriplet, None, None]:
+    def normalize_fixed_factors() -> t.Generator[FactorTriplet, None, None]:
         lst = [x for x in amortizations if type(x) is Amortization]
         acc = FactorTriplet()
 
@@ -2113,34 +2171,37 @@ def get_daily_returns(
 
                 yield acc
 
-    # Some indexes are only published by supervisor bodies on business days. For example, Brazilian DI. On such cases
-    # this function will fill in the gaps, i.e., return zero if missing from upstream.
-    #
-    # Some implementations of "IndexStorageBackend.get_cdi_indexes" return a generator, others might return a list.
-    # Hence the cast to "iter" below.
-    #
-    def get_normalized_cdi_indexes(backend: IndexStorageBackend) -> t.Generator[FactorTriplet, None, None]:
-        lst = iter(backend.get_cdi_indexes(amortizations[0].date, amortizations[-1].date))
+    def normalize_cdi_indexes(backend: IndexStorageBackend) -> t.Generator[FactorTriplet, None, None]:
+        gen = backend.get_cdi_indexes(amortizations[0].date, amortizations[-1].date - datetime.timedelta(days=1))
         pct = vir.percentage / decimal.Decimal(100) if vir else _1
-        idx = next(lst, None)
+        idx = next(gen, None)
         acc = FactorTriplet()
 
         for amort0, amort1 in itertools.pairwise(amortizations):
             for ref in _date_range(amort0.date, amort1.date):
-                if idx and ref == idx.date:
+                if idx and ref == idx.date and idx.value > 0:
                     acc = acc * (idx.value * pct / decimal.Decimal(100) + _1)
 
                     yield acc
 
-                    idx = next(lst, None)
+                    idx = next(gen, None)
+
+                elif idx and ref == idx.date:
+                    acc = acc * _1  # This multiplication is not a no-op!
+
+                    yield acc
+
+                    idx = next(gen, None)
 
                 else:
                     acc = acc * _1  # This multiplication is not a no-op!
 
                     yield acc
 
+                    _LOG.warning(f'CDI index for date {ref} was not found')
+
     # Poupança is a monthly index. This function will normalize it to daily values.
-    def get_normalized_savings_indexes(backend: IndexStorageBackend) -> t.Generator[FactorTriplet, None, None]:
+    def normalize_poupanca_indexes(backend: IndexStorageBackend) -> t.Generator[FactorTriplet, None, None]:
         pct = t.cast(VariableIndex, vir).percentage  # Mypy fails to detect that, despite "vir" being optional, here it can't be None.
         acc = FactorTriplet()
 
@@ -2165,23 +2226,21 @@ def get_daily_returns(
                         dt0 += datetime.timedelta(days=1)
 
     # IPCA is a monthly index. This function will normalize it to daily values.
-    def get_normalized_ipca_indexes(backend: IndexStorageBackend) -> t.Generator[FactorTriplet, None, None]:
-        dt0 = amortizations[0].date
+    def normalize_ipca_indexes(backend: IndexStorageBackend) -> t.Generator[FactorTriplet, None, None]:
         acc = FactorTriplet()
 
         for amort0, amort1 in itertools.pairwise([x for x in amortizations if type(x) is Amortization]):
             for i, (dt0, dt1, div) in enumerate(_generate_monthly_dates(amort0.date, amort1.date)):
                 if (pla := amort1.price_level_adjustment) and pla.base_date:
                     kwa: t.Dict[str, t.Any] = {}
-                    fac = _1
 
                     kwa['base'] = pla.base_date + _MONTH * i
                     kwa['period'] = pla.period if div == 1 else 1
                     kwa['shift'] = pla.shift
                     kwa['ratio'] = _1
 
-                    if (sns := backend.calculate_ipca_factor(**kwa)).mem:
-                        fac = max(sns.value, _1) - _1
+                    if (obj := backend.calculate_ipca_factor(**kwa)).mem:
+                        fac = max(obj.value, _1) - _1
                         fac = calculate_interest_factor(fac, _1 / (dt1 - dt0).days, False)
 
                         while dt0 < dt1:
@@ -2262,16 +2321,16 @@ def get_daily_returns(
     gens.interest_tracker_1.send(None)
     gens.interest_tracker_2.send(None)
 
-    idxs.fixed = get_normalized_fixed_factors()
+    idxs.fixed = normalize_fixed_factors()
 
     if vir and vir.code == 'CDI':
-        idxs.variable = get_normalized_cdi_indexes(vir.backend)
+        idxs.variable = normalize_cdi_indexes(vir.backend)
 
     elif vir and vir.code == 'IPCA':
-        idxs.variable = get_normalized_ipca_indexes(vir.backend)
+        idxs.variable = normalize_ipca_indexes(vir.backend)
 
     elif vir and vir.code == 'Poupança':
-        idxs.variable = get_normalized_savings_indexes(vir.backend)
+        idxs.variable = normalize_poupanca_indexes(vir.backend)
 
     elif vir:
         raise NotImplementedError(f'unsupported variable index {vir}')
@@ -2392,8 +2451,8 @@ def get_daily_returns(
 
             # Case of an advance (extraordinary amortization). See comments of the similar block in "get_payments_table".
             #
-            # FIXME: create a test case simulating a partial anticipation on day 2024-11-10 for project Mirante da Mata
-            # - Parcelas Amortizadas - 36 meses. This project has a grace period of six months, and it starts on day
+            # FIXME: create a test case simulating a partial anticipation on day 2024-11-10 for loan Mirante da Mata -
+            # Parcelas Amortizadas - 36 meses. This loan has a grace period of six months, and it starts on day
             # 2024-02-26. This means that there is deferred interest on November 2024. The advanced value value should
             # be greater than the interest of the month, so it also takes a part of the deferred interest. I want to
             # see if this block will behave properly.
