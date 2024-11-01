@@ -850,7 +850,7 @@ class IndexStorageBackend:
         '''
         Returns the list of CDI indexes between the begin and end date.
 
-        The begin date is inclusive. The end date is exclusive.
+        The begin and end dates are inclusive.
         '''
 
         raise NotImplementedError()
@@ -1262,7 +1262,7 @@ class InMemoryBackend(IndexStorageBackend):
     #
     @typeguard.typechecked
     def get_cdi_indexes(self, begin: datetime.date, end: datetime.date, **_) -> t.Generator[DailyIndex, None, None]:
-        if self._registry_cdi and self._registry_cdi[0] and begin >= self._registry_cdi[0][0] and end >= begin:
+        if self._registry_cdi and self._registry_cdi[0] and self._registry_cdi[0][0] <= begin <= end:
             dref = self._registry_cdi[0][0]
 
             for dref, done, value in self._registry_cdi:
