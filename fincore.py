@@ -146,6 +146,7 @@ But be aware that the notebook may be out of date.
 # Python.
 import sys
 import math
+import copy
 import types
 import typing as t
 import decimal
@@ -678,21 +679,27 @@ class Payment:
 
     It represents a payment at a given date.
 
-      • "no" is the payment's number;
+      • "no" is the payment's number.
 
-      • "date" is the date the payment should be done;
+      • "date" is the date the payment should be done.
 
-      • "raw" is the raw value of the payment;
+      • "raw" is the raw value of the payment.
 
-      • "tax" is the revenue tax to collect;
+      • "tax" is the revenue tax to collect.
 
-      • "net" is the net value to be payed;
+      • "net" is the net value to be payed.
 
-      • "gain" is the payment's interest;
+      • "gain" is the payment's interest.
 
-      • "amort" is the value amortized by the payment;
+      • "amort" is the value amortized by the payment.
 
       • "bal" is the current loan balance.
+
+      • "sf", is the spread, or fixed factor of the entry.
+
+      • "vf", is the variable factor of the entry.
+
+      • "_regs", is the state of the registrars at payment time.
     '''
 
     no: int = 0
@@ -715,6 +722,8 @@ class Payment:
 
     vf: decimal.Decimal = _1
 
+    _regs: types.SimpleNamespace = dataclasses.field(default_factory=types.SimpleNamespace)
+
 @dataclasses.dataclass
 class PriceAdjustedPayment(Payment):
     '''
@@ -733,7 +742,7 @@ class DailyReturn:
     '''
     An entry of a daily returns table.
 
-      • "no", is the number of the entry within a period;
+      • "no", is the number of the entry within a period.
 
       • "period", is the macro period's number. Refer to the "get_daily_returns" routine for a detailed explanation
         about periods.
@@ -846,7 +855,7 @@ class RangedIndex:
     value: decimal.Decimal = _0
 
 class IndexStorageBackend:
-    def get_cdi_indexes(self, begin: datetime.date, end: datetime.date, **kwargs) -> t.Generator[DailyIndex, None, None]:
+    def get_cdi_indexes(self, begin: datetime.date, end: datetime.date, **kwargs: dict[str, t.Any]) -> t.Generator[DailyIndex, None, None]:
         '''
         Returns the list of CDI indexes between the begin and end date.
 
@@ -1261,7 +1270,7 @@ class InMemoryBackend(IndexStorageBackend):
     # desired.
     #
     @typeguard.typechecked
-    def get_cdi_indexes(self, begin: datetime.date, end: datetime.date, **_) -> t.Generator[DailyIndex, None, None]:
+    def get_cdi_indexes(self, begin: datetime.date, end: datetime.date, **_: dict[str, t.Any]) -> t.Generator[DailyIndex, None, None]:
         if self._registry_cdi and self._registry_cdi[0] and self._registry_cdi[0][0] <= begin <= end:
             dref = self._registry_cdi[0][0]
 
@@ -1835,6 +1844,9 @@ def get_payments_table(
                 pmt.pla = _Q(pmt.pla)
 
                 pmt.cf = f_c
+
+            # B.2.3. Faz uma cópia dos registradores para a saída de pagamento.
+            pmt._regs = copy.deepcopy(regs)
 
             yield pmt
 
