@@ -948,7 +948,7 @@ class IndexStorageBackend:
                     idx = next(gen, None)
 
                 else:
-                    _LOG.warning(f'CDI index not found for date {x}')
+                    _LOG.warning(f'CDI index for date {x} was not found')
 
             return types.SimpleNamespace(value=fac, amount=cnt)
 
@@ -1782,12 +1782,16 @@ def get_payments_table(
                     if (pla := t.cast(PriceLevelAdjustment, ent1.price_level_adjustment)) and pmt.amort:
                         pmt.pla = pmt.amort * (f_c - 1)
 
-                    # If there is no amortization in the period, monetary correction over the balance (principal) can still be paid.
+                    # If there is no amortization in the period, monetary correction over the outstanding balance will
+                    # be paid, if "pla.amortizes_adjustment" is true. This happens with loans that have the American
+                    # Amortization system, by default. See the "amortizes_correction" parameter on the "preprocess_jm"
+                    # function.
+                    #
                     elif pla and pla.amortizes_adjustment:
                         pmt.pla = calc_balance(f_c) - calc_balance(_1)
 
                     pmt.raw = pmt.raw + pmt.pla
-                    pmt.tax = pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
+                    pmt.tax = _0 if tax_exempt else pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
 
             else:  # Implies "type(ent1) is Amortization.Bare".
                 pmt.amort = regs.principal.amortized.current
@@ -1809,7 +1813,7 @@ def get_payments_table(
 
                     pmt.pla = pmt.amort * (f_c - 1)
                     pmt.raw = pmt.raw + pmt.pla
-                    pmt.tax = pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
+                    pmt.tax = _0 if tax_exempt else pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
 
                 pmt.bal = calc_balance(f_c)
 
