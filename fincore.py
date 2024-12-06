@@ -2687,7 +2687,7 @@ def preprocess_jm(
         if vir and vir.code == 'IPCA' and amortizes_correction:
             ent.price_level_adjustment = PriceLevelAdjustment('IPCA')
 
-            ent.price_level_adjustment.base_date = zero_date.replace(day=1) + _MONTH * (i - 1)
+            ent.price_level_adjustment.base_date = zero_date.replace(day=1) + _MONTH * i
             ent.price_level_adjustment.period = 1
 
         elif vir and vir.code == 'IPCA':
@@ -2707,7 +2707,7 @@ def preprocess_jm(
             if skel.from_a and vir and vir.code == 'IPCA' and amortizes_correction:
                 skel.item.price_level_adjustment = PriceLevelAdjustment('IPCA')
 
-                skel.item.price_level_adjustment.base_date = zero_date.replace(day=1) + _MONTH * (skel.index_a - 1)
+                skel.item.price_level_adjustment.base_date = zero_date.replace(day=1) + _MONTH * skel.index_a
                 skel.item.price_level_adjustment.period = 1
 
             elif skel.from_a and vir and vir.code == 'IPCA':
