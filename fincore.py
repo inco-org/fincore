@@ -259,16 +259,14 @@ def _date_range(start_date: datetime.date, end_date: datetime.date) -> t.Generat
         iterator += datetime.timedelta(days=1)
 
 @typeguard.typechecked
-def _generate_monthly_dates(date0: datetime.date, date1: datetime.date) -> t.Generator[t.Tuple[datetime.date, datetime.date, int], None, None]:
-    delta = dateutil.relativedelta.relativedelta(date1, date0)
-    total = delta.years * 12 + delta.months
+def _generate_monthly_dates(date0: datetime.date, date1: datetime.date) -> t.Generator[t.Tuple[datetime.date, datetime.date], None, None]:
     index = date0
 
     while index < date1:
-        next_date = index + dateutil.relativedelta.relativedelta(months=+1)
+        next_date = index + dateutil.relativedelta.relativedelta(months=1)
         next_date = next_date.replace(day=date1.day)
 
-        yield (index, next_date, total)
+        yield (index, next_date)
 
         index = next_date
 
@@ -1027,7 +1025,7 @@ class IndexStorageBackend:
         fac = _1
 
         for i, x in enumerate(mem):
-            exp = _1 if i != len(mem) - 1 else ratio
+            exp = _1 if i != len(mem) - 1 else ratio  # The ratio applies only to the last of a series of items.
 
             fac = fac * (_1 + x.value / decimal.Decimal(100)) ** exp
 
@@ -1630,24 +1628,25 @@ def get_payments_table(
 
                 f_s = calculate_interest_factor(apy, decimal.Decimal(dcp) / (12 * decimal.Decimal(dct)))
 
-                if type(ent1) is Amortization.Bare or type(ent1) is Amortization and ent1.price_level_adjustment:
-                    if type(ent1) is Amortization and ent1.price_level_adjustment:
+                if type(ent1) is Amortization and ent1.price_level_adjustment or type(ent1) is Amortization.Bare:
+                    if type(ent1) is Amortization:
+                        pla = t.cast(PriceLevelAdjustment, ent1.price_level_adjustment)
                         kwc: t.Dict[str, t.Any] = {}
 
-                        kwc['base'] = ent1.price_level_adjustment.base_date
-                        kwc['period'] = ent1.price_level_adjustment.period
-                        kwc['shift'] = ent1.price_level_adjustment.shift
-                        kwc['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)  # Adjustment for the last correction rate.
+                        kwc['base'] = pla.base_date
+                        kwc['period'] = pla.period
+                        kwc['shift'] = pla.shift
+                        kwc['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)
 
                         f_c = max(vir.backend.calculate_ipca_factor(**kwc).value, _1)  # Lock the price level factor.
 
-                    else:
+                    else:  # Implies "type(ent1) is Amortization.Bare".
                         kwd: t.Dict[str, t.Any] = {}
 
                         kwd['base'] = amortizations[0].date.replace(day=1)
                         kwd['period'] = _delta_months(ent1.date, amortizations[0].date)
                         kwd['shift'] = 'M-1'  # FIXME.
-                        kwd['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)  # Adjustment for the last correction rate.
+                        kwd['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)
 
                         f_c = max(vir.backend.calculate_ipca_factor(**kwd).value, _1)  # Lock the price level factor.
 
@@ -2180,7 +2179,27 @@ def get_daily_returns(
                 fac = calculate_interest_factor(apy, _1 / decimal.Decimal(capitalisation))
 
             else:  # Implies "capitalisation == 30/360".
-                fac = calculate_interest_factor(apy, _1 / decimal.Decimal(12 * (amort1.date - amort0.date).days))
+                dct = (amort1.date - amort0.date).days
+
+                # Exclusively for the first anniversary date, "DCT" will be considered as the difference in calendar
+                # days between the 24th day before and the 24th day after the start of the loan.
+                #
+                if amort1.dct_override and amort0 is lst[0]:
+                    dct = _diff_surrounding_dates(amort0.date, 24)
+
+                elif amort1.dct_override:
+                    dct = (amort1.dct_override.date_to - amort1.dct_override.date_from).days
+
+                    if amort1.dct_override.predates_first_amortization:
+                        dct = _diff_surrounding_dates(amort1.dct_override.date_from, 24)
+
+                if amort0.dct_override:
+                    dct = (amort1.date - amort0.dct_override.date_from).days
+
+                    if amort0.dct_override.predates_first_amortization:
+                        dct = _diff_surrounding_dates(amort0.dct_override.date_from, 24)
+
+                fac = calculate_interest_factor(apy, _1 / decimal.Decimal(12 * dct))
 
             for _ in _date_range(amort0.date, amort1.date):
                 acc = acc * fac
@@ -2222,9 +2241,9 @@ def get_daily_returns(
         acc = FactorTriplet()
 
         for amort0, amort1 in itertools.pairwise([x for x in amortizations if type(x) is Amortization]):
-            for dt0, dt1, _ in _generate_monthly_dates(amort0.date, amort1.date):
+            for dt0, dt1 in _generate_monthly_dates(amort0.date, amort1.date):
                 if (obj := backend.calculate_savings_factor(dt0, dt1, pct)).amount:
-                    fac = calculate_interest_factor(obj.value - _1, _1 / (dt1 - dt0).days, False)
+                    fac = calculate_interest_factor(obj.value - _1, _1 / decimal.Decimal((dt1 - dt0).days), False)
 
                     while dt0 < dt1:
                         acc = acc * fac
@@ -2243,23 +2262,101 @@ def get_daily_returns(
 
     # IPCA is a monthly index. This function will normalize it to daily values.
     def normalize_ipca_indexes(backend: IndexStorageBackend) -> t.Generator[FactorTriplet, None, None]:
+        lst = [x for x in amortizations if type(x) is Amortization]
         acc = FactorTriplet()
 
-        for amort0, amort1 in itertools.pairwise([x for x in amortizations if type(x) is Amortization]):
-            for i, (dt0, dt1, div) in enumerate(_generate_monthly_dates(amort0.date, amort1.date)):
+        # FIXME 1: write a Bullet IPCA test, to cover the "if" block below.
+        #
+        # FIXME 2: write another test case to ensure that the Bullet IPCA payments generated with "get_payments_table"
+        # match the values generated by this function.
+        #
+        if len(lst) == 2:
+            for amort0, amort1 in itertools.pairwise(lst):
+                for i, (dt0, dt1) in enumerate(_generate_monthly_dates(amort0.date, amort1.date)):
+                    if (pla := amort1.price_level_adjustment) and pla.base_date:
+                        kwa: t.Dict[str, t.Any] = {}
+                        dcp = dct = (dt1 - amort0.date).days
+
+                        if amort1.dct_override and i == 0:
+                            dct = _diff_surrounding_dates(amort0.date, 24)
+
+                        elif amort1.dct_override:
+                            dct = (amort1.dct_override.date_to - amort1.dct_override.date_from).days
+
+                            if amort1.dct_override.predates_first_amortization:
+                                dct = _diff_surrounding_dates(amort1.dct_override.date_from, 24)
+
+                        if amort0.dct_override:
+                            dct = (amort1.date - amort0.dct_override.date_from).days
+
+                            if amort0.dct_override.predates_first_amortization:
+                                dct = _diff_surrounding_dates(amort0.dct_override.date_from, 24)
+
+                        kwa['base'] = pla.base_date + _MONTH * i
+                        kwa['period'] = 1
+                        kwa['shift'] = pla.shift
+                        kwa['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)
+
+                        if (obj := backend.calculate_ipca_factor(**kwa)).mem:
+                            fac = max(obj.value, _1) - _1
+                            fac = calculate_interest_factor(fac, _1 / decimal.Decimal(dcp), False)
+
+                            while dt0 < dt1:
+                                acc = acc * fac
+
+                                yield acc
+
+                                dt0 += datetime.timedelta(days=1)
+
+                        else:
+                            while dt0 < dt1:
+                                acc = acc * _1  # This multiplication is not a no-op!
+
+                                yield acc
+
+                                dt0 += datetime.timedelta(days=1)
+
+                    else:
+                        while dt0 < amort1.date:
+                            acc = acc * _1  # This multiplication is not a no-op!
+
+                            yield acc
+
+                            dt0 += datetime.timedelta(days=1)
+
+        else:
+            for i, (amort0, amort1) in enumerate(itertools.pairwise(lst)):
+                dt0 = amort0.date
+
                 if (pla := amort1.price_level_adjustment) and pla.base_date:
                     kwa: t.Dict[str, t.Any] = {}
+                    dcp = dct = (amort1.date - amort0.date).days
 
-                    kwa['base'] = pla.base_date + _MONTH * i
-                    kwa['period'] = pla.period if div == 1 else 1
+                    if amort1.dct_override and i == 0:
+                        dct = _diff_surrounding_dates(amort0.date, 24)
+
+                    elif amort1.dct_override:
+                        dct = (amort1.dct_override.date_to - amort1.dct_override.date_from).days
+
+                        if amort1.dct_override.predates_first_amortization:
+                            dct = _diff_surrounding_dates(amort1.dct_override.date_from, 24)
+
+                    if amort0.dct_override:
+                        dct = (amort1.date - amort0.dct_override.date_from).days
+
+                        if amort0.dct_override.predates_first_amortization:
+                            dct = _diff_surrounding_dates(amort0.dct_override.date_from, 24)
+
+                    kwa['base'] = pla.base_date
+                    kwa['period'] = pla.period
                     kwa['shift'] = pla.shift
-                    kwa['ratio'] = _1
+                    kwa['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)
 
                     if (obj := backend.calculate_ipca_factor(**kwa)).mem:
                         fac = max(obj.value, _1) - _1
-                        fac = calculate_interest_factor(fac, _1 / (dt1 - dt0).days, False)
+                        fac = calculate_interest_factor(fac, _1 / decimal.Decimal(dcp), False)
 
-                        while dt0 < dt1:
+                        while dt0 < amort1.date:
                             acc = acc * fac
 
                             yield acc
@@ -2267,7 +2364,7 @@ def get_daily_returns(
                             dt0 += datetime.timedelta(days=1)
 
                     else:
-                        while dt0 < dt1:
+                        while dt0 < amort1.date:
                             acc = acc * _1  # This multiplication is not a no-op!
 
                             yield acc

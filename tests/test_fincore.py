@@ -56,8 +56,8 @@ def _tail(n, iterable):
 
     return iter(collections.deque(iterable, maxlen=n))
 
-class _AsadIpcaBackend(fincore.InMemoryBackend):
-    '''A richer ICPA backend to test the loan to ASAD Energia.'''
+class _RicherIpcaBackend(fincore.InMemoryBackend):
+    '''A richer ICPA backend.'''
 
     # FIXME: enrich "fincore.InMemoryBackend" with this data. Might break some test cases.
     _registry_ipca = [
@@ -100,7 +100,8 @@ class _AsadIpcaBackend(fincore.InMemoryBackend):
         (datetime.date(2024, 1, 1), decimal.Decimal('0.42')),   (datetime.date(2024, 2, 1), decimal.Decimal('0.83')),    # NOQA
         (datetime.date(2024, 3, 1), decimal.Decimal('0.16')),   (datetime.date(2024, 4, 1), decimal.Decimal('0.38')),    # NOQA
         (datetime.date(2024, 5, 1), decimal.Decimal('0.46')),   (datetime.date(2024, 6, 1), decimal.Decimal('0.21')),    # NOQA
-        (datetime.date(2024, 7, 1), decimal.Decimal('0.38')),   (datetime.date(2024, 8, 1), decimal.Decimal('-0.02'))    # NOQA
+        (datetime.date(2024, 7, 1), decimal.Decimal('0.38')),   (datetime.date(2024, 8, 1), decimal.Decimal('-0.02')),   # NOQA
+        (datetime.date(2024, 9, 1), decimal.Decimal('0.44')),   (datetime.date(2024, 10, 1), decimal.Decimal('0.56'))    # NOQA
     ]
 
 # 🚩 Parametrizações inválidas. {{{
@@ -5142,7 +5143,7 @@ def test_will_create_loan_daily_returns_livre_6():
 
     kwa['principal'] = decimal.Decimal('145000')
     kwa['apy'] = decimal.Decimal('10')
-    kwa['vir'] = fincore.VariableIndex(code='IPCA', backend=_AsadIpcaBackend())
+    kwa['vir'] = fincore.VariableIndex(code='IPCA', backend=_RicherIpcaBackend())
     kwa['amortizations'] = []
 
     kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2022, 4, 5), amortizes_interest=False))
@@ -5434,15 +5435,87 @@ def test_will_create_loan_daily_returns_livre_6():
             assert entry.value == decimal.Decimal(tst[i][5])
             assert entry.bal == decimal.Decimal(tst[i][6])
 
-@pytest.mark.skip(reason='Not implemented yet.')
 def test_will_create_loan_daily_returns_jm_1():
+    '''
+    Operação CRI - Max Tulum (Isento de IR).
+
+    Juros mensais IPCA.
+
+    Ref File: https://docs.google.com/spreadsheets/d/1vzW6Kz_NvLRHj8WZv2dSSGSvHauwhM7eCS5YfQ_ohng
+    Tab.....: Max Tulum
+    '''
+
+    kwa = {}
+    tst = {}
+
+    kwa['principal'] = decimal.Decimal('11_000_000')
+    kwa['apy'] = decimal.Decimal('10.84')
+    kwa['zero_date'] = datetime.date(2024, 10, 30)
+    kwa['term'] = 39
+    kwa['anniversary_date'] = datetime.date(2024, 12, 7)
+    kwa['vir'] = fincore.VariableIndex('IPCA', backend=_RicherIpcaBackend())
+
+    # Data, fator de spread, fator de correção, correção, juros, saldo.
+    tst[1] = datetime.date(2024, 10, 30), '1.00027670', '1.00018016', '1981.73', '3044.23', '11005025.96'
+    tst[2] = datetime.date(2024, 10, 31), '1.00027670', '1.00018016', '1982.09', '3046.17', '11010054.22'
+    tst[3] = datetime.date(2024, 11, 1), '1.00027670', '1.00018016', '1982.45', '3048.11', '11015084.78'
+    tst[4] = datetime.date(2024, 11, 2), '1.00027670', '1.00018016', '1982.80', '3050.05', '11020117.63'
+    tst[5] = datetime.date(2024, 11, 3), '1.00027670', '1.00018016', '1983.16', '3051.99', '11025152.78'
+    tst[6] = datetime.date(2024, 11, 4), '1.00027670', '1.00018016', '1983.52', '3053.94', '11030190.24'
+    tst[7] = datetime.date(2024, 11, 5), '1.00027670', '1.00018016', '1983.88', '3055.88', '11035229.99'
+    tst[8] = datetime.date(2024, 11, 6), '1.00027670', '1.00018016', '1984.23', '3057.83', '11040272.05'
+    tst[9] = datetime.date(2024, 11, 7), '1.00027670', '1.00018016', '1984.59', '3059.77', '11045316.41'
+    tst[10] = datetime.date(2024, 11, 8), '1.00027670', '1.00018016', '1984.95', '3061.72', '11050363.08'
+    tst[11] = datetime.date(2024, 11, 9), '1.00027670', '1.00018016', '1985.31', '3063.67', '11055412.06'
+    tst[12] = datetime.date(2024, 11, 10), '1.00027670', '1.00018016', '1985.66', '3065.62', '11060463.33'
+    tst[13] = datetime.date(2024, 11, 11), '1.00027670', '1.00018016', '1986.02', '3067.57', '11065516.92'
+    tst[14] = datetime.date(2024, 11, 12), '1.00027670', '1.00018016', '1986.38', '3069.52', '11070572.82'
+    tst[15] = datetime.date(2024, 11, 13), '1.00027670', '1.00018016', '1986.74', '3071.47', '11075631.03'
+    tst[16] = datetime.date(2024, 11, 14), '1.00027670', '1.00018016', '1987.09', '3073.42', '11080691.54'
+    tst[17] = datetime.date(2024, 11, 15), '1.00027670', '1.00018016', '1987.45', '3075.38', '11085754.38'
+    tst[18] = datetime.date(2024, 11, 16), '1.00027670', '1.00018016', '1987.81', '3077.33', '11090819.52'
+    tst[19] = datetime.date(2024, 11, 17), '1.00027670', '1.00018016', '1988.17', '3079.29', '11095886.98'
+    tst[20] = datetime.date(2024, 11, 18), '1.00027670', '1.00018016', '1988.53', '3081.25', '11100956.75'
+    tst[21] = datetime.date(2024, 11, 19), '1.00027670', '1.00018016', '1988.88', '3083.20', '11106028.84'
+    tst[22] = datetime.date(2024, 11, 20), '1.00027670', '1.00018016', '1989.24', '3085.16', '11111103.25'
+    tst[23] = datetime.date(2024, 11, 21), '1.00027670', '1.00018016', '1989.60', '3087.12', '11116179.97'
+    tst[24] = datetime.date(2024, 11, 22), '1.00027670', '1.00018016', '1989.96', '3089.09', '11121259.02'
+    tst[25] = datetime.date(2024, 11, 23), '1.00027670', '1.00018016', '1990.32', '3091.05', '11126340.38'
+    tst[26] = datetime.date(2024, 11, 24), '1.00027670', '1.00018016', '1990.68', '3093.01', '11131424.07'
+    tst[27] = datetime.date(2024, 11, 25), '1.00027670', '1.00018016', '1991.04', '3094.97', '11136510.08'
+    tst[28] = datetime.date(2024, 11, 26), '1.00027670', '1.00018016', '1991.39', '3096.94', '11141598.41'
+    tst[29] = datetime.date(2024, 11, 27), '1.00027670', '1.00018016', '1991.75', '3098.91', '11146689.07'
+    tst[30] = datetime.date(2024, 11, 28), '1.00027670', '1.00018016', '1992.11', '3100.87', '11151782.06'
+    tst[31] = datetime.date(2024, 11, 29), '1.00027670', '1.00018016', '1992.47', '3102.84', '11156877.37'
+    tst[32] = datetime.date(2024, 11, 30), '1.00027670', '1.00018016', '1992.83', '3104.81', '11161975.01'
+    tst[33] = datetime.date(2024, 12, 1), '1.00027670', '1.00018016', '1993.19', '3106.78', '11167074.98'
+    tst[34] = datetime.date(2024, 12, 2), '1.00027670', '1.00018016', '1993.55', '3108.75', '11172177.28'
+    tst[35] = datetime.date(2024, 12, 3), '1.00027670', '1.00018016', '1993.91', '3110.72', '11177281.91'
+    tst[36] = datetime.date(2024, 12, 4), '1.00027670', '1.00018016', '1994.27', '3112.70', '11182388.87'
+    tst[37] = datetime.date(2024, 12, 5), '1.00027670', '1.00018016', '1994.63', '3114.67', '11187498.17'
+    tst[38] = datetime.date(2024, 12, 6), '1.00027670', '1.00018016', '1994.98', '3116.65', '11192609.80'
+
+    for i, entry in enumerate(itertools.islice(fincore.get_jm_daily_returns(**kwa), 0, 38), 1):
+        assert entry.date == tst[i][0]
+
+        # Fator fixo, saldo, valor do rendimento.
+        assert entry.period == 1
+        assert entry.no == i
+        assert math.isclose(entry.sf, decimal.Decimal(tst[i][1]), rel_tol=1e-8)
+        assert math.isclose(t.cast(fincore.PriceAdjustedDailyReturn, entry).cf, decimal.Decimal(tst[i][2]), rel_tol=1e-8)
+        assert t.cast(fincore.PriceAdjustedDailyReturn, entry).pla == decimal.Decimal(tst[i][3])
+        assert entry.value == decimal.Decimal(tst[i][4])
+        assert entry.bal == decimal.Decimal(tst[i][5])
+
+@pytest.mark.skip(reason='Not implemented yet.')
+def test_will_create_loan_daily_returns_jm_2():
     '''
     Operação Palazzo Saldanha - Juros mensais - 9 meses.
 
     Três antecipações, duas parciais e uma total.
 
     Ref File: https://docs.google.com/spreadsheets/d/1vzW6Kz_NvLRHj8WZv2dSSGSvHauwhM7eCS5YfQ_ohng
-    Tab.....:  Palazzo Saldanha
+    Tab.....: Palazzo Saldanha
     '''
 
     pass  # FIXME: implementar. Já está em planilha de testes.
