@@ -2329,7 +2329,7 @@ def get_daily_returns(
                 dt0 = amort0.date
 
                 if (pla := amort1.price_level_adjustment) and pla.base_date:
-                    kwa: t.Dict[str, t.Any] = {}
+                    kwb: t.Dict[str, t.Any] = {}
                     dcp = dct = (amort1.date - amort0.date).days
 
                     if amort1.dct_override and i == 0:
@@ -2347,12 +2347,12 @@ def get_daily_returns(
                         if amort0.dct_override.predates_first_amortization:
                             dct = _diff_surrounding_dates(amort0.dct_override.date_from, 24)
 
-                    kwa['base'] = pla.base_date
-                    kwa['period'] = pla.period
-                    kwa['shift'] = pla.shift
-                    kwa['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)
+                    kwb['base'] = pla.base_date
+                    kwb['period'] = pla.period
+                    kwb['shift'] = pla.shift
+                    kwb['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)
 
-                    if (obj := backend.calculate_ipca_factor(**kwa)).mem:
+                    if (obj := backend.calculate_ipca_factor(**kwb)).mem:
                         fac = max(obj.value, _1) - _1
                         fac = calculate_interest_factor(fac, _1 / decimal.Decimal(dcp), False)
 
