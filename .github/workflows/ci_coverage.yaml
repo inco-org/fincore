@@ -38,3 +38,5 @@ jobs:
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_PR_RUN_ID: ${{ github.event.workflow_run.id }}
+          COVERAGE_DATA_BRANCH: cov-data
+          MINIMUM_GREEN: 95
