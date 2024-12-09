@@ -2784,13 +2784,23 @@ def preprocess_jm(
         if vir and vir.code == 'IPCA' and amortizes_correction:
             ent.price_level_adjustment = PriceLevelAdjustment('IPCA')
 
-            ent.price_level_adjustment.base_date = zero_date.replace(day=1) + _MONTH * i
+            # The base date is one month before the payment.
+            #
+            # See section "Juros mensais", subsection "IPCA", on the Biblioteca Financeira INCO Jupyter notebook.
+            #
+            #  “ n é o número de taxas de correção divulgadas entre um (1) mês anterior à data de início da primeira
+            #    prestação e um (1) mês anterior à data de início da prestação calculada ”
+            #
+            #  –– Biblioteca Financeira INCO
+            #     https://github.com/inco-org/fincore/blob/master/labs/fincore-01.ipynb
+            #
+            ent.price_level_adjustment.base_date = due.replace(day=1) - _MONTH
             ent.price_level_adjustment.period = 1
 
         elif vir and vir.code == 'IPCA':
             ent.price_level_adjustment = PriceLevelAdjustment('IPCA')
 
-            ent.price_level_adjustment.base_date = zero_date.replace(day=1)
+            ent.price_level_adjustment.base_date = due.replace(day=1) - _MONTH  # See the previous block's comments.
             ent.price_level_adjustment.period = i
             ent.price_level_adjustment.amortizes_adjustment = i == term
 

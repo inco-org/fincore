@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='fincore',
-    version='4.1.3',
+    version='4.1.4',
     description='A financial core library',
     author='Rafael Viotti',
     author_email='viotti@inco.vc',
