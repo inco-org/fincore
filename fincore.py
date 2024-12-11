@@ -1781,10 +1781,10 @@ def get_payments_table(
                     if (pla := t.cast(PriceLevelAdjustment, ent1.price_level_adjustment)) and pmt.amort:
                         pmt.pla = pmt.amort * (f_c - 1)
 
-                    # If there is no amortization in the period, monetary correction over the outstanding balance will
-                    # be paid, if "pla.amortizes_adjustment" is true. This happens with loans that have the American
-                    # Amortization system, by default. See the "amortizes_correction" parameter on the "preprocess_jm"
-                    # function.
+                    # If there is no principal amortization in the period, and "pla.amortizes_adjustment" is true, then
+                    # "pmt.pla" will be the value of monetary correction of the outstanding balance. This s what
+                    # happens with loans that have the American Amortization system, by default. See the
+                    # "amortizes_correction" parameter on the "preprocess_jm" function.
                     #
                     elif pla and pla.amortizes_adjustment:
                         pmt.pla = calc_balance(f_c) - calc_balance(_1)
@@ -2781,26 +2781,54 @@ def preprocess_jm(
         if i == 1 and anniversary_date:
             ent.dct_override = DctOverride(anniversary_date, anniversary_date, predates_first_amortization=False)
 
+        # American Amortization systems have, by default, a shift configuration of M-2 months, and a period of one a
+        # single index, for each payment. This means that, for a payment P on day D of month M, we consider the IPCA
+        # index of two months prior to M. If M is December of 2024, for example, then the index of October 2024 should
+        # be used.
+        #
+        # See section "Juros mensais", subsections "Indexador IPCA", on the Biblioteca Financeira INCO Jupyter notebook.
+        #
+        #   https://github.com/inco-org/fincore/blob/master/labs/fincore-01.ipynb
+        #
         if vir and vir.code == 'IPCA' and amortizes_correction:
             ent.price_level_adjustment = PriceLevelAdjustment('IPCA')
 
-            # The base date is one month before the payment.
-            #
-            # See section "Juros mensais", subsection "IPCA", on the Biblioteca Financeira INCO Jupyter notebook.
-            #
-            #  “ n é o número de taxas de correção divulgadas entre um (1) mês anterior à data de início da primeira
-            #    prestação e um (1) mês anterior à data de início da prestação calculada ”
-            #
-            #  –– Biblioteca Financeira INCO
-            #     https://github.com/inco-org/fincore/blob/master/labs/fincore-01.ipynb
-            #
-            ent.price_level_adjustment.base_date = due.replace(day=1) - _MONTH
+            ent.price_level_adjustment.shift = 'M-2'
+            ent.price_level_adjustment.base_date = due.replace(day=1)
             ent.price_level_adjustment.period = 1
+            ent.price_level_adjustment.amortizes_adjustment = True
 
+        # When the "amortizes_correction" parameter is False, the IPCA index should behave similarly to its monthly
+        # amortized counterpart: the shift configuration is equal to M-2 months, and the base date is constant on all
+        # iterations. It should be equal to the date of the first payment. The period should increase by one for each
+        # iteration, starting with one. The monetary correction will be settled on the last iteration – that's when
+        # "i == term", and the "amortizes_adjustment" flag becomes true.
+        #
+        # To help understand the concept, consider three payments, P1, P2, and P3. Assume P1 should be payed on day D
+        # of month M. Subsequent payments are due one month after the previous one.
+        #
+        #   • For P1, the base date is day one of M. The period is one, which means a single IPCA index will be
+        #     evaluated on the monetary correction calculation. The monetary correction value will not be settled,
+        #     since "amortizes_adjustment" is false.
+        #
+        #   • For P2, the base date is still day one of M. The period is now two, which means two IPCA indexes will be
+        #     evaluated on the monetary correction calculation. The monetary correction value will not be settled
+        #     either.
+        #
+        #   • For P3, the base date is still day one of M. The period is now three, which means three IPCA indexes will
+        #     be evaluated on the monetary correction calculation. The monetary correction value will be settled, since
+        #     "amortizes_adjustment" is true.
+        #
+        # Also consider an American Amortization system with a single monetary correction settlement on its last
+        # payment, LP. Do not expect the monetary correction of LP, "LP.pla", to be equal to the sum of the monetary
+        # corrections of another American Amortization system with the same properties, but amortizing corrections
+        # monthly.
+        #
         elif vir and vir.code == 'IPCA':
             ent.price_level_adjustment = PriceLevelAdjustment('IPCA')
 
-            ent.price_level_adjustment.base_date = due.replace(day=1) - _MONTH  # See the previous block's comments.
+            ent.price_level_adjustment.shift = 'M-2'
+            ent.price_level_adjustment.base_date = anniversary_date.replace(day=1) if anniversary_date else zero_date.replace(day=1) + _MONTH
             ent.price_level_adjustment.period = i
             ent.price_level_adjustment.amortizes_adjustment = i == term
 
@@ -2814,14 +2842,18 @@ def preprocess_jm(
             if skel.from_a and vir and vir.code == 'IPCA' and amortizes_correction:
                 skel.item.price_level_adjustment = PriceLevelAdjustment('IPCA')
 
-                skel.item.price_level_adjustment.base_date = zero_date.replace(day=1) + _MONTH * skel.index_a
+                skel.item.price_level_adjustment.shift = 'M-2'
+                skel.item.price_level_adjustment.base_date = skel.item.date.replace(day=1)
                 skel.item.price_level_adjustment.period = 1
+                skel.item.price_level_adjustment.amortizes_adjustment = True  # Redundant, since monetary correction is always settled on insertions.
 
             elif skel.from_a and vir and vir.code == 'IPCA':
                 skel.item.price_level_adjustment = PriceLevelAdjustment('IPCA')
 
-                skel.item.price_level_adjustment.base_date = zero_date.replace(day=1)
+                skel.item.price_level_adjustment.shift = 'M-2'
+                skel.item.price_level_adjustment.base_date = anniversary_date.replace(day=1) if anniversary_date else zero_date.replace(day=1) + _MONTH
                 skel.item.price_level_adjustment.period = skel.index_a
+                skel.item.price_level_adjustment.amortizes_adjustment = True  # Redundant, since monetary correction is always settled on insertions.
 
             if skel.from_b:
                 date1 = lst1[skel.index_a - 1].date
