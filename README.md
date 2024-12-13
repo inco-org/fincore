@@ -14,7 +14,7 @@ The library supports not only regular flows, but also irregular ones, with prepa
 
 The `get_payments_table` function generates a table of payments from a minimum of three parameters: the amount of money invested (principal); the annual return rate, as a percentage (apy); and an amortization schedule.
 
-The amortization schedule is nothing more than a list of monthly amortizations. Each amortization is a monlthy entry, and provides basic information on how on a given date.
+The amortization schedule is nothing more than a list of monthly amortizations. Each amortization is a monlthy entry, and provides basic information on how the algorithm behaves on a given date.
 
 1. The date of the amortization.
 2. What percentage of the principal will be amortized on that date. This percentage can be zero.
@@ -24,13 +24,12 @@ The amortization schedule should abide to some provisors, otherwise expect the f
 
 1. The first amortization represents the date the loan starts generating interest. It does not represent a settlement, hence, its amortization ratio must be zero, and the interest amortization flag must be false.
 2. The amortization ratio must sum to one with a precision of at least 10 decimal places. This means that on the last amortization, the principal will have been entirely settled.
+3. All amortizations must occur strictly on a monthly basis, with no gaps allowed. If no settlement is scheduled for a given month, you must still include an entry with ratio equal to zero, and no interest amortization, just as in the first entry of the schedule.
 
 ### Example Usage
 
 ```python
-import decimal
-import datetime
-import fincore
+import decimal, datetime, fincore
 
 amortizations = [
     fincore.Amortization(date=datetime.date(2022, 3, 9), amortizes_interest=False),
@@ -53,9 +52,7 @@ The `get_daily_returns` function generates a table of daily returns from a list 
 ### Example Usage
 
 ```python
-import decimal
-import datetime
-import fincore
+import decimal, datetime, fincore
 
 amortizations = [
     fincore.Amortization(date=datetime.date(2022, 3, 9), amortizes_interest=False),
