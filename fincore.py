@@ -2656,7 +2656,8 @@ def preprocess_bullet(
     anniversary_date: t.Optional[datetime.date] = None,
     capitalisation: _DAILY_CAPITALISATION = '360',
     vir: t.Optional[VariableIndex] = None,
-    calc_date: t.Optional[CalcDate] = None  # Pass through.
+    calc_date: t.Optional[CalcDate] = None,
+    verbose: bool = True
 ) -> t.List[Amortization | Amortization.Bare]:
     sched: t.List[Amortization | Amortization.Bare] = []
 
@@ -2684,7 +2685,7 @@ def preprocess_bullet(
             raise ValueError(f'"insertions[{i}].date", {x.date}, succeeds "anniversary_date", {anniversary_date}')
 
     # Base of calculation 365 only for historical fixed-rate. Fincore recommends using 360 days instead.
-    if capitalisation == '365':
+    if capitalisation == '365' and verbose:
         _LOG.warning('capitalising 365 days per year exists solely for legacy Bullet support – prefer 360 days')
 
     # 2.1. Create the amortizations. Regular flow, without insertions. Fast.
@@ -3004,29 +3005,19 @@ def build_bullet(
     capitalisation: _DAILY_CAPITALISATION = '360',
     tax_exempt: t.Optional[bool] = False,
     calc_date: t.Optional[CalcDate] = None,
-    gain_output: _GAIN_OUTPUT_MODE = 'current'
+    gain_output: _GAIN_OUTPUT_MODE = 'current',
+    verbose: bool = True
 ) -> t.Generator[Payment, None, None]:
     '''
     Stereotypes a Bullet operation.
 
-    In addition to the initial principal value and the annual percentage rate, "apy", this function receives the initial
-    yield date, "zero_date", and its term, "term". With this, it generates a Bullet amortization schedule, and from it
-    derives the payment values, by calling "fincore.get_payments_table". Note that Bullet is
-    characterized by only one payment, but the regular schedule has two entries: the start of the yield and the
-    final, total amortization.
+    In addition to the initial principal value and the annual percentage rate, "apy", this function receives the
+    starting date of the bullet loan, "zero_date", and its term, "term". With this, it generates an amortization
+    schedule, by calling "fincore.get_payments_table". Note that although this system is characterized by a single
+    payment, the generated schedule will have at least two entries: one for the starting date, and another for the
+    final amortization (which could be an anticipation, if insertions are provided).
 
-    Furthermore, when you want to simulate one or more early payments, total or partial, this function performs the
-    prerequisites.
-
-      • Inserts the prepayments into the regular Bullet flow.
-
-      • Applies the monetary correction informed in the "vir" parameter. Uses "M-1" shift automatically. The
-        correction accumulates until the last payment, whether planned or a total prepayment.
-
-      • Automatically uses the "360" adjustment for fixed-rate operations, and "252" for post-fixed. Accepts "365" for
-        legacy operations. Parameter "capitalisation".
-
-    Prepayments go in the "insertions" parameter. It is a list of "obj" objects, where,
+    Prepayments go in the "insertions" parameter. It is a list of "Amortization.Bare" instances, where,
 
       • "obj.date" is the prepayment date.
 
@@ -3039,7 +3030,19 @@ def build_bullet(
 
     kwa['principal'] = principal
     kwa['apy'] = apy
-    kwa['amortizations'] = preprocess_bullet(zero_date, term, insertions, anniversary_date, capitalisation, vir, calc_date)
+
+    # The purpose of the "preprocess_bullet" helper is to generate the amortizations list, which is required by the
+    # "get_payments_table" routine. Amongst its responsibilities are the following:
+    #
+    #   • Combine prepayments with the regular flow.
+    #
+    #   • Apply monetary correction informed in the "vir" parameter, using the "M-1" shift automatically. The correction
+    #     accumulates until the last payment, whether planned or a total prepayment.
+    #
+    #   • Automatically uses the "360" adjustment for fixed rate operations, and "252" for postfixed. Accepts "365" for
+    #     legacy operations. See the "capitalisation" parameter.
+    #
+    kwa['amortizations'] = preprocess_bullet(zero_date, term, insertions, anniversary_date, capitalisation, vir, calc_date, verbose)
 
     kwa['vir'] = vir
     kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else capitalisation
