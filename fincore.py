@@ -3239,13 +3239,14 @@ def get_bullet_daily_returns(
     anniversary_date: t.Optional[datetime.date] = None,
     vir: t.Optional[VariableIndex] = None,
     capitalisation: _DAILY_CAPITALISATION = '360',
-    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
+    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True,
+    verbose: bool = True
 ) -> t.Generator[DailyReturn, None, None]:
     kwa: t.Dict[str, t.Any] = {}
 
     kwa['principal'] = principal
     kwa['apy'] = apy
-    kwa['amortizations'] = preprocess_bullet(zero_date, term, insertions, anniversary_date, capitalisation, vir, calc_date=None)
+    kwa['amortizations'] = preprocess_bullet(zero_date, term, insertions, anniversary_date, capitalisation, vir, calc_date=None, verbose=verbose)
     kwa['vir'] = vir
     kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else capitalisation
     kwa['is_bizz_day_cb'] = is_bizz_day_cb
