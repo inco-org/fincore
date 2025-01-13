@@ -220,6 +220,9 @@ _DAILY_CAPITALISATION = t.Literal['252', '360', '365']
 # Gain output mode.
 _GAIN_OUTPUT_MODE = t.Literal['current', 'deferred', 'settled']
 
+# First DCT rule.
+_FIRST_DCT_RULE = t.Literal['30', '31', 'AUTO']
+
 # Helpers. {{{
 @typeguard.typechecked
 def _delta_months(d1: datetime.date, d2: datetime.date) -> int:
@@ -1353,6 +1356,7 @@ def get_payments_table(
     capitalisation: _CAPITALISATION = '360',
     calc_date: t.Optional[CalcDate] = None,
     tax_exempt: t.Optional[bool] = False,
+    first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
     gain_output: _GAIN_OUTPUT_MODE = 'current'
 ) -> t.Generator[Payment, None, None]:
     '''
@@ -1611,20 +1615,24 @@ def get_payments_table(
                 dcp = (due - ent0.date).days
                 dct = (ent1.date - ent0.date).days
 
-                if ent1.dct_override and num == 1:
-                    dct = _diff_surrounding_dates(ent0.date, 24)
+                if first_dct_rule == 'AUTO' or num > 1:
+                    if ent1.dct_override and num == 1:
+                        dct = _diff_surrounding_dates(ent0.date, 24)
 
-                elif ent1.dct_override:
-                    dct = (ent1.dct_override.date_to - ent1.dct_override.date_from).days
+                    elif ent1.dct_override:
+                        dct = (ent1.dct_override.date_to - ent1.dct_override.date_from).days
 
-                    if ent1.dct_override.predates_first_amortization:
-                        dct = _diff_surrounding_dates(ent1.dct_override.date_from, 24)
+                        if ent1.dct_override.predates_first_amortization:
+                            dct = _diff_surrounding_dates(ent1.dct_override.date_from, 24)
 
-                if ent0.dct_override:
-                    dct = (ent1.date - ent0.dct_override.date_from).days
+                    if ent0.dct_override:
+                        dct = (ent1.date - ent0.dct_override.date_from).days
 
-                    if ent0.dct_override.predates_first_amortization:
-                        dct = _diff_surrounding_dates(ent0.dct_override.date_from, 24)
+                        if ent0.dct_override.predates_first_amortization:
+                            dct = _diff_surrounding_dates(ent0.dct_override.date_from, 24)
+
+                else:
+                    dct = int(first_dct_rule)
 
                 f_s = calculate_interest_factor(apy, decimal.Decimal(dcp) / (12 * decimal.Decimal(dct)))
 
@@ -2022,6 +2030,7 @@ def get_daily_returns(
     amortizations: t.List[Amortization | Amortization.Bare], *,
     vir: t.Optional[VariableIndex] = None,
     capitalisation: _CAPITALISATION = '360',
+    first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
     is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
 ) -> t.Generator[DailyReturn, None, None]:
     '''
@@ -2181,23 +2190,27 @@ def get_daily_returns(
             else:  # Implies "capitalisation == 30/360".
                 dct = (amort1.date - amort0.date).days
 
-                # Exclusively for the first anniversary date, "DCT" will be considered as the difference in calendar
-                # days between the 24th day before and the 24th day after the start of the loan.
-                #
-                if amort1.dct_override and amort0 is lst[0]:
-                    dct = _diff_surrounding_dates(amort0.date, 24)
+                if first_dct_rule == 'AUTO' or amort0 is not lst[0]:
+                    # Exclusively for the first anniversary date, "DCT" will be considered as the difference in calendar
+                    # days between the 24th day before and the 24th day after the start of the loan.
+                    #
+                    if amort1.dct_override and amort0 is lst[0]:
+                        dct = _diff_surrounding_dates(amort0.date, 24)
 
-                elif amort1.dct_override:
-                    dct = (amort1.dct_override.date_to - amort1.dct_override.date_from).days
+                    elif amort1.dct_override:
+                        dct = (amort1.dct_override.date_to - amort1.dct_override.date_from).days
 
-                    if amort1.dct_override.predates_first_amortization:
-                        dct = _diff_surrounding_dates(amort1.dct_override.date_from, 24)
+                        if amort1.dct_override.predates_first_amortization:
+                            dct = _diff_surrounding_dates(amort1.dct_override.date_from, 24)
 
-                if amort0.dct_override:
-                    dct = (amort1.date - amort0.dct_override.date_from).days
+                    if amort0.dct_override:
+                        dct = (amort1.date - amort0.dct_override.date_from).days
 
-                    if amort0.dct_override.predates_first_amortization:
-                        dct = _diff_surrounding_dates(amort0.dct_override.date_from, 24)
+                        if amort0.dct_override.predates_first_amortization:
+                            dct = _diff_surrounding_dates(amort0.dct_override.date_from, 24)
+
+                else:
+                    dct = int(first_dct_rule)
 
                 fac = calculate_interest_factor(apy, _1 / decimal.Decimal(12 * dct))
 
@@ -2277,20 +2290,24 @@ def get_daily_returns(
                         kwa: t.Dict[str, t.Any] = {}
                         dcp = dct = (dt1 - amort0.date).days
 
-                        if amort1.dct_override and i == 0:
-                            dct = _diff_surrounding_dates(amort0.date, 24)
+                        if first_dct_rule == 'AUTO' or i > 0:
+                            if amort1.dct_override and i == 0:
+                                dct = _diff_surrounding_dates(amort0.date, 24)
 
-                        elif amort1.dct_override:
-                            dct = (amort1.dct_override.date_to - amort1.dct_override.date_from).days
+                            elif amort1.dct_override:
+                                dct = (amort1.dct_override.date_to - amort1.dct_override.date_from).days
 
-                            if amort1.dct_override.predates_first_amortization:
-                                dct = _diff_surrounding_dates(amort1.dct_override.date_from, 24)
+                                if amort1.dct_override.predates_first_amortization:
+                                    dct = _diff_surrounding_dates(amort1.dct_override.date_from, 24)
 
-                        if amort0.dct_override:
-                            dct = (amort1.date - amort0.dct_override.date_from).days
+                            if amort0.dct_override:
+                                dct = (amort1.date - amort0.dct_override.date_from).days
 
-                            if amort0.dct_override.predates_first_amortization:
-                                dct = _diff_surrounding_dates(amort0.dct_override.date_from, 24)
+                                if amort0.dct_override.predates_first_amortization:
+                                    dct = _diff_surrounding_dates(amort0.dct_override.date_from, 24)
+
+                        else:
+                            dct = int(first_dct_rule)
 
                         kwa['base'] = pla.base_date + _MONTH * i
                         kwa['period'] = 1
@@ -3071,6 +3088,7 @@ def build_jm(
     vir: t.Optional[VariableIndex] = None,
     tax_exempt: t.Optional[bool] = False,
     amortizes_correction: bool = True,
+    first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
     calc_date: t.Optional[CalcDate] = None,
     gain_output: _GAIN_OUTPUT_MODE = 'current'
 ) -> t.Generator[Payment, None, None]:
@@ -3112,6 +3130,7 @@ def build_jm(
 
     kwa['calc_date'] = calc_date
     kwa['tax_exempt'] = tax_exempt
+    kwa['first_dct_rule'] = first_dct_rule
     kwa['gain_output'] = gain_output
 
     yield from get_payments_table(**kwa)
@@ -3263,6 +3282,7 @@ def get_jm_daily_returns(
     anniversary_date: t.Optional[datetime.date] = None,
     vir: t.Optional[VariableIndex] = None,
     amortizes_correction: bool = True,
+    first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
     is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
 ) -> t.Generator[DailyReturn, None, None]:
     kwa: t.Dict[str, t.Any] = {}
@@ -3272,6 +3292,7 @@ def get_jm_daily_returns(
     kwa['amortizations'] = preprocess_jm(zero_date, term, insertions, anniversary_date, vir, amortizes_correction=amortizes_correction)
     kwa['vir'] = vir
     kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else '30/360'
+    kwa['first_dct_rule'] = first_dct_rule
     kwa['is_bizz_day_cb'] = is_bizz_day_cb
 
     yield from get_daily_returns(**kwa)
