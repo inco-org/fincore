@@ -3021,6 +3021,7 @@ def build_bullet(
     vir: t.Optional[VariableIndex] = None,
     capitalisation: _DAILY_CAPITALISATION = '360',
     tax_exempt: t.Optional[bool] = False,
+    first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
     calc_date: t.Optional[CalcDate] = None,
     gain_output: _GAIN_OUTPUT_MODE = 'current',
     verbose: bool = True
@@ -3066,6 +3067,7 @@ def build_bullet(
 
     kwa['calc_date'] = calc_date
     kwa['tax_exempt'] = tax_exempt
+    kwa['first_dct_rule'] = first_dct_rule
     kwa['gain_output'] = gain_output
 
     yield from get_payments_table(**kwa)
@@ -3151,6 +3153,7 @@ def build_price(
     # Etc.
     anniversary_date: t.Optional[datetime.date] = None,
     tax_exempt: t.Optional[bool] = False,
+    first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
     calc_date: t.Optional[CalcDate] = None,
     gain_output: _GAIN_OUTPUT_MODE = 'current'
 ) -> t.Generator[Payment, None, None]:
@@ -3191,6 +3194,7 @@ def build_price(
 
     kwa['calc_date'] = calc_date
     kwa['tax_exempt'] = tax_exempt
+    kwa['first_dct_rule'] = first_dct_rule
     kwa['gain_output'] = gain_output
 
     yield from get_payments_table(**kwa)
@@ -3210,6 +3214,7 @@ def build(
     # Etc.
     vir: t.Optional[VariableIndex] = None,
     tax_exempt: t.Optional[bool] = False,
+    first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
     calc_date: t.Optional[CalcDate] = None,
     gain_output: _GAIN_OUTPUT_MODE = 'current'
 ) -> t.Generator[Payment, None, None]:
@@ -3240,6 +3245,7 @@ def build(
 
     kwa['calc_date'] = calc_date
     kwa['tax_exempt'] = tax_exempt
+    kwa['first_dct_rule'] = first_dct_rule
     kwa['gain_output'] = gain_output
 
     yield from get_payments_table(**kwa)
@@ -3258,6 +3264,7 @@ def get_bullet_daily_returns(
     anniversary_date: t.Optional[datetime.date] = None,
     vir: t.Optional[VariableIndex] = None,
     capitalisation: _DAILY_CAPITALISATION = '360',
+    first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
     is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True,
     verbose: bool = True
 ) -> t.Generator[DailyReturn, None, None]:
@@ -3268,6 +3275,7 @@ def get_bullet_daily_returns(
     kwa['amortizations'] = preprocess_bullet(zero_date, term, insertions, anniversary_date, capitalisation, vir, calc_date=None, verbose=verbose)
     kwa['vir'] = vir
     kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else capitalisation
+    kwa['first_dct_rule'] = first_dct_rule
     kwa['is_bizz_day_cb'] = is_bizz_day_cb
 
     yield from get_daily_returns(**kwa)
@@ -3305,6 +3313,7 @@ def get_price_daily_returns(
     term: int, *,  # Junto com "zero_date", equivale ao "amortizations".
     insertions: t.List[Amortization.Bare] = [],
     anniversary_date: t.Optional[datetime.date] = None,
+    first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
     is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
 ) -> t.Generator[DailyReturn, None, None]:
     kwa: t.Dict[str, t.Any] = {}
@@ -3313,6 +3322,7 @@ def get_price_daily_returns(
     kwa['apy'] = apy
     kwa['amortizations'] = preprocess_price(principal, apy, zero_date, term, insertions, anniversary_date)
     kwa['capitalisation'] = '30/360'
+    kwa['first_dct_rule'] = first_dct_rule
     kwa['is_bizz_day_cb'] = is_bizz_day_cb
 
     yield from get_daily_returns(**kwa)
@@ -3325,6 +3335,7 @@ def get_livre_daily_returns(
     amortizations: t.List[Amortization], *,
     insertions: t.List[Amortization.Bare] = [],
     vir: t.Optional[VariableIndex] = None,
+    first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
     is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
 ) -> t.Generator[DailyReturn, None, None]:
     kwa: t.Dict[str, t.Any] = {}
@@ -3334,6 +3345,7 @@ def get_livre_daily_returns(
     kwa['vir'] = vir
     kwa['amortizations'] = preprocess_livre(amortizations, insertions, vir)
     kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else '30/360'
+    kwa['first_dct_rule'] = first_dct_rule
     kwa['is_bizz_day_cb'] = is_bizz_day_cb
 
     yield from get_daily_returns(**kwa)
