@@ -674,6 +674,28 @@ class Amortization:
     dct_override: t.Optional[DctOverride] = None
 
 @dataclasses.dataclass
+class DailyIndex:
+    date: datetime.date = datetime.date.min
+
+    value: decimal.Decimal = _0
+
+    projected: bool = False
+
+@dataclasses.dataclass
+class MonthlyIndex:
+    date: datetime.date = datetime.date.min
+
+    value: decimal.Decimal = _0
+
+@dataclasses.dataclass
+class RangedIndex:
+    begin_date: datetime.date = datetime.date.min
+
+    end_date: datetime.date = datetime.date.min
+
+    value: decimal.Decimal = _0
+
+@dataclasses.dataclass
 class Payment:
     '''
     An entry of a payment schedule.
@@ -700,6 +722,8 @@ class Payment:
 
       • "vf", is the variable factor of the entry.
 
+      • "vf_mem", is the list of variable indexes of the entry.
+
       • "_regs", is the state of the registrars at payment time.
     '''
 
@@ -723,6 +747,8 @@ class Payment:
 
     vf: decimal.Decimal = _1
 
+    vf_mem: t.List[DailyIndex | RangedIndex] = dataclasses.field(default_factory=list)
+
     _regs: types.SimpleNamespace = dataclasses.field(default_factory=types.SimpleNamespace)
 
 @dataclasses.dataclass
@@ -737,6 +763,8 @@ class PriceAdjustedPayment(Payment):
     pla: decimal.Decimal = _0
 
     cf: decimal.Decimal = _1
+
+    cf_mem: t.List[MonthlyIndex] = dataclasses.field(default_factory=list)
 
 @dataclasses.dataclass
 class DailyReturn:
@@ -831,29 +859,9 @@ class CalcDate:
     runaway: bool = False
 # }}}
 
-# Public API. Variable index, and storage backend classes. {{{
+# Public API. Storage backend classes, and variable index. {{{
 class BackendError(Exception):
     pass
-
-@dataclasses.dataclass
-class DailyIndex:
-    date: datetime.date = datetime.date.min
-
-    value: decimal.Decimal = _0
-
-@dataclasses.dataclass
-class MonthlyIndex:
-    date: datetime.date = datetime.date.min
-
-    value: decimal.Decimal = _0
-
-@dataclasses.dataclass
-class RangedIndex:
-    begin_date: datetime.date = datetime.date.min
-
-    end_date: datetime.date = datetime.date.min
-
-    value: decimal.Decimal = _0
 
 class IndexStorageBackend:
     def get_cdi_indexes(self, begin: datetime.date, end: datetime.date, **kwargs: dict[str, t.Any]) -> t.Generator[DailyIndex, None, None]:
@@ -933,15 +941,15 @@ class IndexStorageBackend:
             pct = decimal.Decimal(percentage) / decimal.Decimal(100)
             idx = next(gen, None)
             fac = _1
-            cnt = 0
+            mem = []
 
             for x in _date_range(begin, end):
                 if idx and x == idx.date and idx.value > 0:
                     fac = fac * (1 + pct * idx.value / decimal.Decimal(100))
 
-                    _LOG.debug(idx)
+                    mem.append(idx)
 
-                    cnt = cnt + 1
+                    _LOG.debug(idx)
 
                     idx = next(gen, None)
 
@@ -951,10 +959,10 @@ class IndexStorageBackend:
                 else:
                     _LOG.warning(f'CDI index for date {x} was not found')
 
-            return types.SimpleNamespace(value=fac, amount=cnt)
+            return types.SimpleNamespace(value=fac, mem=mem, amount=len(mem))
 
         elif begin == end:
-            return types.SimpleNamespace(value=_1, amount=0)
+            return types.SimpleNamespace(value=_1, mem=[], amount=0)
 
         else:
             raise ValueError(f'end date {end} is not greater than begin date {begin}')
@@ -986,7 +994,7 @@ class IndexStorageBackend:
             if not mem:
                 _LOG.warning(f'no Savings indexes found between {ini.year:04d}-{ini.month:02d} and {end.year:04d}-{end.month:02d}')
 
-            return types.SimpleNamespace(value=fac, amount=len(mem))
+            return types.SimpleNamespace(value=fac, mem=mem, amount=len(mem))
 
         raise ValueError(f'end date {end} is not greater than begin date {begin}')
 
@@ -1400,7 +1408,15 @@ def get_payments_table(
 
       • "tax_exempt", when true, indicates that the payments are tax-exempt.
 
-    • "gain_output", is the interest output mode.
+      • "first_dct_rule", configures one of three rules for the fist DCT.
+
+        - "AUTO" is the default rule. The first DCT value will be calculated for the payment.
+
+        - "30" fixes the first DCT value to 30 days.
+
+        - "31" fixes the first DCT value to 31 days.
+
+      • "gain_output", is the interest output mode.
 
         – "current" is the default mode. Makes each payment P return only the interest accrued in the period between the
           previous payment and the current one.
@@ -1535,9 +1551,10 @@ def get_payments_table(
 
     # B. Execution.
     for num, (ent0, ent1) in enumerate(itertools.pairwise(amortizations), 1):
-        f_v = types.SimpleNamespace(amount=_0, value=_1)
+        f_v = types.SimpleNamespace(value=_1, mem=[], amount=0)
+        f_c = types.SimpleNamespace(value=_1, mem=[])
         due = min(calc_date.value, ent1.date)
-        f_s = f_c = _1
+        f_s = _1
 
         # Phase B.0, FZA, or Phase Zille-Anna.
         #
@@ -1596,7 +1613,8 @@ def get_payments_table(
                     kwa['ratio'] = _1
 
                     # Ensure the price level factor is at least one, i.e., the correction value must be positive.
-                    f_c = max(vir.backend.calculate_ipca_factor(**kwa).value, _1)
+                    f_c = vir.backend.calculate_ipca_factor(**kwa)
+                    f_c.value = max(f_c.value, _1)
 
                 # In the case of an advancement, the price level adjustment must be paid – "ent1" doesn't
                 # need to have the "price_level_adjustment" attribute.
@@ -1609,7 +1627,8 @@ def get_payments_table(
                     kwb['ratio'] = _1
 
                     # Ensure the price level factor is at least one, i.e., the correction value must be positive.
-                    f_c = max(vir.backend.calculate_ipca_factor(**kwb).value, _1)
+                    f_c = vir.backend.calculate_ipca_factor(**kwb)
+                    f_c.value = max(f_c.value, _1)
 
             elif vir and vir.code == 'IPCA' and capitalisation == '30/360':  # American and Custom Amortization systems. See comments of the 30/360, fixed rate, block above.
                 dcp = (due - ent0.date).days
@@ -1646,7 +1665,8 @@ def get_payments_table(
                         kwc['shift'] = pla.shift
                         kwc['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)
 
-                        f_c = max(vir.backend.calculate_ipca_factor(**kwc).value, _1)  # Lock the price level factor.
+                        f_c = vir.backend.calculate_ipca_factor(**kwc)
+                        f_c.value = max(f_c.value, _1)  # Lock the price level factor.
 
                     else:  # Implies "type(ent1) is Amortization.Bare".
                         kwd: t.Dict[str, t.Any] = {}
@@ -1656,7 +1676,8 @@ def get_payments_table(
                         kwd['shift'] = 'M-1'  # FIXME.
                         kwd['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)
 
-                        f_c = max(vir.backend.calculate_ipca_factor(**kwd).value, _1)  # Lock the price level factor.
+                        f_c = vir.backend.calculate_ipca_factor(**kwd)
+                        f_c.value = max(f_c.value, _1)  # Lock the price level factor.
 
             elif vir:
                 raise NotImplementedError(f'Combination of variable interest rate {vir} and capitalisation {capitalisation} unsupported')
@@ -1684,7 +1705,7 @@ def get_payments_table(
         #
         if ent0.date < calc_date.value or ent1.date <= calc_date.value or calc_date.runaway:
             # Register the interest accrued in the period.
-            gens.interest_tracker_1.send(calc_balance(f_c) * (f_s - _1))
+            gens.interest_tracker_1.send(calc_balance(f_c.value) * (f_s - _1))
 
             # Case of a regular amortization.
             if type(ent1) is Amortization:
@@ -1716,13 +1737,13 @@ def get_payments_table(
             #
             else:
                 ent1 = t.cast(Amortization.Bare, ent1)  # Mypy can't infer the type of the "ent1" variable here.
-                val0 = min(ent1.value, calc_balance(f_c))
+                val0 = min(ent1.value, calc_balance(f_c.value))
                 val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)
                 val2 = val0 - val1
 
                 # Check if the irregular payment value doesn't exceed the remaining balance.
-                if ent1.value != Amortization.Bare.MAX_VALUE and ent1.value > _Q(calc_balance(f_c)):
-                    raise Exception(f'the value of the amortization, {ent1.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(f_c))}')
+                if ent1.value != Amortization.Bare.MAX_VALUE and ent1.value > _Q(calc_balance(f_c.value)):
+                    raise Exception(f'the value of the amortization, {ent1.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(f_c.value))}')
 
                 # Register the amortization percentage.
                 gens.principal_tracker_1.send(val2 / principal)
@@ -1773,7 +1794,7 @@ def get_payments_table(
                     pmt.raw = _0
                     pmt.tax = _0
 
-                pmt.bal = calc_balance(f_c)
+                pmt.bal = calc_balance(f_c.value)
 
                 # Monetary correction.
                 #
@@ -1787,7 +1808,7 @@ def get_payments_table(
 
                     # Pays monetary correction over the principal amortization.
                     if (pla := t.cast(PriceLevelAdjustment, ent1.price_level_adjustment)) and pmt.amort:
-                        pmt.pla = pmt.amort * (f_c - 1)
+                        pmt.pla = pmt.amort * (f_c.value - 1)
 
                     # If there is no principal amortization in the period, and "pla.amortizes_adjustment" is true, then
                     # "pmt.pla" will be the value of monetary correction of the outstanding balance. This s what
@@ -1795,7 +1816,7 @@ def get_payments_table(
                     # "amortizes_correction" parameter on the "preprocess_jm" function.
                     #
                     elif pla and pla.amortizes_adjustment:
-                        pmt.pla = calc_balance(f_c) - calc_balance(_1)
+                        pmt.pla = calc_balance(f_c.value) - calc_balance(_1)
 
                     pmt.raw = pmt.raw + pmt.pla
                     pmt.tax = _0 if tax_exempt else pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
@@ -1818,11 +1839,11 @@ def get_payments_table(
                 if vir and vir.code == 'IPCA':
                     pmt = t.cast(PriceAdjustedPayment, pmt)
 
-                    pmt.pla = pmt.amort * (f_c - 1)
+                    pmt.pla = pmt.amort * (f_c.value - 1)
                     pmt.raw = pmt.raw + pmt.pla
                     pmt.tax = _0 if tax_exempt else pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
 
-                pmt.bal = calc_balance(f_c)
+                pmt.bal = calc_balance(f_c.value)
 
             # Sanity check.
             #
@@ -1848,13 +1869,15 @@ def get_payments_table(
 
             pmt.sf = f_s
             pmt.vf = f_v.value
+            pmt.vf_mem = f_v.mem
 
             if vir and vir.code == 'IPCA':
                 pmt = t.cast(PriceAdjustedPayment, pmt)
 
                 pmt.pla = _Q(pmt.pla)
 
-                pmt.cf = f_c
+                pmt.cf = f_c.value
+                pmt.cf_mem = f_c.mem
 
             # B.2.3. Faz uma cópia dos registradores para a saída de pagamento.
             pmt._regs = copy.deepcopy(regs)
@@ -3548,7 +3571,9 @@ def get_late_payment(
 ) -> t.Union[LatePayment, LatePriceAdjustedPayment]:
     '''Generates a late payment output.'''
 
-    f_1 = f_2 = f_3 = f_c = _1
+    f_1 = f_2 = f_3 = _1
+    f_v = types.SimpleNamespace(value=_1, mem=[], amount=0)
+    f_c = types.SimpleNamespace(value=_1, mem=[])
 
     if not vir:
         dcp = decimal.Decimal((calc_date - in_pmt.date).days)
@@ -3569,7 +3594,6 @@ def get_late_payment(
         f_1 = calculate_interest_factor(apy, dcp / decimal.Decimal(360))
         f_2 = _1 + (fee_rate / decimal.Decimal(100) * dcp / decimal.Decimal(30))
         f_3 = _1 + (fine_rate / decimal.Decimal(100)) if in_pmt.date < calc_date else _1
-        f_c = _1
 
         # Composition of the "pla_operations" parameter:
         #
@@ -3589,7 +3613,10 @@ def get_late_payment(
                 kwa['shift'] = e_1[2].shift
                 kwa['ratio'] = dcp / dct
 
-                f_c = f_c * max(vir.backend.calculate_ipca_factor(**kwa).value, _1)
+                f_i = vir.backend.calculate_ipca_factor(**kwa)
+
+                f_c.value = f_c.value * max(f_i.value, _1)
+                f_c.mem = f_c.mem + f_i.mem
 
             else:
                 raise NotImplementedError()
@@ -3615,19 +3642,21 @@ def get_late_payment(
         o_1.extra_gain = _Q(v_1)
         o_1.penalty = _Q(v_2)
         o_1.fine = _Q(v_3)
+        o_1.vf = f_v.value
+        o_1.vf_mem = f_v.mem
 
         return o_1
 
     else:  # IPCA.
         o_2 = LatePriceAdjustedPayment()
-        raw = _Q(in_pmt.raw * f_c)
-        gain = _Q(in_pmt.gain * f_c)
-        extra_gain = _Q(in_pmt.extra_gain * f_c)
-        penalty = _Q(in_pmt.penalty * f_c)
-        fine = _Q(in_pmt.fine * f_c)
+        raw = _Q(in_pmt.raw * f_c.value)
+        gain = _Q(in_pmt.gain * f_c.value)
+        extra_gain = _Q(in_pmt.extra_gain * f_c.value)
+        penalty = _Q(in_pmt.penalty * f_c.value)
+        fine = _Q(in_pmt.fine * f_c.value)
 
         if type(in_pmt) is LatePriceAdjustedPayment:
-            pla = _Q(in_pmt.pla + (in_pmt.amort + in_pmt.pla) * (f_c - _1))
+            pla = _Q(in_pmt.pla + (in_pmt.amort + in_pmt.pla) * (f_c.value - _1))
 
         v_1 = (raw) * (f_1 - _1)  # Value of interest.
         v_2 = (raw + v_1) * (f_2 - _1)  # Value of penalty interest.
@@ -3651,10 +3680,14 @@ def get_late_payment(
 
         if type(in_pmt) is LatePriceAdjustedPayment:
             o_2.pla = pla
+            o_2.cf = f_c.value
+            o_2.cf_mem = f_c.mem
 
         o_2.extra_gain = extra_gain + v_1 + (gain - in_pmt.gain)
         o_2.penalty = penalty + v_2
         o_2.fine = fine + v_3
+        o_2.vf = f_v.value
+        o_2.vf_mem = f_v.mem
 
         return o_2
 # }}}
