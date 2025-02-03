@@ -722,9 +722,11 @@ class Payment:
 
       • "vf", is the variable factor of the entry.
 
-      • "vf_mem", is the list of variable indexes of the entry.
+    It also contains metadata about the payment:
 
-      • "_regs", is the state of the registrars at payment time.
+      • "vf_mem", is the list of variable indexes used on the calculations of the payment.
+
+      • "_regs", is the state of the internal registers of the "_get_payments_table" function at payment time.
     '''
 
     no: int = 0
@@ -747,8 +749,10 @@ class Payment:
 
     vf: decimal.Decimal = _1
 
+    # FIXME: this should be excluded from the dataclass. Especially, if it is made immutable.
     vf_mem: t.List[DailyIndex | RangedIndex] = dataclasses.field(default_factory=list)
 
+    # FIXME: this should be excluded from the dataclass. Especially, if it is made immutable.
     _regs: types.SimpleNamespace = dataclasses.field(default_factory=types.SimpleNamespace)
 
 @dataclasses.dataclass
@@ -756,14 +760,20 @@ class PriceAdjustedPayment(Payment):
     '''
     An entry of a payment schedule, with price level adjustment (IPCA or IGPM).
 
-    Besides the fields of the base class, this class has an additional field, "pla", which is the monetary correction
-    of the payment, or its price level adjustment.
+    Besides the fields of the base class, this class has three additional fields:
+
+      • "pla", which is the monetary correction of the payment, or its price level adjustment.
+
+      • "cf", which is the correction factor of the payment.
+
+      • "cf_mem", which is the list of monetary correction indexes used on the calculations of the payment.
     '''
 
     pla: decimal.Decimal = _0
 
     cf: decimal.Decimal = _1
 
+    # FIXME: this should be excluded from the dataclass. Especially, if it is made immutable.
     cf_mem: t.List[MonthlyIndex] = dataclasses.field(default_factory=list)
 
 @dataclasses.dataclass
