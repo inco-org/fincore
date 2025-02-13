@@ -1735,30 +1735,27 @@ def get_payments_table(
             #
             # Remember that an advance presents only a gross value to be paid on a certain date. This gross value will be
             # factored into various components of the debt, in an ordered manner. The first component of the debt to be
-            # amortized is the interest (spread). After payment of the interest, what remains must be deducted from the
-            # monetary correction. Finally, subtract the remaining value of the principal. In the block of code below,
-            #
-            #  • "val1" is the price level corrected interest to be paid;
-            #
-            #  • "val2" is the principal to be amortized.
-            #
-            # Observe that the order of calculation of these variables corresponds to the order of factorisation of the
-            # gross value of the advance.
+            # amortized is the interest (spread). Then, subtract the remaining value of the principal.
             #
             else:
                 ent1 = t.cast(Amortization.Bare, ent1)  # Mypy can't infer the type of the "ent1" variable here.
-                val0 = min(ent1.value, calc_balance(f_c.value))
-                val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)
-                val2 = val0 - val1
+                val0 = min(ent1.value, calc_balance(f_c.value))  # Ensures that the value of the advance does not exceed the remaining balance of the loan.
+                val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)  # Interest to be paid in the period.
+                val2 = val0 - val1  # Principal to be amortized.
 
                 # Check if the irregular payment value doesn't exceed the remaining balance.
                 if ent1.value != Amortization.Bare.MAX_VALUE and ent1.value > _Q(calc_balance(f_c.value)):
                     raise Exception(f'the value of the amortization, {ent1.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(f_c.value))}')
 
-                # Register the amortization percentage.
-                gens.principal_tracker_1.send(val2 / principal)
+                # Register the amortization percentage. Notice that the value sent here is adjusted with the monetary
+                # correction factor ("f_c.value").
+                #
+                gens.principal_tracker_1.send(val2 / f_c.value / principal)
 
-                # Register the interest to be settled in the period.
+                # Register the interest value to be settled in the period. Unlike above, there is no need to adjust the
+                # interest value with "f_c.value". The interest is already calculated over a monetary corrected
+                # balance.
+                #
                 gens.interest_tracker_2.send(val1)
 
         # Phase B.2, FRD, or Phase Rafa Dois.
@@ -2622,17 +2619,22 @@ def get_daily_returns(
             #
             else:
                 ent = t.cast(Amortization.Bare, tup[1])  # O Mypy não consegue inferir o tipo da variável "ent" aqui.
-                val0 = min(ent.value, calc_balance(facs.correction.value))
-                val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)
-                val2 = val0 - val1
+                val0 = min(ent.value, calc_balance(facs.correction.value))  # Ensures that the value of the advance does not exceed the remaining balance of the loan.
+                val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)  # Interest to be paid in the period.
+                val2 = val0 - val1  # Principal to be amortized.
 
-                # Registers the amortization percentage.
-                gens.principal_tracker_1.send(val2 / principal)
+                # Register the amortization percentage. Notice that the value sent here is adjusted with the monetary
+                # correction factor ("facs.correction.value").
+                #
+                gens.principal_tracker_1.send(val2 / facs.correction.value / principal)
 
-                # Registers the interest value to be settled in the period.
+                # Register the interest value to be settled in the period. Unlike above, there is no need to adjust the
+                # interest value with "facs.correction.value". The interest is already calculated over a monetary
+                # corrected balance.
+                #
                 gens.interest_tracker_2.send(val1)
 
-                # Checks if we did not amortize more than the remaining principal.
+                # Check if we did not amortize more than the remaining principal.
                 if regs.principal.amortized.total > principal:
                     raise Exception(f'the value of the amortization, {ent.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(facs.correction.value))}')
 
