@@ -2114,8 +2114,8 @@ def get_daily_returns(
       • "fc", is the monetary correction component of the day's yield.
     '''
 
-    def calc_balance(correction_factor: decimal.Decimal = _1) -> decimal.Decimal:
-        val = principal * correction_factor + regs.interest.accrued - regs.principal.amortized.total * correction_factor - regs.interest.settled.total
+    def calc_balance() -> decimal.Decimal:
+        val = principal - regs.principal.amortized.total + regs.interest.accrued - regs.interest.settled.total + regs.correction.accrued - regs.correction.settled.total
 
         return t.cast(decimal.Decimal, val)
 
@@ -2211,6 +2211,41 @@ def get_daily_returns(
             regs.interest.settled = types.SimpleNamespace(current=(yield), total=regs.interest.settled.total)
             regs.interest.settled.total += regs.interest.settled.current
             regs.interest.deferred = regs.interest.accrued - regs.interest.settled.total
+
+    # Generator for correction values.
+    #
+    #   • "regs.correction.daily" is the accrued correction (produced) on the day.
+    #
+    #   • "regs.correction.current" is the accrued correction (produced) on the current micro period. Regardless of whether a
+    #      payment was made in the previous period. If the previous period was a grace period, its correction won't
+    #      accumulate on "correction.current". It will be available as "regs.correction.deferred".
+    #
+    #   • "regs.correction.accrued" is the total of accrued correction since the start of the loan.
+    #
+    # This generator is called once per day.
+    #
+    def track_correction_1() -> t.Generator[None, decimal.Decimal | None, None]:
+        while True:
+            regs.correction.daily = yield
+            regs.correction.current += regs.correction.daily
+            regs.correction.accrued += regs.correction.daily
+
+    # Keeps track of settled and deferred correction values.
+    #
+    #   • "regs.correction.settled.current" are the settled correction on the current micro period.
+    #
+    #   • "regs.correction.settled.total" is the total settled correction since the start of the loan.
+    #
+    #   • "regs.correction.deferred" is the total deferred correction from past periods.
+    #
+    # This generator will be called on micro periods ending by regular or advanced payments. On grace periods, it will
+    # not be called.
+    #
+    def track_correction_2() -> t.Generator[None, decimal.Decimal | None, None]:
+        while True:
+            regs.correction.settled = types.SimpleNamespace(current=(yield), total=regs.correction.settled.total)
+            regs.correction.settled.total += regs.correction.settled.current
+            regs.correction.deferred = regs.correction.accrued - regs.correction.settled.total
 
     def normalize_fixed_factors() -> t.Generator[FactorTriplet, None, None]:
         lst = [x for x in amortizations if type(x) is Amortization]
@@ -2471,10 +2506,13 @@ def get_daily_returns(
     # Registradores.
     regs.principal = types.SimpleNamespace(amortization_ratio=types.SimpleNamespace(adjusted=_0, nominal=_0), amortized=types.SimpleNamespace(current=_0, total=_0))
     regs.interest = types.SimpleNamespace(daily=_0, current=_0, accrued=_0, settled=types.SimpleNamespace(current=_0, total=_0), deferred=_0)
+    regs.correction = types.SimpleNamespace(daily=_0, current=_0, accrued=_0, settled=types.SimpleNamespace(current=_0, total=_0), deferred=_0)
 
     # Control, create generators.
     gens.interest_tracker_1 = track_interest_1()
     gens.interest_tracker_2 = track_interest_2()
+    gens.correction_tracker_1 = track_correction_1()
+    gens.correction_tracker_2 = track_correction_2()
     gens.principal_tracker_1 = track_principal_1()
     gens.principal_tracker_2 = track_principal_2()
 
@@ -2483,6 +2521,8 @@ def get_daily_returns(
     gens.principal_tracker_2.send(None)
     gens.interest_tracker_1.send(None)
     gens.interest_tracker_2.send(None)
+    gens.correction_tracker_1.send(None)
+    gens.correction_tracker_2.send(None)
 
     idxs.fixed = normalize_fixed_factors()
 
@@ -2583,7 +2623,7 @@ def get_daily_returns(
         #
         while ref < amortizations[-1].date and ref == tup[1].date:
             if not buf and not is_bizz_day_cb(ref):
-                buf = _Q(calc_balance(facs.correction.value))
+                buf = _Q(calc_balance())
 
             if type(tup[1]) is Amortization:  # Case of a regular amortization.
                 adj = (_1 - regs.principal.amortization_ratio.adjusted) / (_1 - regs.principal.amortization_ratio.nominal)  # [FATOR-AJUSTE].
@@ -2601,8 +2641,15 @@ def get_daily_returns(
 
                     gens.interest_tracker_2.send(regs.interest.current + pt2)
 
+                # Registers the correction value to be settled in the period.
+                if tup[1].price_level_adjustment and tup[1].price_level_adjustment.amortizes_adjustment:
+                    pct = regs.principal.amortization_ratio.adjusted * adj
+                    pt2 = pct * (regs.correction.accrued - regs.correction.settled.total - regs.correction.current)
+
+                    gens.correction_tracker_2.send(regs.correction.current + pt2)
+
                 # The interest factors have to be renormalized on principal changes. See comments above.
-                if tup[1].amortization_ratio > 0 or tup[1].amortizes_interest:
+                if tup[1].amortization_ratio > 0 or tup[1].amortizes_interest or (tup[1].price_level_adjustment and tup[1].price_level_adjustment.amortizes_adjustment):
                     facs.spread = facs.spread.normalize()
                     facs.variable = facs.variable.normalize()
                     facs.correction = facs.correction.normalize()
@@ -2611,6 +2658,7 @@ def get_daily_returns(
                 p, cnt = p + 1, 1
 
                 regs.interest.current = _0
+                regs.correction.current = _0
 
             # Case of an advance (extraordinary amortization). See comments of the similar block in "get_payments_table".
             #
@@ -2622,7 +2670,7 @@ def get_daily_returns(
             #
             else:
                 ent = t.cast(Amortization.Bare, tup[1])  # O Mypy não consegue inferir o tipo da variável "ent" aqui.
-                val0 = min(ent.value, calc_balance(facs.correction.value))  # Ensures that the value of the advance does not exceed the remaining balance of the loan.
+                val0 = min(ent.value, calc_balance())  # Ensures that the value of the advance does not exceed the remaining balance of the loan.
                 val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)  # Interest to be paid in the period.
                 val2 = val0 - val1  # Principal to be amortized.
 
@@ -2639,7 +2687,7 @@ def get_daily_returns(
 
                 # Check if we did not amortize more than the remaining principal.
                 if regs.principal.amortized.total > principal:
-                    raise Exception(f'the value of the amortization, {ent.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(facs.correction.value))}')
+                    raise Exception(f'the value of the amortization, {ent.value}, is greater than the remaining balance of the loan, {_Q(calc_balance())}')
 
                 # The interest factors have to be renormalized on principal changes. See comments above.
                 facs.spread = facs.spread.normalize()
@@ -2650,9 +2698,9 @@ def get_daily_returns(
 
             tup = tup[1], next(itr)
 
-        # Registers the value of the accrued interest on the day.
+        # Registers the values of the accrued interest and the accrued correction, on the day.
         #
-        # The interest have to be calculated after processing all amortizations of the current day, i.e., after phase
+        # These values have to be calculated after processing all amortizations of the current day, i.e., after phase
         # B.1 above. This way we get the correct balance value to apply the factors on.
         #
         if ref < amortizations[-1].date:
@@ -2660,6 +2708,26 @@ def get_daily_returns(
             v1 = (facs.spread.value * facs.variable.value - _1) * (get_principal_outstanding(facs.correction.value) + regs.interest.deferred)
 
             gens.interest_tracker_1.send(v1 - v0)
+
+            if vir and vir.code == 'IPCA' and type(tup[1]) is Amortization and tup[1].price_level_adjustment:
+                # Registers the monetary correction over the principal amortization.
+                if tup[1].amortization_ratio > 0:
+                    rt = tup[1].amortization_ratio * (_1 - regs.principal.amortization_ratio.adjusted) / (_1 - regs.principal.amortization_ratio.nominal)
+                    v0 = principal * rt * facs.correction.prev_value
+                    v1 = principal * rt * facs.correction.value
+
+                    gens.correction_tracker_1.send(v1 - v0)
+
+                # If there is no principal amortization in the period, and there is a "tup[1].price_level_adjustment",
+                # then "regs.correction.daily" will be the value of monetary correction of the outstanding balance.
+                # This is what happens with loans that have the American Amortization system, by default. See the
+                # "amortizes_correction" parameter on the "preprocess_jm" function.
+                #
+                else:
+                    v0 = get_principal_outstanding(facs.correction.prev_value)
+                    v1 = get_principal_outstanding(facs.correction.value)
+
+                    gens.correction_tracker_1.send(v1 - v0)
 
         # Builds the daily return instance, output of the routine. Makes rounding.
         dr = PriceAdjustedDailyReturn() if vir and vir.code == 'IPCA' else DailyReturn()
@@ -2677,17 +2745,15 @@ def get_daily_returns(
         else:
             buf = _0
 
-            dr.bal = _Q(calc_balance(facs.correction.value))  # Balance at the end of the day.
+            dr.bal = _Q(calc_balance())  # Balance at the end of the day.
 
         dr.sf = facs.spread.discrete
         dr.vf = facs.variable.discrete
 
         if vir and vir.code == 'IPCA':
             dr = t.cast(PriceAdjustedDailyReturn, dr)
-            v0 = get_principal_outstanding(facs.correction.prev_value) + regs.interest.deferred
-            v1 = get_principal_outstanding(facs.correction.value) + regs.interest.deferred
 
-            dr.pla = _Q(v1 - v0)
+            dr.pla = _Q(regs.correction.daily)
 
             dr.cf = facs.correction.discrete
 
