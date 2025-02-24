@@ -1608,6 +1608,9 @@ def get_payments_table(
                 f_s = calculate_interest_factor(apy, decimal.Decimal(f_v.amount) / decimal.Decimal(252)) * f_v.value
 
             elif vir and vir.code == 'Poupança' and capitalisation == '360':  # Brazilian Savings only supported in Bullet.
+                # A particular Saving rate will only be incorporated in the current factor if the payment period covers
+                # its entire monthly range.
+                #
                 f_v = vir.backend.calculate_savings_factor(ent0.date, due, vir.percentage)  # Variable rate (or factor), FV.
                 f_s = calculate_interest_factor(apy, decimal.Decimal((due - ent0.date).days) / decimal.Decimal(360)) * f_v.value
 
@@ -2652,10 +2655,11 @@ def get_daily_returns(
         # The interest have to be calculated after processing all amortizations of the current day, i.e., after phase
         # B.1 above. This way we get the correct balance value to apply the factors on.
         #
-        v0 = (facs.spread.prev_value * facs.variable.prev_value - _1) * get_principal_outstanding(facs.correction.prev_value) + regs.interest.deferred
-        v1 = (facs.spread.value * facs.variable.value - _1) * get_principal_outstanding(facs.correction.value) + regs.interest.deferred
+        if ref < amortizations[-1].date:
+            v0 = (facs.spread.prev_value * facs.variable.prev_value - _1) * (get_principal_outstanding(facs.correction.prev_value) + regs.interest.deferred)
+            v1 = (facs.spread.value * facs.variable.value - _1) * (get_principal_outstanding(facs.correction.value) + regs.interest.deferred)
 
-        gens.interest_tracker_1.send(v1 - v0)
+            gens.interest_tracker_1.send(v1 - v0)
 
         # Builds the daily return instance, output of the routine. Makes rounding.
         dr = PriceAdjustedDailyReturn() if vir and vir.code == 'IPCA' else DailyReturn()
