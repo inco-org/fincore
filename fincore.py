@@ -2321,33 +2321,14 @@ def get_daily_returns(
                 for i, (dt0, dt1) in enumerate(_generate_monthly_dates(amort0.date, amort1.date)):
                     if (pla := amort1.price_level_adjustment) and pla.base_date:
                         kwa: t.Dict[str, t.Any] = {}
-                        dcp = dct = (dt1 - amort0.date).days
-
-                        if first_dct_rule == 'AUTO' or i > 0:
-                            if amort1.dct_override and i == 0:
-                                dct = _diff_surrounding_dates(amort0.date, 24)
-
-                            elif amort1.dct_override:
-                                dct = (amort1.dct_override.date_to - amort1.dct_override.date_from).days
-
-                                if amort1.dct_override.predates_first_amortization:
-                                    dct = _diff_surrounding_dates(amort1.dct_override.date_from, 24)
-
-                            if amort0.dct_override:
-                                dct = (amort1.date - amort0.dct_override.date_from).days
-
-                                if amort0.dct_override.predates_first_amortization:
-                                    dct = _diff_surrounding_dates(amort0.dct_override.date_from, 24)
-
-                        else:
-                            dct = int(first_dct_rule)
 
                         kwa['base'] = pla.base_date + _MONTH * i
                         kwa['period'] = 1
                         kwa['shift'] = pla.shift
-                        kwa['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)
+                        kwa['ratio'] = _1
 
                         if (obj := backend.calculate_ipca_factor(**kwa)).mem:
+                            dcp = (dt1 - dt0).days
                             fac = max(obj.value, _1) - _1
                             fac = calculate_interest_factor(fac, _1 / decimal.Decimal(dcp), False)
 
