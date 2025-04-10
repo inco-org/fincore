@@ -1048,7 +1048,7 @@ class IndexStorageBackend:
         for i, x in enumerate(mem):
             exp = _1 if i != len(mem) - 1 else ratio  # The ratio applies only to the last of a series of items.
 
-            fac = fac * (_1 + x.value / decimal.Decimal(100)) ** exp
+            fac = fac * (_1 + max(x.value, _0) / decimal.Decimal(100)) ** exp
 
         if not mem and period == 1:
             _LOG.warning(f'no IPCA indexes found for month {ini.year:04d}-{ini.month:02d} (base date is {base}, period is {period}, shift is {shift}, ratio is {ratio})')
@@ -1163,7 +1163,18 @@ class InMemoryBackend(IndexStorageBackend):
         (datetime.date(2022, 5, 1),  decimal.Decimal('0.47')),  (datetime.date(2022, 6, 1),  decimal.Decimal('0.67')),   # NOQA
         (datetime.date(2022, 7, 1),  decimal.Decimal('-0.68')), (datetime.date(2022, 8, 1),  decimal.Decimal('-0.36')),  # NOQA
         (datetime.date(2022, 9, 1),  decimal.Decimal('-0.29')), (datetime.date(2022, 10, 1), decimal.Decimal('0.59')),   # NOQA
-        (datetime.date(2022, 11, 1), decimal.Decimal('0.41'))
+        (datetime.date(2022, 11, 1), decimal.Decimal('0.41')),  (datetime.date(2022, 12, 1), decimal.Decimal('0.62')),   # NOQA
+        (datetime.date(2023, 1, 1),  decimal.Decimal('0.53')),  (datetime.date(2023, 2, 1),  decimal.Decimal('0.84')),   # NOQA
+        (datetime.date(2023, 3, 1),  decimal.Decimal('0.71')),  (datetime.date(2023, 4, 1),  decimal.Decimal('0.61')),   # NOQA
+        (datetime.date(2023, 5, 1),  decimal.Decimal('0.23')),  (datetime.date(2023, 6, 1),  decimal.Decimal('-0.08')),  # NOQA
+        (datetime.date(2023, 7, 1),  decimal.Decimal('0.12')),  (datetime.date(2023, 8, 1),  decimal.Decimal('0.23')),   # NOQA
+        (datetime.date(2023, 9, 1),  decimal.Decimal('0.26')),  (datetime.date(2023, 10, 1), decimal.Decimal('0.24')),   # NOQA
+        (datetime.date(2023, 11, 1), decimal.Decimal('0.28')),  (datetime.date(2023, 12, 1), decimal.Decimal('0.56')),   # NOQA
+        (datetime.date(2024, 1, 1),  decimal.Decimal('0.42')),  (datetime.date(2024, 2, 1),  decimal.Decimal('0.83')),   # NOQA
+        (datetime.date(2024, 3, 1),  decimal.Decimal('0.16')),  (datetime.date(2024, 4, 1),  decimal.Decimal('0.38')),   # NOQA
+        (datetime.date(2024, 5, 1),  decimal.Decimal('0.46')),  (datetime.date(2024, 6, 1),  decimal.Decimal('0.21')),   # NOQA
+        (datetime.date(2024, 7, 1),  decimal.Decimal('0.38')),  (datetime.date(2024, 8, 1),  decimal.Decimal('-0.02')),  # NOQA
+        (datetime.date(2024, 9, 1),  decimal.Decimal('0.44'))                                                            # NOQA
     ]
 
     # A repository of Poupança indexes.
