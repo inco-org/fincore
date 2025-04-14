@@ -1233,7 +1233,17 @@ cli.add(gera_pagamentos)
 cli.add(gera_rendimentos_diarios)
 cli.add(calcula_fatores_za)
 
-locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')
+try:
+    locale.setlocale(locale.LC_ALL, '')
+
+except locale.Error as e:
+    _PR(f'Warning: Could not set locale from environment ({e}). Falling back to "en_US.UTF-8".')
+
+    try:
+        locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+
+    except locale.Error as e_fallback:
+        _PR(f'Error: Failed to set fallback locale "en_US.UTF-8": {e_fallback}. Currency formatting will likely fail.')
 
 if cli.run() is sh2py.HALT:
     exit(1)
