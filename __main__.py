@@ -42,33 +42,33 @@ import fincore
 # Print helper.
 _PR = functools.partial(print, file=sys.stderr, flush=True)
 
-# Opções para tabela de pagamentos sem correção monetária.
+# Options for payment table without monetary correction.
 _PAYMENT_LIST_OPTS = {
-    'headers': ['Nº', 'Data', 'Juros', 'Amt.', 'Amt. %', 'Bruto', 'I.R.', 'Líquido', 'Saldo'],
+    'headers': ['Nº', 'Date', 'Interest', 'Amt.', 'Amt. %', 'Gross', 'I.R.', 'Net', 'Balance'],
     'colalign': ('right', 'center', 'right', 'right', 'right', 'right', 'right', 'right', 'right')
 }
 
-# Opções para tabela de pagamentos com correção monetária.
+# Options for payment table with monetary correction.
 _PAYMENT_LIST_OPTS_2 = {
-    'headers': ['Nº', 'Data', 'Juros', 'Corr.', 'Amt.', 'Amt. %', 'Bruto', 'I.R.', 'Líquido', 'Saldo'],
+    'headers': ['Nº', 'Date', 'Interest', 'Corr.', 'Amt.', 'Amt. %', 'Gross', 'I.R.', 'Net', 'Balance'],
     'colalign': ('right', 'center', 'right', 'right', 'right', 'right', 'right', 'right', 'right')
 }
 
-# Opções para tabela de rendimentos diários pré-fixados, sem correção monetária.
+# Options for pre-fixed daily returns table, without monetary correction.
 _DAILY_RETURNS_OPTS_PRE = {
-    'headers': ['T', 'Nº', 'Data', 'Sd. Inic.', 'Rendimento', 'Tx. Fixa'],
+    'headers': ['T', 'Nº', 'Date', 'Start Bal.', 'Return', 'Fixed Rate'],
     'colalign': ('right', 'right', 'center', 'right', 'right', 'right')
 }
 
-# Opções para tabela de rendimentos diários pós-fixados, sem correção monetária.
+# Options for post-fixed daily returns table, without monetary correction.
 _DAILY_RETURNS_OPTS_POS_1 = {
-    'headers': ['T', 'Nº', 'Data', 'Sd. Inic.', 'Rendimento', 'Tx. Fixa', 'Tx. Var.'],
+    'headers': ['T', 'Nº', 'Date', 'Start Bal.', 'Return', 'Fixed Rate', 'Var. Rate'],
     'colalign': ('right', 'right', 'center', 'right', 'right', 'right', 'right')
 }
 
-# Opções para tabela de rendimentos diários pós-fixados em correção monetária.
+# Options for post-fixed daily returns table with monetary correction.
 _DAILY_RETURNS_OPTS_POS_2 = {
-    'headers': ['T', 'Nº', 'Data', 'Sd. Inic.', 'Rendimento', 'Correção', 'Tx. Fixa', 'Tx. Correção'],
+    'headers': ['T', 'Nº', 'Date', 'Start Bal.', 'Return', 'Correction', 'Fixed Rate', 'Correction Rate'],
     'colalign': ('right', 'right', 'center', 'right', 'right', 'right', 'right', 'right')
 }
 
@@ -107,7 +107,7 @@ def _date_range(start_date: datetime.date, end_date: datetime.date) -> typing.Ge
 @functools.cache
 def _get_bacen_holidays() -> typing.List[datetime.date]:
     '''
-    This a method returns an object with all BACEN holidays from 2010 to 2078.
+    This method returns an object with all BACEN holidays from 2010 to 2078.
 
     >>> datetime.date(2022, 1, 1) in _get_bacen_holidays()
     True
@@ -135,7 +135,7 @@ def _get_bacen_holidays() -> typing.List[datetime.date]:
 
     return lst
 
-# FIXME: fazer uma pesquisa binária aqui. Dessa forma o "cache" poderia ser dispensado.
+# FIXME: perform a binary search here. This way the "cache" could be dispensed with.
 @functools.cache
 def _is_bacen_holiday(day: datetime.date) -> bool:
     return day in _get_bacen_holidays()
@@ -151,7 +151,7 @@ def _get_business_days(begin: datetime.date, end: datetime.date) -> typing.List[
     >>> len(_get_business_days(date(2010, 1, 1), date(2020, 1, 1)))
     2512
     >>> lst = _get_business_days(date(2023, 1, 10), date(2023, 3, 2))
-    >>> [x.isoformat() for x in lst]  # doctest: +NORMALIZE_WHITESPACE
+    >>> [x.isoformat() for x in lst]  # doctest: +NORMALIZE_WHITESPACE # Example output
     ['2023-01-10', '2023-01-11', '2023-01-12', '2023-01-13', '2023-01-16', '2023-01-17',
      '2023-01-18', '2023-01-19', '2023-01-20', '2023-01-23', '2023-01-24', '2023-01-25',
      '2023-01-26', '2023-01-27', '2023-01-30', '2023-01-31', '2023-02-01', '2023-02-02',
@@ -175,13 +175,13 @@ def _get_business_days(begin: datetime.date, end: datetime.date) -> typing.List[
 
 def _make_variable_index(name, percentage=100):
     '''
-    Cria um índice variável usando classe de armazenamento "util.finmore.LocalDirectoryBackend".
+    Creates a variable index using the "util.finmore.LocalDirectoryBackend" storage class.
     '''
 
-    # A API do BACEN é lenta e instável. Aqui não é possível armazenar respostas de chamadas a essa API no banco de
-    # dados, portanto serão gravados em disco. Isso vai evitar que toda chamada a comando do Icicle que envolva a
-    # obtenção de indexadores variáveis, como a "gera_relatorio_3040", e a "gera_relatorios_reinf", precise fazer uma
-    # chamada ao BACEN, e eventualmente, uma outra API qualquer.
+    # The BACEN API is slow and unstable. Here it's not possible to store responses from calls to this API in the
+    # database, so they will be saved to disk. This will prevent every Icicle command call involving the
+    # retrieval of variable indexers, such as "gera_relatorio_3040" and "gera_relatorios_reinf", from needing to make a
+    # call to BACEN, and eventually, any other API.
     #
     return fincore.VariableIndex(name, percentage, backend=LocalDirectoryBackend('fincore'))
 
@@ -234,7 +234,7 @@ class LocalDirectoryBackend(fincore.IndexStorageBackend):
     Another BACEN index retrieval backend, using the "platformdirs" Python package for persistence.
 
     Caching means that on a given day, a single HTTP request will be sent to BACEN. The first response will be stored
-    on disk, and used on subsequent calls. This has the disadvantaged that if an index is published on the middle of
+    on disk, and used on subsequent calls. This has the disadvantage that if an index is published in the middle of
     the day, this backend will not consider it.
 
     The empty constructor will create a backend instance with platform storage.
@@ -247,46 +247,46 @@ class LocalDirectoryBackend(fincore.IndexStorageBackend):
 
         self._platform = platformdirs.PlatformDirs(app_name, author_name)
 
-    # O BACEN responde com HTML em alguns casos de falha interna. Aparentemente isso causa uma exceção
-    # "requests.exceptions.JSONDecodeError", encadeada com "simplejson.errors.JSONDecodeError" na biblioteca
-    # Requests. Ver:
+    # BACEN responds with HTML in some cases of internal failure. Apparently, this causes a
+    # "requests.exceptions.JSONDecodeError" exception, chained with "simplejson.errors.JSONDecodeError" in the
+    # Requests library. See:
     #
     #   http://inco-investimentos.sentry.io/issues/3735738306/events/bcd52939aa394de2b0296219839a3ee3
     #
     @staticmethod
     def _retrieve_bacen_response(url: str, query_string: typing.Dict[str, str], platform: 'platformdirs.api.PlatformDirsABC', index_name: str) -> typing.Any:
         '''
-        Obtém os dados uma resposta de API ao BACEN para um dado indexador.
+        Retrieves the data from a BACEN API response for a given indexer.
 
-        O indexador vem do parâmetro "url".
+        The indexer comes from the "url" parameter.
 
-          • para CDI, "/dados/serie/bcdata.sgs.12/dados" (seis casas decimais);
-          • para IPCA, "/dados/serie/bcdata.sgs.433/dados" (duas casas decimais); e
-          • para Poupança, "/dados/serie/bcdata.sgs.195/dados" (quatro casas decimais).
+          • for CDI, "/dados/serie/bcdata.sgs.12/dados" (six decimal places);
+          • for IPCA, "/dados/serie/bcdata.sgs.433/dados" (two decimal places); and
+          • for Savings, "/dados/serie/bcdata.sgs.195/dados" (four decimal places).
 
-        O parâmetro "query_string" configura o formato da resposta e as datas de início e fim do período a consultar.
-        Exemplo:
+        The "query_string" parameter configures the response format and the start and end dates of the period to query.
+        Example:
 
           {'formato': 'json', 'dataInicial': '10/10/2020', 'dataFinal': '12/12/2022'}
 
-        Essa função vai gravar a resposta HTTP da API no format JSON em um diretório local, caso consiga comunicação
-        com o BACEN. Esse diretório advém do parâmetro "platform", que por sua vez advém do membro "self._platform",
-        sendo "self" uma instância da classe LocalDirectoryBackend. Em invocações futuras, se o arquivo for encontrado,
-        a resposta virá dele, em vez de vir de uma nova requisição HTTP. Observe que o arquivo muda de nome
-        diariamente, portanto não há como uma resposta de um dia anterior ser reusada. No diretório local será gerado
-        um arquivo por indexador, para evitar colisões, obviamente.
+        This function will save the HTTP API response in JSON format to a local directory if it can communicate
+        with BACEN. This directory comes from the "platform" parameter, which in turn comes from the "self._platform" member,
+        where "self" is an instance of the LocalDirectoryBackend class. In future invocations, if the file is found,
+        the response will come from it, instead of from a new HTTP request. Note that the file changes its name
+        daily, so a response from a previous day cannot be reused. A file per indexer will be generated
+        in the local directory to avoid collisions, obviously.
 
-        O algoritmo é o seguinte.
+        The algorithm is as follows.
 
-          1. Busca dados do dia de hoje do disco.
+          1. Search for today's data on disk.
 
-            1.1. Se os dados foram encontrados, os retorna.
+            1.1. If the data is found, return it.
 
-            1.2. Se não há dados no disco, faz requisição à API do BACEN.
+            1.2. If there is no data on disk, make a request to the BACEN API.
 
-              1.2.1. Se a resposta é valida, grava em disco e a retorna.
+              1.2.1. If the response is valid, save it to disk and return it.
 
-              1.2.2. Se a resposta não é válida, lança uma exceção.
+              1.2.2. If the response is not valid, raise an exception.
         '''
 
         import requests
@@ -340,7 +340,7 @@ class LocalDirectoryBackend(fincore.IndexStorageBackend):
     @functools.cache  # This helper must return a list so it can be cached. Do not attempt to convert it to a generator.
     def _query_bacen_cdi(platform: 'platformdirs.api.PlatformDirsABC') -> typing.List[fincore.DailyIndex]:
         '''
-        Consulta indexador CDI na API do BACEN.
+        Queries the CDI indexer on the BACEN API.
         '''
 
         qry = {'formato': 'json', 'dataInicial': '01/01/2018', 'dataFinal': _TODAY().strftime('%d/%m/%Y')}
@@ -388,13 +388,13 @@ class LocalDirectoryBackend(fincore.IndexStorageBackend):
             dmax = max(data.keys())
 
             for dt in _date_range(begin, end):
-                if dt in data:  # Dia útil.
+                if dt in data:  # Business day.
                     yield data[dt]
 
-                elif dt <= dmax:  # Fim de semana e feriado bancário.
+                elif dt <= dmax:  # Weekend and bank holiday.
                     yield fincore.DailyIndex(date=dt, value=decimal.Decimal())
 
-                elif dt in bizz and last:  # Dia útil, após o último indexador.
+                elif dt in bizz and last:  # Business day, after the last indexer.
                     _LOG.warning(f'CDI index for business day {dt} was not found in upstream, filling with value "{last.value}" from date {last.date}')
 
                     yield fincore.DailyIndex(date=dt, value=last.value, projected=True)
@@ -449,7 +449,7 @@ class LocalDirectoryBackend(fincore.IndexStorageBackend):
     @functools.cache  # This helper must return a list so it can be cached. Do not attempt to convert it to a generator.
     def _query_bacen_ipca(platform: 'platformdirs.api.PlatformDirsABC') -> typing.List[fincore.MonthlyIndex]:
         '''
-        Consulta indexadores IPCA na API do BACEN.
+        Queries IPCA indexers on the BACEN API.
         '''
 
         qry = {'formato': 'json', 'dataInicial': '01/01/2018', 'dataFinal': _TODAY().strftime('%d/%m/%Y')}
@@ -510,12 +510,12 @@ class LocalDirectoryBackend(fincore.IndexStorageBackend):
             raise fincore.BackendError('the “util.finmore.LocalDirectoryBackend” backend cannot retrieve IPCA indexes prior to 2018-01-01')
     # }}}
 
-    # Poupança. {{{
+    # Savings. {{{
     @staticmethod
     @functools.cache  # This helper must return a list so it can be cached. Do not attempt to convert it to a generator.
     def _query_bacen_savings(platform: 'platformdirs.api.PlatformDirsABC') -> typing.List[fincore.RangedIndex]:
         '''
-        Consulta indexador Poupança na API do BACEN.
+        Queries the Savings indexer on the BACEN API.
         '''
 
         qry = {'formato': 'json', 'dataInicial': '01/01/2018', 'dataFinal': _TODAY().strftime('%d/%m/%Y')}
@@ -533,7 +533,7 @@ class LocalDirectoryBackend(fincore.IndexStorageBackend):
                 if 'dataFim' in x:  # See [ERROS-BACEN] above.
                     idx.end_date = datetime.datetime.strptime(x['dataFim'], '%d/%m/%Y').date()
 
-                else:  # Implica em "'datafim' in x".
+                else:  # Implies "'datafim' in x".
                     idx.end_date = datetime.datetime.strptime(x['datafim'], '%d/%m/%Y').date()
 
                 mem.append(idx)
@@ -563,7 +563,7 @@ class LocalDirectoryBackend(fincore.IndexStorageBackend):
             if end and begin <= entry.begin_date <= end and begin <= entry.end_date <= end:
                 yield entry
 
-    # This method must be a generator so it complies with the signature of "fincore.IndexStorageBackend.get_sales_indexes".
+    # This method must be a generator so it complies with the signature of "fincore.IndexStorageBackend.get_savings_indexes".
     def get_savings_indexes(self, begin: datetime.date, end: datetime.date) -> typing.Generator[fincore.RangedIndex, None, None]:
         '''
         Read Brazilian Savings indexes from a BACEN API cached response on the local disk.
@@ -584,11 +584,11 @@ class LocalDirectoryBackend(fincore.IndexStorageBackend):
 
 def ajuda(command=''):
     '''
-    Comandos suportados:
+    Supported commands:
 
-    - "calcula_fatores_za", depura fatores Zille-Anna;
-    - "gera_pagamentos", gera um cronograma de pagamentos para uma determinada operação;
-    - "gera_rendimentos_diarios", gera uma tabela de rendimentos diária para uma operação.
+    - "calcula_fatores_za", debugs Zille-Anna factors;
+    - "gera_pagamentos", generates a payment schedule for a given operation;
+    - "gera_rendimentos_diarios", generates a daily returns table for an operation.
     '''
 
     dic = globals()
@@ -603,66 +603,66 @@ def ajuda(command=''):
 
 def gera_pagamentos(modalidade, principal, taxa_fixa, inicio_prazo='', aniversario='', csv_cronograma='', **kwargs):
     r'''
-    Gera um cronograma de pagamentos via biblioteca financeira.
+    Generates a payment schedule using the financial library.
 
-    Parâmetros para Bullet, Juros mensais, e Price:
+    Parameters for Bullet, Monthly Interest, and Price:
 
-      • "modalidade", modalidade da operação. Deve ser Bullet, Juros mensais, Price ou Livre;
+      • "modalidade", operation modality. Must be Bullet, Monthly Interest, Price or Free;
 
-      • "principal", valor do empréstimo;
+      • "principal", loan amount;
 
-      • "taxa_fixa", taxa de juros anual nominal, fixa;
+      • "taxa_fixa", nominal annual interest rate, fixed;
 
-      • "inicio_prazo", uma data no formato "D+N", em que D é uma data ISO 8601 e N é um número inteiro
-        positivo. Informa simultâneamente a data do início do rendimento e o prazo do investimento. Só deve ser
-        utilizado nas modalidades Bullet, Juros mensais ou Price.
+      • "inicio_prazo", a date in the format "D+N", where D is an ISO 8601 date and N is a positive
+        integer. Simultaneously informs the start date of the return and the investment term. Should only be
+        used in Bullet, Monthly Interest or Price modalities.
 
-      • "aniversario", opcional, data de aniversário do investimento;
+      • "aniversario", optional, investment anniversary date;
 
-    Na modalidade Livre, os parâmetros "inicio_prazo" e "aniversario" não devem ser informados. Use o "csv_cronograma":
+    In the Free modality, the "inicio_prazo" and "aniversario" parameters should not be provided. Use "csv_cronograma":
 
-      • "csv_cronograma", o cronograma de amortizações da operação. Deve ser o caminho de um arquivo no formato CSV. Se
-        esse arquivo não for informado, a entrada padrão será lida.
+      • "csv_cronograma", the operation's amortization schedule. Must be the path to a file in CSV format. If
+        this file is not provided, standard input will be read.
 
-    Parâmetros opcionais:
+    Optional parameters:
 
-      • "indice_variavel", índice variável. Pode ser CDI, Poupança, IPCA ou IGPM;
+      • "indice_variavel", variable index. Can be CDI, Savings, IPCA or IGPM;
 
-      • "indice_variavel_percentual", percentual do índice usado no cálculo do rendimento variável;
+      • "indice_variavel_percentual", percentage of the index used in the variable return calculation;
 
-      • "antecipacoes", para as modalidades Bullet, Juros mensais, e Price. Nessas modalidades, como não se informa um
-        arquivo com um cronograma de pagamentos, as antecipações vêm como uma lista de DATA+VALOR separadas por
-        ponto-e-vírgula. Exemplo operação Palazzo Saldanha - Juros Mensais - 9 meses.
+      • "antecipacoes", for Bullet, Monthly Interest, and Price modalities. In these modalities, since a
+        file with a payment schedule is not provided, prepayments come as a list of DATE+VALUE separated by
+        semicolons. Example Palazzo Saldanha operation - Monthly Interest - 9 months.
 
           icicle gera_pagamentos Juros\ mensais 4000000 6 2023-09-29+9 aniversario=2023-11-07 indice_variavel=CDI \
                  antecipacoes='2024-01-05+676127;2024-01-08+53022;2024-04-26+2908097;2024-05-27+447711.21'
 
-      • "calc_date", data limite para cálculo. Tem uma sintaxe especial para indicar que todo o cromograma deve ser
-        impresso: "D+R". Exemplo
+      • "calc_date", calculation limit date. Has a special syntax to indicate that the entire schedule should be
+        printed: "D+R". Example
 
          icicle gera_pagamentos Livre 145000 10 csv_cronograma=cronograma_asad.csv indice_variavel=IPCA calc_date=2022-12-01+R
 
-      • "gain_output", mode de saída do juros do motor. Pode ser current, deferred ou settled, padrão é sempre current;
+      • "gain_output", output mode for the engine's interest. Can be current, deferred or settled, the default is always current;
 
-      • "tax_exempt", opcional, indica se há isenção de imposto de renda nos pagamentos.
+      • "tax_exempt", optional, indicates if there is income tax exemption on payments.
 
-      • "first_dct_rule", opcional, regra para o primeiro DCT. Pode ser 30, 31 ou AUTO.
+      • "first_dct_rule", optional, rule for the first DCT. Can be 30, 31 or AUTO.
 
-      • "formato", o formato de saída. Além dos formatos suportados pela biblioteca Python Tabulate, vide
-        "http://github.com/astanin/python-tabulate#table-format", essa rotina suporta o formato "json", que emite a
-        tabela em formato JSON. O formato "raw" é um sinônimo para o formato "json".
+      • "formato", the output format. Besides the formats supported by the Python Tabulate library, see
+        "http://github.com/astanin/python-tabulate#table-format", this routine supports the "json" format, which emits the
+        table in JSON format. The "raw" format is a synonym for the "json" format.
     '''
 
     if kwargs.get('debug', '').lower() in ['s', 'sim', 'y', 'yes']:
         logging.basicConfig(level=logging.DEBUG)
 
-    # 0. Valida.
+    # 0. Validate.
     if modalidade not in ['Bullet', 'Juros mensais', 'Price', 'Livre']:
-        _PR(f'Erro: modalidade "{modalidade}" não suportada.')
+        _PR(f'Error: modality "{modalidade}" not supported.')
 
         return sh2py.HALT
 
-    # 1. Monta a chamada ao Fincore.
+    # 1. Assemble the Fincore call.
     gen = None
     kwa = {}
 
@@ -749,13 +749,13 @@ def gera_pagamentos(modalidade, principal, taxa_fixa, inicio_prazo='', aniversar
 
         gen = fincore.build_price(**kwa)
 
-    else:
+    else:  # Assumes "Livre".
         pct = int(kwargs.get('indice_variavel_percentual', '100'))
         lst = [csv_cronograma] if csv_cronograma else []
         vir = kwargs.get('indice_variavel', '')
 
         if not lst:
-            _PR('Arquivo de entrada não especificado. Lendo dados da entrada padrão…')
+            _PR('Input file not specified. Reading data from standard input…')
 
         kwa['principal'] = decimal.Decimal(principal)
         kwa['apy'] = decimal.Decimal(taxa_fixa)
@@ -766,7 +766,7 @@ def gera_pagamentos(modalidade, principal, taxa_fixa, inicio_prazo='', aniversar
 
         with fileinput.input(lst, openhook=lambda f, _: open(f, newline='')) as file:
             for line in csv.reader(file):
-                if line[0] == 'R':  # Fluxo regular.
+                if line[0] == 'R':  # Regular flow.
                     ent = fincore.Amortization(date=datetime.date.fromisoformat(line[1]))
 
                     ent.amortization_ratio = decimal.Decimal(line[2])
@@ -784,7 +784,7 @@ def gera_pagamentos(modalidade, principal, taxa_fixa, inicio_prazo='', aniversar
 
                     kwa['amortizations'].append(ent)
 
-                elif line[0] == 'X':  # Fluxo extraordinário.
+                elif line[0] == 'X':  # Extraordinary flow.
                     ent = fincore.Amortization.Bare(date=datetime.date.fromisoformat(line[1]))
 
                     ent.value = decimal.Decimal(line[2])
@@ -812,7 +812,7 @@ def gera_pagamentos(modalidade, principal, taxa_fixa, inicio_prazo='', aniversar
 
         gen = fincore.build(**kwa)
 
-    # 2. Executa e formata os resultados.
+    # 2. Execute and format the results.
     if (fmt := kwargs.get('formato', 'fancy_outline')) in tabulate.tabulate_formats:
         func = functools.partial(locale.currency, symbol=False, grouping=True)
         data = []
@@ -902,63 +902,63 @@ def gera_pagamentos(modalidade, principal, taxa_fixa, inicio_prazo='', aniversar
             print(pmt)
 
     else:
-        _PR(f'Erro, formato "{fmt}" não suportado.')
+        _PR(f'Error, format "{fmt}" not supported.')
 
         return sh2py.HALT
 
 def gera_rendimentos_diarios(modalidade, principal, taxa_fixa, inicio_prazo='', aniversario='', csv_cronograma='', **kwargs):
     r'''
-    Gera um cronograma de pagamentos via biblioteca financeira.
+    Generates a daily returns schedule using the financial library.
 
-    Parâmetros para Bullet, Juros mensais, e Price:
+    Parameters for Bullet, Monthly Interest, and Price:
 
-      • "modalidade", modalidade da operação. Deve ser Bullet, Juros mensais, Price ou Livre;
+      • "modalidade", operation modality. Must be Bullet, Monthly Interest, Price or Free;
 
-      • "principal", valor do empréstimo;
+      • "principal", loan amount;
 
-      • "taxa_fixa", taxa de juros anual nominal, fixa;
+      • "taxa_fixa", nominal annual interest rate, fixed;
 
-      • "inicio_prazo", uma data no formato "D+N", em que D é uma data ISO 8601 e N é um número inteiro
-        positivo. Informa simultâneamente a data do início do rendimento e o prazo do investimento. Só deve ser
-        utilizado nas modalidades Bullet, Juros mensais ou Price.
+      • "inicio_prazo", a date in the format "D+N", where D is an ISO 8601 date and N is a positive
+        integer. Simultaneously informs the start date of the return and the investment term. Should only be
+        used in Bullet, Monthly Interest or Price modalities.
 
-      • "aniversario", opcional, data de aniversário do investimento.
+      • "aniversario", optional, investment anniversary date.
 
-    Na modalidade Livre, os parâmetros "inicio_prazo" e "aniversario" não devem ser informados. Use o "csv_cronograma":
+    In the Free modality, the "inicio_prazo" and "aniversario" parameters should not be provided. Use "csv_cronograma":
 
-      • "csv_cronograma", o cronograma de amortizações da operação. Deve ser o caminho de um arquivo no formato CSV. Se
-        esse arquivo não for informado, a entrada padrão será lida.
+      • "csv_cronograma", the operation's amortization schedule. Must be the path to a file in CSV format. If
+        this file is not provided, standard input will be read.
 
-    Parâmetros opcionais:
+    Optional parameters:
 
-      • "indice_variavel", índice variável. Pode ser CDI, Poupança, IPCA ou IGPM;
+      • "indice_variavel", variable index. Can be CDI, Savings, IPCA or IGPM;
 
-      • "indice_variavel_percentual", percentual do índice usado no cálculo do rendimento variável;
+      • "indice_variavel_percentual", percentage of the index used in the variable return calculation;
 
-      • "antecipacoes", para as modalidades Bullet, Juros mensais, e Price. Nessas modalidades, como não se informa um
-        arquivo com um cronograma de pagamentos, as antecipações vêm como uma lista de DATA+VALOR separadas por
-        ponto-e-vírgula. Exemplo operação Palazzo Saldanha - Juros Mensais - 9 meses.
+      • "antecipacoes", for Bullet, Monthly Interest, and Price modalities. In these modalities, since a
+        file with a payment schedule is not provided, prepayments come as a list of DATE+VALUE separated by
+        semicolons. Example Palazzo Saldanha operation - Monthly Interest - 9 months.
 
           icicle gera_pagamentos Juros\ mensais 4000000 6 2023-09-29+9 aniversario=2023-11-07 indice_variavel=CDI \
                  antecipacoes='2024-01-05+676127;2024-01-08+53022;2024-04-26+2908097;2024-05-27+447711.21'
 
-      • "first_dct_rule", opcional, regra para o primeiro DCT. Pode ser 30, 31 ou AUTO.
+      • "first_dct_rule", optional, rule for the first DCT. Can be 30, 31 or AUTO.
 
-      • "formato", o formato de saída. Além dos formatos suportados pela biblioteca Python Tabulate, vide
-        "http://github.com/astanin/python-tabulate#table-format", essa rotina suporta o formato "json", que emite a
-        tabela em formato JSON. O formato "raw" é um sinônimo para o formato "json".
+      • "formato", the output format. Besides the formats supported by the Python Tabulate library, see
+        "http://github.com/astanin/python-tabulate#table-format", this routine supports the "json" format, which emits the
+        table in JSON format. The "raw" format is a synonym for the "json" format.
     '''
 
     if kwargs.get('debug', '').lower() in ['s', 'sim', 'y', 'yes']:
         logging.basicConfig(level=logging.DEBUG)
 
-    # 0. Valida.
+    # 0. Validate.
     if modalidade not in ['Bullet', 'Juros mensais', 'Price', 'Livre']:
-        _PR(f'Erro: modalidade "{modalidade}" não suportada.')
+        _PR(f'Error: modality "{modalidade}" not supported.')
 
         return sh2py.HALT
 
-    # 1. Monta a chamada ao Fincore.
+    # 1. Assemble the Fincore call.
     fun = functools.partial(locale.currency, symbol=False, grouping=True)
     kwa = {}
 
@@ -1015,13 +1015,13 @@ def gera_rendimentos_diarios(modalidade, principal, taxa_fixa, inicio_prazo='', 
 
                 kwa['insertions'].append(ent)
 
-    else:
+    else:  # Assumes "Livre".
         pct = int(kwargs.get('indice_variavel_percentual', '100'))
         lst = [csv_cronograma] if csv_cronograma else []
         vir = kwargs.get('indice_variavel', '')
 
         if not lst:
-            _PR('Arquivo de entrada não especificado. Lendo dados da entrada padrão…')
+            _PR('Input file not specified. Reading data from standard input…')
 
         kwa['principal'] = decimal.Decimal(principal)
         kwa['apy'] = decimal.Decimal(taxa_fixa)
@@ -1032,7 +1032,7 @@ def gera_rendimentos_diarios(modalidade, principal, taxa_fixa, inicio_prazo='', 
 
         with fileinput.input(lst, openhook=lambda f, _: open(f, newline='')) as file:
             for line in csv.reader(file):
-                if line[0] == 'R':  # Fluxo regular.
+                if line[0] == 'R':  # Regular flow.
                     ent = fincore.Amortization(date=datetime.date.fromisoformat(line[1]))
 
                     ent.amortization_ratio = decimal.Decimal(line[2])
@@ -1050,7 +1050,7 @@ def gera_rendimentos_diarios(modalidade, principal, taxa_fixa, inicio_prazo='', 
 
                     kwa['amortizations'].append(ent)
 
-                elif line[0] == 'X':  # Fluxo extraordinário.
+                elif line[0] == 'X':  # Extraordinary flow.
                     ent = fincore.Amortization.Bare(date=datetime.date.fromisoformat(line[1]))
 
                     ent.value = decimal.Decimal(line[2])
@@ -1063,7 +1063,7 @@ def gera_rendimentos_diarios(modalidade, principal, taxa_fixa, inicio_prazo='', 
         if vir:
             kwa['vir'] = _make_variable_index(vir, pct)
 
-    # 2. Cria o gerador de rendimentos diários.
+    # 2. Create the daily returns generator.
     if modalidade == 'Bullet':
         gene = fincore.get_bullet_daily_returns(**kwa)
 
@@ -1073,10 +1073,10 @@ def gera_rendimentos_diarios(modalidade, principal, taxa_fixa, inicio_prazo='', 
     elif modalidade == 'Price':
         gene = fincore.get_price_daily_returns(**kwa)
 
-    else:
+    else:  # Assumes "Livre".
         gene = fincore.get_livre_daily_returns(**kwa)
 
-    # 3. Executa e formata os resultados.
+    # 3. Execute and format the results.
     bal = decimal.Decimal(principal)
 
     if (fmt := kwargs.get('formato', 'fancy_outline')) in tabulate.tabulate_formats:
@@ -1106,7 +1106,7 @@ def gera_rendimentos_diarios(modalidade, principal, taxa_fixa, inicio_prazo='', 
 
             data.append(out)
 
-            bal = x.bal  # Memoriza o saldo para a próxima iteração.
+            bal = x.bal  # Memorize the balance for the next iteration.
 
         if data and not kwargs.get('indice_variavel', ''):
             _PR(tabulate.tabulate(data, tablefmt=fmt, **_DAILY_RETURNS_OPTS_PRE))
@@ -1142,7 +1142,7 @@ def gera_rendimentos_diarios(modalidade, principal, taxa_fixa, inicio_prazo='', 
 
             data.append(out)
 
-            bal = x.bal  # Memoriza o saldo para a próxima iteração.
+            bal = x.bal  # Memorize the balance for the next iteration.
 
         if data:
             print(json.dumps(data))
@@ -1165,28 +1165,28 @@ def gera_rendimentos_diarios(modalidade, principal, taxa_fixa, inicio_prazo='', 
             print(dr)
 
     else:
-        _PR(f'Erro, formato "{fmt}" não suportado.')
+        _PR(f'Error, format "{fmt}" not supported.')
 
         return sh2py.HALT
 
 def calcula_fatores_za(indice, taxa_fixa, data_inicio, data_fim, indice_pct='100', debug='n'):
     '''
-    Calcula fatores Zille-Anna.
+    Calculates Zille-Anna factors.
 
-    Comando para calcular fatores usados em índices variáveis.
+    Command to calculate factors used in variable indices.
 
-    Serve para facilitar a depuração de índices usados em operações pós fixadas. Auxilia na elaboração de casos de
-    testes, na construção de planilhas, e na validação de cálculos em geral.
+    Used to facilitate debugging of indices used in post-fixed operations. Helps in creating test cases,
+    building spreadsheets, and validating calculations in general.
 
-      icicle calcula_fatores_za INDICE TAXA_FIXA DATA_INICIO DATA_FIM [indice_pct=100] [debug=sim/não]
+      icicle calcula_fatores_za INDEX FIXED_RATE START_DATE END_DATE [indice_pct=100] [debug=yes/no]
 
-    Informe o índice, a taxa a.a. fixa, a data inicial, e a final do período. Exemplo para uma operação Bullet CDI com
-    taxa de 6,33 a.a., de dezoito meses, de 28/12/2021 a 28/06/2023.
+    Provide the index, the fixed annual rate, the start date, and the end date of the period. Example for a
+    Bullet CDI operation with a rate of 6.33% p.a., for eighteen months, from 2021-12-28 to 2023-06-28.
 
       icicle calcula_fatores_za CDI 6.33 2021-12-28 2023-06-28
 
-    O argumento "debug=s" vai ativar o nível "DEBUG" no módulo "logging", e mostrar os índices do período solicitado,
-    um a um.
+    The "debug=s" argument will activate the "DEBUG" level in the "logging" module, and show the indices
+    for the requested period, one by one.
     '''
 
     if debug.lower() in ['s', 'sim', 'y', 'yes']:
@@ -1202,29 +1202,29 @@ def calcula_fatores_za(indice, taxa_fixa, data_inicio, data_fim, indice_pct='100
         f_v = vir.backend.calculate_cdi_factor(d0, d1, pc)
         f_s = fincore.calculate_interest_factor(fr, decimal.Decimal(f_v.amount) / 252)
 
-        _PR(f'Período............: {d0.strftime("%x")} a {d1.strftime("%x")}')
-        _PR(f'Taxa spread........: {locale.str(fr)}% a.a.')  # pyright: ignore[reportArgumentType]
-        _PR(f'Fator spread (F1)..: {locale.str(round(f_s, 10))}')  # pyright: ignore[reportArgumentType]
-        _PR(f'Fator CDI (F2).....: {locale.str(round(f_v.value, 10))}')
-        _PR(f'Fator (F1×F2)......: {locale.str(round(f_s * f_v.value, 10))}')
-        _PR(f'Índices............: {locale.str(round(f_v.amount, 10))}')
-        _PR(f'Geração............: {datetime.datetime.now(_BRT).strftime("%d/%m/%Y %H:%M:%S")}')
+        _PR(f'Period.............: {d0.strftime("%x")} to {d1.strftime("%x")}')
+        _PR(f'Spread rate........: {locale.str(fr)}% p.a.')  # pyright: ignore[reportArgumentType]
+        _PR(f'Spread factor (F1).: {locale.str(round(f_s, 10))}')  # pyright: ignore[reportArgumentType]
+        _PR(f'CDI factor (F2)....: {locale.str(round(f_v.value, 10))}')
+        _PR(f'Factor (F1×F2).....: {locale.str(round(f_s * f_v.value, 10))}')
+        _PR(f'Indices............: {locale.str(round(f_v.amount, 10))}')
+        _PR(f'Generation.........: {datetime.datetime.now(_BRT).strftime("%d/%m/%Y %H:%M:%S")}')
 
-    elif indice == 'Poupança':
+    elif indice == 'Poupança':  # 'Poupança' is Portuguese for Savings.
         vir = _make_variable_index('Poupança', pc)
         f_v = vir.backend.calculate_savings_factor(d0, d1, pc)
         f_s = fincore.calculate_interest_factor(fr, decimal.Decimal((d1 - d0).days) / 360)
 
-        _PR(f'Período............: {d0.strftime("%x")} a {d1.strftime("%x")}')
-        _PR(f'Taxa spread........: {locale.str(fr)}% a.a.')  # pyright: ignore[reportArgumentType]
-        _PR(f'Fator spread (F1)..: {locale.str(round(f_s, 10))}')  # pyright: ignore[reportArgumentType]
-        _PR(f'Fator Poupança (F2): {locale.str(round(f_v.value, 10))}')
-        _PR(f'Fator (F1×F2)......: {locale.str(round(f_s * f_v.value, 10))}')
-        _PR(f'Índices............: {locale.str(round(f_v.amount, 10))}')
-        _PR(f'Geração............: {datetime.datetime.now(_BRT).strftime("%d/%m/%Y %H:%M:%S")}')
+        _PR(f'Period.............: {d0.strftime("%x")} to {d1.strftime("%x")}')
+        _PR(f'Spread rate........: {locale.str(fr)}% p.a.')  # pyright: ignore[reportArgumentType]
+        _PR(f'Spread factor (F1).: {locale.str(round(f_s, 10))}')  # pyright: ignore[reportArgumentType]
+        _PR(f'Savings factor (F2): {locale.str(round(f_v.value, 10))}')
+        _PR(f'Factor (F1×F2).....: {locale.str(round(f_s * f_v.value, 10))}')
+        _PR(f'Indices............: {locale.str(round(f_v.amount, 10))}')
+        _PR(f'Generation.........: {datetime.datetime.now(_BRT).strftime("%d/%m/%Y %H:%M:%S")}')
 
     else:
-        raise ValueError(f'Unsupported index: {indice}.')  # FIXME: implementar IPCA.
+        raise ValueError(f'Unsupported index: {indice}.')  # FIXME: implement IPCA.
 
 cli = sh2py.CommandLineMapper()
 

@@ -4518,7 +4518,7 @@ def test_will_create_late_payment_ipca():
 
     with unittest.mock.patch('fincore.IndexStorageBackend.calculate_ipca_factor', return_value=sns):
         # When.
-        out = fincore.get_late_payment(**kwa)
+        out = t.cast(fincore.LatePriceAdjustedPayment, fincore.get_late_payment(**kwa))
 
         # Then.
         assert out.no == pmt.no

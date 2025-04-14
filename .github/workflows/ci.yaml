@@ -64,6 +64,15 @@ jobs:
       - name: Lint with Ruff
         run: python -m ruff check fincore.py
 
+      - name: Lint tests with Flake8
+        run: python -m flake8 tests/test_fincore.py
+
+      - name: Lint tests with Pyright
+        run: python -m pyright --verbose tests/test_fincore.py
+
+      - name: Lint tests with Ruff
+        run: python -m ruff check tests/test_fincore.py
+
   type-check:
     runs-on: ubuntu-latest
 
