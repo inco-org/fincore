@@ -1,7 +1,9 @@
 __pycache__/
+build/
 
 .DS_Store
 .aider*
+*.egg-info
 
 # Added by cargo
 /rust/target
