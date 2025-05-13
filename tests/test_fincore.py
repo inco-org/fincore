@@ -506,7 +506,31 @@ def test_wont_create_sched_4():
         next(fincore.build(**kwa))
 
 def test_wont_create_sched_5():
-    '''Fincore deve falhar ao criar um empréstimo com base diferente de 252.'''
+    '''Fincore deve falhar ao criar um empréstimo com principal maior que zero e menor que R$ 0,01.'''
+
+    ent0 = fincore.Amortization(date=datetime.date(2018, 1, 1))
+    ent1 = fincore.Amortization(date=datetime.date(2018, 5, 1), amortizes_interest=True)
+
+    with pytest.raises(ValueError, match='principal value should be at least 0.01'):
+        next(fincore.get_payments_table(_CENTI / 2, _0, [ent0, ent1]))
+
+def test_wont_create_sched_6():
+    '''Fincore deve falhar ao criar um empréstimo sem um cronograma de amortizações.'''
+
+    with pytest.raises(ValueError, match='at least two amortizations are required: the start of the schedule, and its end'):
+        next(fincore.get_payments_table(_1, _0, []))
+
+def test_wont_create_sched_7():
+    '''Fincore deve falhar ao criar um empréstimo sem indexador e com base 252.'''
+
+    ent0 = fincore.Amortization(date=datetime.date(2018, 1, 1))
+    ent1 = fincore.Amortization(date=datetime.date(2018, 5, 1), amortizes_interest=True)
+
+    with pytest.raises(ValueError, match='fixed interest rates should not use the 252 working days capitalisation'):
+        next(fincore.get_payments_table(_1, _0, [ent0, ent1], capitalisation='252'))
+
+def test_wont_create_sched_8():
+    '''Fincore deve falhar ao criar um empréstimo com indexador CDI e base diferente de 252.'''
 
     ent0 = fincore.Amortization(date=datetime.date(2018, 1, 1))
     ent1 = fincore.Amortization(date=datetime.date(2018, 5, 1), amortizes_interest=True)
@@ -514,7 +538,36 @@ def test_wont_create_sched_5():
     with pytest.raises(ValueError, match='CDI should use the 252 working days capitalisation'):
         next(fincore.get_payments_table(_1, _0, [ent0, ent1], vir=fincore.VariableIndex('CDI'), capitalisation='360'))
 
-def test_wont_create_sched_6():
+def test_wont_create_sched_9():
+    '''Fincore deve falhar ao criar um empréstimo sem indexador IPCA/IGPM e com PLA na amortização.'''
+
+    ent0 = fincore.Amortization(date=datetime.date(2018, 1, 1))
+    ent1 = fincore.Amortization(date=datetime.date(2018, 5, 1), amortizes_interest=True)
+
+    ent1.price_level_adjustment = fincore.PriceLevelAdjustment(code='IPCA', base_date=datetime.date(2018, 5, 1), period=1)
+
+    with pytest.raises(TypeError, match="amortization 1 has price level adjustment, but either a variable index wasn't provided or it isn't IPCA nor IGPM"):
+        next(fincore.get_payments_table(_1, _0, [ent0, ent1], vir=fincore.VariableIndex('CDI'), capitalisation='252'))
+
+def test_wont_create_sched_10():
+    '''Fincore deve falhar ao criar um empréstimo cujo percentual de amortização acumulado ultrapassa 1.0.'''
+
+    ent0 = fincore.Amortization(date=datetime.date(2018, 1, 1))
+    ent1 = fincore.Amortization(date=datetime.date(2018, 5, 1), amortization_ratio=_1 + _1, amortizes_interest=True)
+
+    with pytest.raises(ValueError, match='the accumulated percentage of the amortizations overflows 1.0'):
+        next(fincore.get_payments_table(_1, _0, [ent0, ent1]))
+
+def test_wont_create_sched_11():
+    '''Fincore deve falhar ao criar um empréstimo cujo percentual de amortização acumulado seja menor que 1.0.'''
+
+    ent0 = fincore.Amortization(date=datetime.date(2018, 1, 1))
+    ent1 = fincore.Amortization(date=datetime.date(2018, 5, 1), amortizes_interest=True)
+
+    with pytest.raises(ValueError, match='the accumulated percentage of the amortizations does not reach 1.0'):
+        next(fincore.get_payments_table(_1, _0, [ent0, ent1]))
+
+def test_wont_create_sched_12():
     '''Fincore deve falhar ao criar um empréstimo com antecipação maior do que o saldo devedor.'''
 
     kwa = {}
