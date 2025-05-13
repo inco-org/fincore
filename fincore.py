@@ -263,6 +263,16 @@ def _date_range(start_date: datetime.date, end_date: datetime.date) -> t.Generat
 
 @typeguard.typechecked
 def _generate_monthly_dates(date0: datetime.date, date1: datetime.date) -> t.Generator[t.Tuple[datetime.date, datetime.date], None, None]:
+    '''
+    Returns pairs of dates spaced by one month, between two given dates.
+
+    >>> list(_generate_monthly_dates(datetime.date(2022, 1, 1), datetime.date(2022, 3, 1)))
+    [(datetime.date(2022, 1, 1), datetime.date(2022, 2, 1)), (datetime.date(2022, 2, 1), datetime.date(2022, 3, 1))]
+
+    >>> list(_generate_monthly_dates(datetime.date(2022, 1, 1), datetime.date(2022, 3, 3)))
+    [(datetime.date(2022, 1, 1), datetime.date(2022, 2, 3)), (datetime.date(2022, 2, 3), datetime.date(2022, 3, 3))]
+    '''
+
     index = date0
 
     while index < date1:
@@ -346,6 +356,11 @@ def _interleave(a: t.Iterable[_T], b: t.Iterable[_T], *, key: t.Callable[..., t.
         ...
     ValueError: iterable A is not ordered
 
+    >>> list(_interleave([1, 3, 5], [2, 6, 4]))
+    Traceback (most recent call last):
+        ...
+    ValueError: iterable B is not ordered
+
     When two items arising from A and B compare equally, the one from B have precedence over the one from A. This is
     because iterable A represents ordinary amortizations, whilst iterable B produces advance payments. In finance,
     advancements are usually processed first.
@@ -367,7 +382,16 @@ def _interleave(a: t.Iterable[_T], b: t.Iterable[_T], *, key: t.Callable[..., t.
 
     But when a single source iterable produces items that compare equally, an exception is thrown. This generator was
     designed to interleave scheduled payments, A, with unscheduled payments, B. It is unusual to have more than one
-    unscheduled payment on a given day.
+    scheduled payment on a given day.
+
+    >>> a = [1, 1, 2, 3, 5, 8]
+    >>> b = [13, 21, 34, 55]
+    >>> list(_interleave(a, b))
+    Traceback (most recent call last):
+        ...
+    ValueError: iterable A, item "1" found multiple times
+
+    It is also unusual to have more than one unscheduled payment on a given day.
 
     >>> a = [1, 5, 5, 6, 22, 90, 1000]
     >>> b = [5, 5, 9, 11, 82, 829]
@@ -881,28 +905,28 @@ class IndexStorageBackend:
         The begin and end dates are inclusive.
         '''
 
-        raise NotImplementedError()
+        raise NotImplementedError()  # pragma: no cover
 
     def get_savings_indexes(self, begin: datetime.date, end: datetime.date) -> t.Generator[RangedIndex, None, None]:
         '''
         Returns the list of Brazilian Savings indexes between the begin and end date.
         '''
 
-        raise NotImplementedError()
+        raise NotImplementedError()  # pragma: no cover
 
     def get_ipca_indexes(self, begin: datetime.date, end: datetime.date) -> t.Generator[MonthlyIndex, None, None]:
         '''
         Returns the list of IPCA indexes between the begin and end date.
         '''
 
-        raise NotImplementedError()
+        raise NotImplementedError()  # pragma: no cover
 
     def get_igpm_indexes(self, begin: datetime.date, end: datetime.date) -> t.Generator[MonthlyIndex, None, None]:
         '''
         Returns the list of IGPM indexes between the begin and end date.
         '''
 
-        raise NotImplementedError()
+        raise NotImplementedError()  # pragma: no cover
 
     @typeguard.typechecked
     def calculate_cdi_factor(self, begin: datetime.date, end: datetime.date, percentage: int = 100) -> types.SimpleNamespace:
@@ -979,7 +1003,17 @@ class IndexStorageBackend:
 
     @typeguard.typechecked
     def calculate_savings_factor(self, begin: datetime.date, end: datetime.date, percentage: int = 100) -> types.SimpleNamespace:
-        '''Calculates the Brazilian Savings factor for a given period.'''
+        '''
+        Calculates the Brazilian Savings factor for a given period.
+
+        >>> backend = InMemoryBackend()
+
+        >>> backend.calculate_savings_factor(datetime.date(2022, 1, 1), datetime.date(2022, 1, 1)).mem
+        [RangedIndex(begin_date=datetime.date(2022, 1, 1), end_date=datetime.date(2022, 2, 1), value=Decimal('0.5608'))]
+
+        >>> backend.calculate_savings_factor(datetime.date(2077, 1, 1), datetime.date(2077, 1, 1)).mem
+        []
+        '''
 
         if begin <= end:
             # Usa-se o 1º dia do mês seguinte como o aniversário dos dias 29, 30 e 31.
@@ -1018,11 +1052,13 @@ class IndexStorageBackend:
         >>> from datetime import date
         >>> from decimal import Decimal
 
-        >>> factor = Decimal('1.0054') * Decimal('1.0101') * Decimal('1.0162') * Decimal('1.0106') * Decimal('1.0047')
-        >>> factor = factor * Decimal('1.0067') * Decimal('0.9932') * Decimal('0.9964') * Decimal('0.9971')
-        >>> factor = factor * Decimal('1.0059') * Decimal('1.0041') * Decimal('1')
+        >>> factor = Decimal('1')
+        >>> factor = factor * Decimal('1.0054') * Decimal('1.0101') * Decimal('1.0162') * Decimal('1.0106')
+        >>> factor = factor * Decimal('1.0047') * Decimal('1.0067') * Decimal('1') * Decimal('1') * Decimal('1')
+        >>> factor = factor * Decimal('1.0059') * Decimal('1.0041') * Decimal('1.0062')
 
         >>> backend = InMemoryBackend()
+
         >>> backend.calculate_ipca_factor(date(2022, 1, 1), 12, 'AUTO').mem  # doctest: +NORMALIZE_WHITESPACE
         [MonthlyIndex(date=datetime.date(2022, 1, 1), value=Decimal('0.54')),
          MonthlyIndex(date=datetime.date(2022, 2, 1), value=Decimal('1.01')),
@@ -1035,9 +1071,15 @@ class IndexStorageBackend:
          MonthlyIndex(date=datetime.date(2022, 9, 1), value=Decimal('-0.29')),
          MonthlyIndex(date=datetime.date(2022, 10, 1), value=Decimal('0.59')),
          MonthlyIndex(date=datetime.date(2022, 11, 1), value=Decimal('0.41')),
-         MonthlyIndex(date=datetime.date(2022, 12, 1), value=Decimal('0'))]
+         MonthlyIndex(date=datetime.date(2022, 12, 1), value=Decimal('0.62'))]
         >>> backend.calculate_ipca_factor(date(2022, 1, 1), 12, 'AUTO').value == factor
         True
+
+        >>> backend.get_ipca_indexes = lambda *args, **kwargs: []
+        >>> backend.calculate_ipca_factor(date(2077, 1, 1), 1, 'AUTO')
+        namespace(value=Decimal('1'), mem=[])
+        >>> backend.calculate_ipca_factor(date(2077, 1, 1), 2, 'AUTO')
+        namespace(value=Decimal('1'), mem=[])
         '''
 
         ini = base - _MONTH * t.get_args(_PL_SHIFT).index(shift)
@@ -1062,7 +1104,7 @@ class IndexStorageBackend:
     def calculate_igpm_factor(self, base: datetime.date, period: int, shift: _PL_SHIFT, ratio: decimal.Decimal = _1) -> decimal.Decimal:
         '''Calculates the IGPM correction factor.'''
 
-        raise NotImplementedError()
+        raise NotImplementedError()  # pragma: no cover
 
 class InMemoryBackend(IndexStorageBackend):
     '''
@@ -1291,7 +1333,11 @@ class InMemoryBackend(IndexStorageBackend):
                                                                    '0.6143', '0.6147', '0.6524', '0.6801', '0.6794',
                                                                    '0.6791', '0.6516', '0.6136']]),
         (datetime.date(2022, 11, 1), [decimal.Decimal(x) for x in ['0.6515', '0.6515', '0.6792', '0.6519', '0.6139',
-                                                                   '0.6516', '0.6793', '0.6799', '0.6801', '0.6796'] + ['0.6448'] * 18])  # As 17 taxas finais são estimadas.
+                                                                   '0.6516', '0.6793', '0.6799', '0.6801', '0.6796'] + ['0.6448'] * 18]),  # As 17 taxas finais são estimadas.
+        (datetime.date(2022, 12, 1), [decimal.Decimal(x) for x in ['0.5000'] * 28]),                                  # NOQA
+        (datetime.date(2023, 1, 1),  [decimal.Decimal(x) for x in ['0.5000'] * 28]),                                  # NOQA
+        (datetime.date(2023, 2, 1),  [decimal.Decimal(x) for x in ['0.5000'] * 28]),                                  # NOQA
+        (datetime.date(2023, 3, 1),  [decimal.Decimal(x) for x in ['0.5000'] * 28])                                   # NOQA
     ]
 
     # This method does not need to compensate for missing indexes (it does not rely on the BACEN API). It also does not
@@ -1301,6 +1347,20 @@ class InMemoryBackend(IndexStorageBackend):
     #
     @typeguard.typechecked
     def get_cdi_indexes(self, begin: datetime.date, end: datetime.date, **_: dict[str, t.Any]) -> t.Generator[DailyIndex, None, None]:
+        '''
+        >>> backend = InMemoryBackend()
+
+        >>> list(backend.get_cdi_indexes(datetime.date(2018, 1, 1), datetime.date(2017, 12, 31)))
+        Traceback (most recent call last):
+        ...
+        ValueError: the initial date must be greater than, or equal to, the end date
+
+        >>> list(backend.get_cdi_indexes(datetime.date(2017, 1, 1), datetime.date(2017, 12, 31)))
+        Traceback (most recent call last):
+        ...
+        ValueError: this backend cannot provide CDI indexes prior to 2018-01-01
+        '''
+
         if self._registry_cdi and self._registry_cdi[0] and self._registry_cdi[0][0] <= begin <= end:
             dref = self._registry_cdi[0][0]
 

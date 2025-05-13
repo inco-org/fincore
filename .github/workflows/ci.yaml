@@ -133,7 +133,7 @@ jobs:
       # See https://docs.pytest.org/en/latest/how-to/doctest.html.
       - name: Run Tests
         run: |
-          python -m coverage run -m pytest -Werror tests
+          python -m coverage run -m pytest -Werror --doctest-modules --doctest-continue-on-failure
 
       - name: Create Coverage Comment Artifact
         id: coverage_comment
