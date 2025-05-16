@@ -137,6 +137,17 @@ def test_wont_create_sched_1():
     with pytest.raises(ValueError, match='"term" must be a greater than, or equal to, one'):
         next(fincore.build_bullet(_0, _0, datetime.date.min, 0))  # pyright: ignore
 
+    with pytest.raises(ValueError, match='invalid value for insertion entry #0 – should be positive'):
+        kwa = {}
+
+        kwa['principal'] = _1
+        kwa['apy'] = _1
+        kwa['zero_date'] = datetime.date(2022, 1, 1)
+        kwa['term'] = 12
+        kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 6, 1), value=decimal.Decimal(-5000))]
+
+        next(fincore.build_bullet(**kwa))
+
     with pytest.raises(ValueError, match=r'"insertions\[\d+\].date", \d{4}-\d{2}-\d{2}, must succeed "zero_date", \d{4}-\d{2}-\d{2}'):
         kwa = {}
 
@@ -412,6 +423,47 @@ def test_wont_create_sched_3():
         next(fincore.build_price(**kwa))
 
 def test_wont_create_sched_4():
+    with pytest.raises(ValueError, match='at least two amortizations are required: the start of the schedule, and its end'):
+        kwa = {}
+
+        kwa['principal'] = decimal.Decimal('222000')
+        kwa['apy'] = decimal.Decimal('13.5')
+        kwa['amortizations'] = tab = []
+
+        next(fincore.build(**kwa))
+
+    with pytest.raises(TypeError, match="amortization 1 has price level adjustment, but a variable index wasn't provided, or isn't IPCA nor IGPM"):
+        kwa = {}
+
+        kwa['principal'] = decimal.Decimal('222000')
+        kwa['apy'] = decimal.Decimal('13.5')
+        kwa['vir'] = fincore.VariableIndex('CDI')
+        kwa['amortizations'] = tab = []
+
+        # Monta a tabela de amortizações.
+        tab.append(fincore.Amortization(date=datetime.date(2022, 2, 1), amortizes_interest=False))
+        tab.append(fincore.Amortization(date=datetime.date(2022, 3, 1)))
+
+        tab[-1].price_level_adjustment = fincore.PriceLevelAdjustment(code='IPCA', base_date=datetime.date(2018, 5, 1), period=1)
+
+        next(fincore.build(**kwa))
+
+    with pytest.raises(ValueError, match='invalid value for insertion entry #0 – should be positive'):
+        kwa = {}
+
+        kwa['principal'] = kwa['apy'] = _1
+        kwa['amortizations'] = tab = []
+
+        # Monta a tabela de amortizações.
+        tab.append(fincore.Amortization(date=datetime.date(2022, 1, 1), amortizes_interest=False))
+
+        for i in range(1, 13):
+            tab.append(fincore.Amortization(date=tab[0].date + _MONTH * i, amortization_ratio=decimal.Decimal('0.08333333333333')))
+
+        kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 6, 1), value=decimal.Decimal(-5000))]
+
+        next(fincore.build(**kwa))
+
     with pytest.raises(ValueError, match=r'"insertions\[\d+\].date", \d{4}-\d{2}-\d{2}, must succeed "zero_date", \d{4}-\d{2}-\d{2}'):
         kwa = {}
 
@@ -502,6 +554,19 @@ def test_wont_create_sched_4():
         tab1.append(fincore.Amortization(date=datetime.date(2020, 3, 7), amortization_ratio=decimal.Decimal('0.25')))
         tab1.append(fincore.Amortization(date=datetime.date(2020, 4, 21), amortization_ratio=decimal.Decimal('0.25')))
         tab1.append(fincore.Amortization(date=datetime.date(2020, 5, 21), amortization_ratio=decimal.Decimal('0.25')))
+
+        next(fincore.build(**kwa))
+
+    with pytest.raises(ValueError, match='the accumulated percentage of the amortizations does not reach 1.0'):
+        kwa = {}
+
+        kwa['principal'] = decimal.Decimal('222000')
+        kwa['apy'] = decimal.Decimal('13.5')
+        kwa['amortizations'] = tab = []
+
+        # Monta a tabela de amortizações.
+        tab.append(fincore.Amortization(date=datetime.date(2020, 2, 1), amortizes_interest=False))
+        tab.append(fincore.Amortization(date=datetime.date(2020, 3, 1)))
 
         next(fincore.build(**kwa))
 
@@ -1828,6 +1893,71 @@ def test_will_create_jm_pre_10():
             assert x.bal == _0
 
     assert i == 4
+
+def test_will_create_jm_pre_11():
+    '''Valida duas antecipações antes do aniversário do empréstimo.'''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('500000')
+    kwa['apy'] = decimal.Decimal('6')
+    kwa['zero_date'] = datetime.date(2022, 8, 22)
+    kwa['anniversary_date'] = datetime.date(2022, 9, 27)
+    kwa['term'] = 3
+    kwa['insertions'] = []
+
+    kwa['insertions'].append(fincore.Amortization.Bare(date=datetime.date(2022, 8, 27), value=decimal.Decimal(5000)))
+    kwa['insertions'].append(fincore.Amortization.Bare(date=datetime.date(2022, 9, 22), value=decimal.Decimal(5000)))
+
+    for i, x in enumerate(fincore.build_jm(**kwa), 1):
+        assert x.no == i
+
+        if x.no == 1:
+            assert x.date == datetime.date(2022, 8, 27)
+            assert x.gain == decimal.Decimal('391.75')
+            assert x.amort == decimal.Decimal('4608.25')
+            assert x.raw == decimal.Decimal('5000.00')
+            assert x.tax == decimal.Decimal('88.14')
+            assert x.net == decimal.Decimal('4911.86')
+            assert x.bal == decimal.Decimal('495391.75')
+
+        elif x.no == 2:
+            assert x.date == datetime.date(2022, 9, 22)
+            assert x.gain == decimal.Decimal('2021.63')
+            assert x.amort == decimal.Decimal('2978.37')
+            assert x.raw == decimal.Decimal('5000.00')
+            assert x.tax == decimal.Decimal('454.87')
+            assert x.net == decimal.Decimal('4545.13')
+            assert x.bal == decimal.Decimal('492413.37')
+
+        elif x.no == 3:
+            assert x.date == datetime.date(2022, 9, 27)
+            assert x.gain == decimal.Decimal('385.80')
+            assert x.amort == _0
+            assert x.raw == decimal.Decimal('385.80')
+            assert x.tax == decimal.Decimal('86.81')
+            assert x.net == decimal.Decimal('298.99')
+            assert x.bal == decimal.Decimal('492413.37')
+
+        elif x.no == 4:
+            assert x.date == datetime.date(2022, 10, 27)
+            assert x.gain == decimal.Decimal('2396.85')
+            assert x.amort == _0
+            assert x.raw == decimal.Decimal('2396.85')
+            assert x.tax == decimal.Decimal('539.29')
+            assert x.net == decimal.Decimal('1857.56')
+            assert x.bal == decimal.Decimal('492413.37')
+
+        else:
+            assert x.date == datetime.date(2022, 11, 27)
+            assert x.gain == decimal.Decimal('2396.85')
+            assert x.amort == decimal.Decimal('492413.37')
+            assert x.raw == decimal.Decimal('494810.22')
+            assert x.tax == decimal.Decimal('539.29')
+            assert x.net == decimal.Decimal('494270.93')
+            assert x.bal == _0
+
+    assert i == 5
 
 def test_will_create_jm_pos_1():
     '''
@@ -4273,6 +4403,51 @@ def test_wont_calculate_revenue_tax():
 ])
 def test_will_calculate_revenue_tax(begin_date, end_date, tax):
     assert fincore.calculate_revenue_tax(begin_date, end_date) == tax
+
+@pytest.mark.parametrize('term, iof', [(1, decimal.Decimal('0.50741')), (12, decimal.Decimal('1.88'))])
+def test_will_calculate_iof(term, iof):
+    assert fincore.calculate_iof(datetime.date(2022, 1, 1), term) == iof
+
+def test_will_get_delinquency_charges_1():
+    '''
+    Teste o retorno da função para um investimento pré-fixado.
+
+    Ref File: https://docs.google.com/spreadsheets/d/1VcUJZn9YHTkjE2fvP4rafWIfyTcADFteFlBg4ljtLco
+    Tab.....: PRE
+    '''
+
+    kwa = {}
+
+    kwa['outstanding_balance'] = decimal.Decimal('100000')
+    kwa['arrears_period'] = (datetime.date(2022, 1, 1), datetime.date(2022, 2, 1))
+    kwa['loan_apy'] = decimal.Decimal('10')
+
+    obj = fincore.get_delinquency_charges(**kwa)
+
+    assert obj.extra_gain == decimal.Decimal('824.10')
+    assert obj.penalty == decimal.Decimal('1041.85')
+    assert obj.fine == decimal.Decimal('2037.32')
+
+def test_will_get_delinquency_charges_2():
+    '''
+    Teste o retorno da função para um investimento com indexador CDI.
+
+    Ref File: https://docs.google.com/spreadsheets/d/1VcUJZn9YHTkjE2fvP4rafWIfyTcADFteFlBg4ljtLco
+    Tab.....: CDI
+    '''
+
+    kwa = {}
+
+    kwa['outstanding_balance'] = decimal.Decimal('100000')
+    kwa['arrears_period'] = (datetime.date(2022, 1, 1), datetime.date(2022, 2, 1))
+    kwa['loan_apy'] = decimal.Decimal('10')
+    kwa['loan_vir'] = fincore.VariableIndex(code='CDI')
+
+    obj = fincore.get_delinquency_charges(**kwa)
+
+    assert obj.extra_gain == decimal.Decimal('1535.52')
+    assert obj.penalty == decimal.Decimal('1049.20')
+    assert obj.fine == decimal.Decimal('2051.69')
 
 def test_wont_create_late_payment():
     with pytest.raises(TypeError, match=r"get_late_payment\(\) missing 1 required positional argument: 'in_pmt'"):

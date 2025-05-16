@@ -1763,11 +1763,11 @@ def get_payments_table(
                         f_c = vir.backend.calculate_ipca_factor(**kwd)
                         f_c.value = max(f_c.value, _1)  # Lock the price level factor.
 
-            elif vir:
-                raise NotImplementedError(f'Combination of variable interest rate {vir} and capitalisation {capitalisation} unsupported')
+            elif vir:  # pragma: no cover
+                raise NotImplementedError(f'Combination of variable interest rate {vir} and capitalisation {capitalisation} unsupported')  # pragma: no cover
 
             else:
-                raise NotImplementedError(f'Unsupported capitalisation {capitalisation} for fixed interest rate')
+                raise NotImplementedError(f'Unsupported capitalisation {capitalisation} for fixed interest rate')  # pragma: no cover
 
         # Phase B.1, FRO, or Phase Rafa One.
         #
@@ -3598,11 +3598,12 @@ def get_delinquency_charges(
         f_2 = _1 + (fee_rate / decimal.Decimal(100)) * (dcp / decimal.Decimal(30))
         f_3 = _1 + (fine_rate / decimal.Decimal(100))
 
-    elif loan_vir and loan_vir.code == 'Poupança':
-        raise NotImplementedError()  # FIXME: implement.
+    # FIXME: implement.
+    elif loan_vir and loan_vir.code == 'Poupança':  # pragma: no cover
+        raise NotImplementedError()  # pragma: no cover
 
-    elif loan_vir:
-        raise NotImplementedError()
+    elif loan_vir:  # pragma: no cover
+        raise NotImplementedError()  # pragma: no cover
 
     v_1 = (outstanding_balance) * (f_1 - _1)  # Value of remuneratory interest. ATENTION: do not quantize here.
     v_2 = (outstanding_balance + v_1) * (f_2 - _1)  # Value of penalty interest. ATENTION: do not quantize here.
@@ -3687,10 +3688,10 @@ def get_late_payment(
                 f_c.mem = f_c.mem + f_i.mem
 
             else:
-                raise NotImplementedError()
+                raise NotImplementedError()  # pragma: no cover
 
-    elif vir:
-        raise NotImplementedError()
+    elif vir:  # pragma: no cover
+        raise NotImplementedError()  # pragma: no cover
 
     if not vir or vir.code == 'CDI':
         v_1 = (in_pmt.raw) * (f_1 - _1)  # Value of interest. ATENTION: do not quantize here.
@@ -3764,8 +3765,8 @@ def get_late_payment(
 _LOG.info(f'Fincore version {__version__} initialized')
 
 if __name__ == '__main__':
-    import doctest
+    import doctest  # pragma: no cover
 
-    doctest.testmod()
+    doctest.testmod()  # pragma: no cover
 
 # vi:fdm=marker:
