@@ -3472,6 +3472,60 @@ def test_will_create_livre_9b():
         assert [x.amort, x.gain, x.raw, x.tax, x.net, x.bal] == [decimal.Decimal(y) for y in tab2[i]]
 
     assert i == len(tab1) - 5 == len(tab2)
+
+def test_will_create_livre_10():
+    '''
+    Operação hipotética, modalidade Livre, incorporação de juros e amortização de principal.
+
+    Ref File: https://docs.google.com/spreadsheets/d/1S1FbR3HZLavkybf2uvXvHbL0ftUVPbmcsynNqiXZkZo
+    Tab.....: Hipotética 04 - Incorp. & Amort.
+    '''
+
+    pct = _1 / decimal.Decimal('12')
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('750000')
+    kwa['apy'] = decimal.Decimal('50')
+    kwa['amortizations'] = tab1 = []
+
+    # Monta a tabela de amortizações.
+    tab1.append(fincore.Amortization(date=datetime.date(2022, 1, 1), amortizes_interest=False))
+    tab1.append(fincore.Amortization(date=datetime.date(2022, 2, 1), amortizes_interest=False, amortization_ratio=pct))
+    tab1.append(fincore.Amortization(date=datetime.date(2022, 3, 1), amortizes_interest=False, amortization_ratio=pct))
+    tab1.append(fincore.Amortization(date=datetime.date(2022, 4, 1), amortizes_interest=False, amortization_ratio=pct))
+    tab1.append(fincore.Amortization(date=datetime.date(2022, 5, 1), amortizes_interest=False, amortization_ratio=pct))
+    tab1.append(fincore.Amortization(date=datetime.date(2022, 6, 1), amortizes_interest=False, amortization_ratio=pct))
+    tab1.append(fincore.Amortization(date=datetime.date(2022, 7, 1), amortizes_interest=False, amortization_ratio=pct))
+    tab1.append(fincore.Amortization(date=datetime.date(2022, 8, 1), amortizes_interest=False, amortization_ratio=pct))
+    tab1.append(fincore.Amortization(date=datetime.date(2022, 9, 1), amortizes_interest=False, amortization_ratio=pct))
+    tab1.append(fincore.Amortization(date=datetime.date(2022, 10, 1), amortizes_interest=False, amortization_ratio=pct))
+    tab1.append(fincore.Amortization(date=datetime.date(2022, 11, 1), amortizes_interest=False, amortization_ratio=pct))
+    tab1.append(fincore.Amortization(date=datetime.date(2022, 12, 1), amortizes_interest=False, amortization_ratio=pct))
+    tab1.append(fincore.Amortization(date=datetime.date(2023, 1, 1), amortization_ratio=pct))
+
+    # Amortização, juros, valor bruto, imposto, valor líquido, saldo devedor.
+    tab2 = {}
+
+    tab2[1] = '62500.00', '25774.56', '62500.00', '0.00', '62500.00', '713274.56',
+    tab2[2] = '62500.00', '24512.45', '62500.00', '0.00', '62500.00', '675287.02',
+    tab2[3] = '62500.00', '23206.97', '62500.00', '0.00', '62500.00', '635993.98',
+    tab2[4] = '62500.00', '21856.62', '62500.00', '0.00', '62500.00', '595350.61',
+    tab2[5] = '62500.00', '20459.87', '62500.00', '0.00', '62500.00', '553310.48',
+    tab2[6] = '62500.00', '19015.11', '62500.00', '0.00', '62500.00', '509825.59',
+    tab2[7] = '62500.00', '17520.71', '62500.00', '0.00', '62500.00', '464846.30',
+    tab2[8] = '62500.00', '15974.95', '62500.00', '0.00', '62500.00', '418321.24',
+    tab2[9] = '62500.00', '14376.06', '62500.00', '0.00', '62500.00', '370197.31',
+    tab2[10] = '62500.00', '12722.23', '62500.00', '0.00', '62500.00', '320419.54',
+    tab2[11] = '62500.00', '11011.56', '62500.00', '0.00', '62500.00', '268931.10',
+    tab2[12] = '62500.00', '9242.11', '278173.21', '37742.81', '240430.40', 0
+
+    for i, x in enumerate(fincore.build(**kwa), 1):
+        assert x.no == i
+        assert x.date == tab1[i].date
+
+        assert [x.amort, x.gain, x.raw, x.tax, x.net, x.bal] == [decimal.Decimal(y) for y in tab2[i]]
+
+    assert i == len(tab1) - 1 == len(tab2)
 # }}}
 
 # Modos de visualização de juros. {{{
@@ -4766,6 +4820,174 @@ def test_will_create_late_payment_ipca():
 # }}}
 
 # Retornos diários. {{{
+def test_wont_create_sched_daily_returns_1():
+    '''Fincore deve falhar ao criar um empréstimo com principal maior que zero e menor que R$ 0,01.'''
+
+    ent0 = fincore.Amortization(date=datetime.date(2018, 1, 1))
+    ent1 = fincore.Amortization(date=datetime.date(2018, 5, 1), amortizes_interest=True)
+
+    with pytest.raises(ValueError, match='principal value should be at least 0.01'):
+        next(fincore.get_daily_returns(_CENTI / 2, _0, [ent0, ent1]))
+
+def test_wont_create_sched_daily_returns_2():
+    '''Fincore deve falhar ao criar um empréstimo sem um cronograma de amortizações.'''
+
+    with pytest.raises(ValueError, match='at least two amortizations are required: the start of the schedule, and its end'):
+        next(fincore.get_daily_returns(_1, _0, []))
+
+def test_wont_create_sched_daily_returns_3():
+    '''Fincore deve falhar ao criar um empréstimo sem indexador e com base 252.'''
+
+    ent0 = fincore.Amortization(date=datetime.date(2018, 1, 1))
+    ent1 = fincore.Amortization(date=datetime.date(2018, 5, 1), amortizes_interest=True)
+
+    with pytest.raises(ValueError, match='fixed interest rates should not use the 252 working days capitalisation'):
+        next(fincore.get_daily_returns(_1, _0, [ent0, ent1], capitalisation='252'))
+
+def test_wont_create_sched_daily_returns_4():
+    '''Fincore deve falhar ao criar um empréstimo com indexador CDI e base diferente de 252.'''
+
+    ent0 = fincore.Amortization(date=datetime.date(2018, 1, 1))
+    ent1 = fincore.Amortization(date=datetime.date(2018, 5, 1), amortizes_interest=True)
+
+    with pytest.raises(ValueError, match='CDI should use the 252 working days capitalisation'):
+        next(fincore.get_daily_returns(_1, _0, [ent0, ent1], vir=fincore.VariableIndex('CDI'), capitalisation='360'))
+
+def test_wont_create_sched_daily_returns_5():
+    '''Fincore deve falhar ao criar um empréstimo sem indexador IPCA/IGPM e com PLA na amortização.'''
+
+    ent0 = fincore.Amortization(date=datetime.date(2018, 1, 1))
+    ent1 = fincore.Amortization(date=datetime.date(2018, 5, 1), amortizes_interest=True)
+
+    ent1.price_level_adjustment = fincore.PriceLevelAdjustment(code='IPCA', base_date=datetime.date(2018, 5, 1), period=1)
+
+    with pytest.raises(TypeError, match="amortization 1 has price level adjustment, but a variable index wasn't provided, or isn't IPCA nor IGPM"):
+        next(fincore.get_daily_returns(_1, _0, [ent0, ent1], vir=fincore.VariableIndex('CDI'), capitalisation='252'))
+
+def test_wont_create_sched_daily_returns_6():
+    '''Fincore deve falhar ao criar um empréstimo cujo percentual de amortização acumulado ultrapassa 1.0.'''
+
+    ent0 = fincore.Amortization(date=datetime.date(2018, 1, 1))
+    ent1 = fincore.Amortization(date=datetime.date(2018, 5, 1), amortization_ratio=_1 + _1, amortizes_interest=True)
+
+    with pytest.raises(ValueError, match='the accumulated percentage of the amortizations overflows 1.0'):
+        next(fincore.get_daily_returns(_1, _0, [ent0, ent1]))
+
+def test_wont_create_sched_daily_returns_7():
+    '''Fincore deve falhar ao criar um empréstimo cujo percentual de amortização acumulado seja menor que 1.0.'''
+
+    ent0 = fincore.Amortization(date=datetime.date(2018, 1, 1))
+    ent1 = fincore.Amortization(date=datetime.date(2018, 5, 1), amortizes_interest=True)
+
+    with pytest.raises(ValueError, match='the accumulated percentage of the amortizations does not reach 1.0'):
+        next(fincore.get_daily_returns(_1, _0, [ent0, ent1]))
+
+def test_will_create_loan_daily_returns_bullet_1():
+    '''
+    Operação pré-fixada modalidade Bullet.
+
+    Ref File: https://docs.google.com/spreadsheets/d/1vzW6Kz_NvLRHj8WZv2dSSGSvHauwhM7eCS5YfQ_ohng
+    Tab.....: Bullet - PRE
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = bal = decimal.Decimal('100000')
+    kwa['apy'] = decimal.Decimal('15')
+    kwa['zero_date'] = datetime.date(2022, 1, 1)
+    kwa['term'] = 12
+
+    # Calcula os retornos diários.
+    for entry in fincore.get_bullet_daily_returns(**kwa):
+        # Valida fator de juros.
+        assert decimal.Decimal.quantize(entry.sf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00038830')
+
+        # Valida valor do rendimento.
+        assert entry.value == _ROUND_CENTI((entry.sf - _1) * bal)
+
+        bal += entry.value
+
+def test_will_create_loan_daily_returns_bullet_2():
+    '''
+    Operação pré-fixada modalidade Bullet, com data de aniversário, verificando se o pagamento ocorre em um dia corrido
+    ou não.
+
+    Ref File: https://docs.google.com/spreadsheets/d/1vzW6Kz_NvLRHj8WZv2dSSGSvHauwhM7eCS5YfQ_ohng
+    Tab.....: Bullet - PRE
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = bal = decimal.Decimal('100000')
+    kwa['apy'] = decimal.Decimal('15')
+    kwa['zero_date'] = datetime.date(2022, 1, 1)
+    kwa['anniversary_date'] = datetime.date(2022, 2, 5)
+    kwa['term'] = 1
+    kwa['is_bizz_day_cb'] = lambda x: x.weekday() < 5
+
+    # Calcula os retornos diários.
+    for entry in fincore.get_bullet_daily_returns(**kwa):
+        # Valida fator de juros.
+        assert decimal.Decimal.quantize(entry.sf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00038830')
+
+        # Valida valor do rendimento.
+        assert entry.value == _ROUND_CENTI((entry.sf - _1) * bal)
+
+        if entry.date < kwa['anniversary_date'] - datetime.timedelta(1):
+            bal += entry.value
+
+def test_will_create_loan_daily_returns_price():
+    '''
+    Operação pré-fixada modalidade Price, com data de aniversário, duas antecipações parciais e uma antecipação total.
+
+    Ref File: https://docs.google.com/spreadsheets/d/1vzW6Kz_NvLRHj8WZv2dSSGSvHauwhM7eCS5YfQ_ohng
+    Tab.....: Price - AP & AT
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = bal = decimal.Decimal('100000')
+    kwa['apy'] = decimal.Decimal('15')
+    kwa['zero_date'] = datetime.date(2022, 1, 1)
+    kwa['anniversary_date'] = datetime.date(2022, 2, 5)
+    kwa['term'] = 12
+    kwa['insertions'] = []
+
+    kwa['insertions'].append(fincore.Amortization.Bare(date=datetime.date(2022, 1, 10), value=decimal.Decimal('10338.71')))
+    kwa['insertions'].append(fincore.Amortization.Bare(date=datetime.date(2022, 1, 20), value=decimal.Decimal('10338.77')))
+    kwa['insertions'].append(fincore.Amortization.Bare(date=datetime.date(2022, 2, 20), value=decimal.Decimal('73755.96')))
+
+    # Calcula os pagamentos.
+    payments = list(fincore.build_price(calc_date=fincore.CalcDate(datetime.date(2022, 2, 20)), **kwa))
+
+    kwa['is_bizz_day_cb'] = lambda x: x.weekday() < 5
+
+    # Calcula os retornos diários.
+    for entry in fincore.get_price_daily_returns(**kwa):
+        if entry.period == 1:
+            # Valida fator de juros.
+            assert decimal.Decimal.quantize(entry.sf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00037577')
+
+            for pmt in payments:
+                if entry.date == pmt.date:
+                    bal -= pmt.raw
+
+        elif entry.period == 2:
+            # Valida fator de juros.
+            assert decimal.Decimal.quantize(entry.sf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00041604')
+
+            for pmt in payments:
+                if entry.date == pmt.date:
+                    bal -= pmt.raw
+
+        else:
+            break  # FIXME: validar demais períodos.
+
+        # Valida valor do rendimento.
+        assert entry.value == _ROUND_CENTI((entry.sf - _1) * bal)
+
+        bal += entry.value
+
 def test_will_create_loan_daily_returns_livre_1():
     '''
     Operação pré-fixada modalidade Livre.

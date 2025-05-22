@@ -2493,7 +2493,7 @@ def get_daily_returns(
     facs.correction = FactorTriplet()  # Correction factor, FC.
 
     if principal == _0:
-        return
+        return  # pragma: no cover
 
     if principal < _CENTI:
         raise ValueError('principal value should be at least 0.01')
@@ -2548,7 +2548,7 @@ def get_daily_returns(
         idxs.variable = normalize_poupanca_indexes(vir.backend)
 
     elif vir:
-        raise NotImplementedError(f'unsupported variable index {vir}')
+        raise NotImplementedError(f'unsupported variable index {vir}')  # pragma: no cover
 
     # B. Execute.
     itr = iter(amortizations)
