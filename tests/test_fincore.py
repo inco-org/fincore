@@ -4882,6 +4882,22 @@ def test_wont_create_sched_daily_returns_7():
     with pytest.raises(ValueError, match='the accumulated percentage of the amortizations does not reach 1.0'):
         next(fincore.get_daily_returns(_1, _0, [ent0, ent1]))
 
+def test_wont_create_sched_daily_returns_8():
+    '''Fincore deve falhar ao criar um empréstimo com antecipação maior do que o saldo devedor.'''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('100000')
+    kwa['apy'] = decimal.Decimal('5')
+
+    kwa['amortizations'] = []
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2020, 1, 1), amortizes_interest=False))
+    kwa['amortizations'].append(fincore.Amortization.Bare(date=datetime.date(2020, 6, 1), value=decimal.Decimal('150000')))
+    kwa['amortizations'].append(fincore.Amortization(date=datetime.date(2021, 1, 1), amortization_ratio=decimal.Decimal(1), amortizes_interest=True))
+
+    with pytest.raises(Exception, match='the value of the amortization, 150000, is greater than the remaining balance of the loan, 102081.39'):
+        list(fincore.get_daily_returns(**kwa))
+
 def test_will_create_loan_daily_returns_bullet_1():
     '''
     Operação pré-fixada modalidade Bullet.
@@ -4935,6 +4951,68 @@ def test_will_create_loan_daily_returns_bullet_2():
 
         if entry.date < kwa['anniversary_date'] - datetime.timedelta(1):
             bal += entry.value
+
+def test_will_create_loan_daily_returns_bullet_3():
+    '''
+    Operação Poupança, modalidade Bullet.
+
+    Ref File: https://docs.google.com/spreadsheets/d/1vzW6Kz_NvLRHj8WZv2dSSGSvHauwhM7eCS5YfQ_ohng
+    Tab.....: Bullet - Poupança
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = bal = decimal.Decimal('100000')
+    kwa['apy'] = decimal.Decimal('15')
+    kwa['zero_date'] = datetime.date(2022, 1, 1)
+    kwa['term'] = 12
+    kwa['vir'] = fincore.VariableIndex(code='Poupança')
+
+    # Calcula os retornos diários.
+    for entry in fincore.get_bullet_daily_returns(**kwa):
+        if entry.date < datetime.date(2022, 2, 1):
+            # Valida fatores de juros.
+            assert decimal.Decimal.quantize(entry.vf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00018041')
+            assert decimal.Decimal.quantize(entry.sf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00038830')
+
+        elif entry.date < datetime.date(2022, 3, 1):
+            # Valida fatores de juros.
+            assert decimal.Decimal.quantize(entry.vf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00017814')
+            assert decimal.Decimal.quantize(entry.sf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00038830')
+
+        else:
+            break  # FIXME: validar demais períodos.
+
+        # Valida valor do rendimento.
+        assert entry.value == _ROUND_CENTI((entry.sf * entry.vf - _1) * bal)
+
+        bal += entry.value
+
+def test_will_create_loan_daily_returns_bullet_4():
+    '''
+    Operação pré-fixada modalidade Bullet, na base 365 (legada).
+
+    Ref File: https://docs.google.com/spreadsheets/d/1vzW6Kz_NvLRHj8WZv2dSSGSvHauwhM7eCS5YfQ_ohng
+    Tab.....: Bullet - PRE
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = bal = decimal.Decimal('100000')
+    kwa['apy'] = decimal.Decimal('15')
+    kwa['zero_date'] = datetime.date(2022, 1, 1)
+    kwa['term'] = 12
+    kwa['capitalisation'] = '365'
+
+    # Calcula os retornos diários.
+    for entry in fincore.get_bullet_daily_returns(**kwa):
+        # Valida fator de juros.
+        assert decimal.Decimal.quantize(entry.sf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00038298')
+
+        # Valida valor do rendimento.
+        assert math.isclose(entry.value, (entry.sf - _1) * bal, abs_tol=_CENTI)
+
+        bal += entry.value
 
 def test_will_create_loan_daily_returns_price():
     '''
@@ -6010,7 +6088,7 @@ def test_will_create_loan_daily_returns_jm_2():
 # }}}
 
 # Cronograma de pagamentos mensal x retornos diários. {{{
-def test_will_match_payments_table_and_daily_returns():
+def test_will_match_payments_table_and_daily_returns_1():
     '''
     Operação "Mais Park Pampulha 2", Livre - 18 meses - CDI, ID "lWwhog1nlyrIpBSDx5dD_".
 
@@ -6036,6 +6114,72 @@ def test_will_match_payments_table_and_daily_returns():
     drt = next(_tail(1, fincore.get_livre_daily_returns(**kwa)))
 
     assert pmt.raw == drt.bal
+
+def test_will_match_payments_table_and_daily_returns_2():
+    '''
+    Operação "YUCA SPE V", Juros mensais - 30 meses - IPCA, ID "cmQFTXLsEB6Bg7Zlae1pV".
+
+    Compara os valores finais do cronograma de pagamentos mensal e da rotina de retornos diários.
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('1844500')
+    kwa['apy'] = decimal.Decimal('7')
+    kwa['zero_date'] = datetime.date(2022, 2, 18)
+    kwa['term'] = 30
+    kwa['vir'] = fincore.VariableIndex(code='IPCA')
+    kwa['amortizes_correction'] = False
+
+    pmt = next(_tail(1, fincore.build_jm(**kwa)))
+    drt = next(_tail(1, fincore.get_jm_daily_returns(**kwa)))
+
+    assert pmt.raw == drt.bal
+
+def test_will_match_payments_table_and_daily_returns_3():
+    '''
+    Baseado na operação "YUCA SPE V", Juros mensais - 30 meses - IPCA, ID "cmQFTXLsEB6Bg7Zlae1pV", com inserção de uma
+    antecipação total fictícia.
+
+    Compara os valores finais do cronograma de pagamentos mensal e da rotina de retornos diários.
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('1844500')
+    kwa['apy'] = decimal.Decimal('7')
+    kwa['zero_date'] = datetime.date(2022, 2, 18)
+    kwa['term'] = 30
+    kwa['vir'] = fincore.VariableIndex(code='IPCA')
+    kwa['amortizes_correction'] = False
+    kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 4, 18), value=fincore.Amortization.Bare.MAX_VALUE)]
+
+    pmt = next(_tail(1, fincore.build_jm(**kwa)))
+    drt = next(_tail(1, fincore.get_jm_daily_returns(**kwa)))
+
+    assert pmt.raw == drt.bal
+
+def test_will_match_payments_table_and_daily_returns_4():
+    '''
+    Operação "CRI - Max Tulum 2 (Isento de IR)", Juros mensais - 38 meses - IPCA, ID "SFITBR__Qo2dDrU5GfAGj".
+
+    Compara os valores iniciais do cronograma de pagamentos mensal e da rotina de retornos diários.
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('7000000')
+    kwa['apy'] = decimal.Decimal('10.84')
+    kwa['zero_date'] = datetime.date(2024, 12, 12)
+    kwa['term'] = 38
+    kwa['anniversary_date'] = datetime.date(2025, 1, 14)
+    kwa['vir'] = fincore.VariableIndex(code='IPCA')
+    kwa['first_dct_rule'] = '31'
+
+    pmt = next(fincore.build_jm(**kwa))
+    drt = next(_tail(1, (x for x in fincore.get_jm_daily_returns(**kwa) if x.date < pmt.date)))
+
+    assert pmt.raw + pmt.bal == drt.bal
 # }}}
 
 # vi:fdm=marker:

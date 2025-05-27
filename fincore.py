@@ -1008,10 +1008,10 @@ class IndexStorageBackend:
 
         >>> backend = InMemoryBackend()
 
-        >>> backend.calculate_savings_factor(datetime.date(2022, 1, 1), datetime.date(2022, 1, 1)).mem
+        >>> backend.calculate_savings_factor(datetime.date(2022, 1, 1), datetime.date(2022, 2, 1)).mem
         [RangedIndex(begin_date=datetime.date(2022, 1, 1), end_date=datetime.date(2022, 2, 1), value=Decimal('0.5608'))]
 
-        >>> backend.calculate_savings_factor(datetime.date(2077, 1, 1), datetime.date(2077, 1, 1)).mem
+        >>> backend.calculate_savings_factor(datetime.date(2077, 1, 1), datetime.date(2077, 2, 1)).mem
         []
         '''
 
@@ -1417,7 +1417,7 @@ class InMemoryBackend(IndexStorageBackend):
                 i, d = 0, d0
 
                 while i < 28:
-                    if begin <= d <= end:
+                    if begin <= d < end:
                         yield RangedIndex(begin_date=d, end_date=d + _MONTH, value=values[i])
 
                     d += datetime.timedelta(days=1)
@@ -2622,10 +2622,10 @@ def get_daily_returns(
             facs.correction = facs.correction.normalize(next(idxs.variable))
 
         elif ref < amortizations[-1].date and vir:
-            raise NotImplementedError(f'combination of variable interest rate {vir} and capitalisation {capitalisation} unsupported')
+            raise NotImplementedError(f'combination of variable interest rate {vir} and capitalisation {capitalisation} unsupported')  # pragma: no cover
 
         elif ref < amortizations[-1].date:
-            raise NotImplementedError(f'unsupported capitalisation {capitalisation} for fixed interest rate')
+            raise NotImplementedError(f'unsupported capitalisation {capitalisation} for fixed interest rate')  # pragma: no cover
 
         # Phase B.1, FRONG, or Phase Rafa One, Next Gen.
         #
@@ -2678,6 +2678,10 @@ def get_daily_returns(
                 val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)  # Interest to be paid in the period.
                 val2 = val0 - val1  # Principal to be amortized.
 
+                # Check if the irregular payment value doesn't exceed the remaining balance.
+                if ent.value != Amortization.Bare.MAX_VALUE and ent.value > _Q(calc_balance(facs.correction.value)):
+                    raise Exception(f'the value of the amortization, {ent.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(facs.correction.value))}')
+
                 # Register the amortization percentage. Notice that the value sent here is adjusted with the monetary
                 # correction factor ("facs.correction.value").
                 #
@@ -2688,10 +2692,6 @@ def get_daily_returns(
                 # corrected balance.
                 #
                 gens.interest_tracker_2.send(val1)
-
-                # Check if we did not amortize more than the remaining principal.
-                if regs.principal.amortized.total > principal:
-                    raise Exception(f'the value of the amortization, {ent.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(facs.correction.value))}')
 
                 # The interest factors have to be renormalized on principal changes. See comments above.
                 facs.spread = facs.spread.normalize()
@@ -2864,7 +2864,7 @@ def preprocess_jm(
         raise ValueError(f'the "anniversary_date", {anniversary_date}, is more than 20 days away from the regular payment date, {zero_date + _MONTH}')
 
     if vir and vir.code == 'Poupança':
-        raise NotImplementedError('"Poupança" is currently unsupported')
+        raise NotImplementedError('"Poupança" is currently unsupported')  # pragma: no cover
 
     for i, x in enumerate(insertions):
         if x.date <= zero_date:
@@ -3048,7 +3048,7 @@ def preprocess_livre(
         raise ValueError('at least two amortizations are required: the start of the schedule, and its end')
 
     if vir and vir.code == 'Poupança':
-        raise NotImplementedError('"Poupança" is currently unsupported')
+        raise NotImplementedError('"Poupança" is currently unsupported')  # pragma: no cover
 
     for i, x in enumerate(amortizations):
         aux += x.amortization_ratio
