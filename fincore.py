@@ -853,6 +853,42 @@ class PriceAdjustedDailyReturn(DailyReturn):
     cf: decimal.Decimal = _1
 
 @dataclasses.dataclass
+class DailyReturnDetailed(DailyReturn):
+    '''
+    An entry of a daily returns table, enhanced with detailed fields.
+
+    Besides the fields of the base class, this class has two additional fields, "rp" and "ri".
+
+      • "rp", is the remaining principal balance at the end of the current day.
+
+      • "ri", is the remaining interest balance at the end of the current day.
+    '''
+
+    rp: decimal.Decimal = _0
+
+    ri: decimal.Decimal = _0
+
+@dataclasses.dataclass
+class PriceAdjustedDailyReturnDetailed(PriceAdjustedDailyReturn):
+    '''
+    An entry of a daily returns table, with price level adjustment (IPCA or IGPM), enhanced with detailed fields.
+
+    Besides the fields of the base class, this class has three additional fields, "rp", "ri", and "rc".
+
+      • "rp", is the remaining principal balance at the end of the current day.
+
+      • "ri", is the remaining interest balance at the end of the current day.
+
+      • "rc", is the corresponding correction value of the current day.
+    '''
+
+    rp: decimal.Decimal = _0
+
+    ri: decimal.Decimal = _0
+
+    rc: decimal.Decimal = _0
+
+@dataclasses.dataclass
 class LatePayment(Payment):
     '''An entry of a payment schedule, with extra gain, penalty and fine values.'''
 
@@ -2135,7 +2171,8 @@ def get_daily_returns(
     vir: t.Optional[VariableIndex] = None,
     capitalisation: _CAPITALISATION = '360',
     first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
-    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
+    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True,
+    detailed: bool = False,
 ) -> t.Generator[DailyReturn, None, None]:
     '''
     Generates a yield table for a given loan.
@@ -2742,6 +2779,17 @@ def get_daily_returns(
             dr.pla = _Q(v1 - v0)
 
             dr.cf = facs.correction.discrete
+
+        if detailed:
+            dr = t.cast(DailyReturnDetailed, dr)
+
+            dr.rp = _Q(principal - regs.principal.amortized.total)
+            dr.ri = _Q(regs.interest.accrued - regs.interest.settled.total)
+
+            if vir and vir.code == 'IPCA':
+                dr = t.cast(PriceAdjustedDailyReturnDetailed, dr)
+
+                dr.rc = _Q(calc_balance(facs.correction.value) - (regs.interest.accrued - regs.interest.settled.total) - (principal - regs.principal.amortized.total))
 
         _LOG.debug(f'T={p}, n={cnt}, f_s={facs.spread} f_v={facs.variable} f_c={facs.correction}')
         _LOG.debug(f'T={p}, n={cnt}, regs={regs}')
@@ -3357,7 +3405,8 @@ def get_bullet_daily_returns(
     capitalisation: _DAILY_CAPITALISATION = '360',
     first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
     is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True,
-    verbose: bool = True
+    verbose: bool = True,
+    detailed: bool = True
 ) -> t.Generator[DailyReturn, None, None]:
     kwa: t.Dict[str, t.Any] = {}
 
@@ -3368,6 +3417,7 @@ def get_bullet_daily_returns(
     kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else capitalisation
     kwa['first_dct_rule'] = first_dct_rule
     kwa['is_bizz_day_cb'] = is_bizz_day_cb
+    kwa['detailed'] = detailed
 
     yield from get_daily_returns(**kwa)
 
@@ -3382,7 +3432,8 @@ def get_jm_daily_returns(
     vir: t.Optional[VariableIndex] = None,
     amortizes_correction: bool = True,
     first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
-    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
+    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True,
+    detailed: bool = True
 ) -> t.Generator[DailyReturn, None, None]:
     kwa: t.Dict[str, t.Any] = {}
 
@@ -3393,6 +3444,7 @@ def get_jm_daily_returns(
     kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else '30/360'
     kwa['first_dct_rule'] = first_dct_rule
     kwa['is_bizz_day_cb'] = is_bizz_day_cb
+    kwa['detailed'] = detailed
 
     yield from get_daily_returns(**kwa)
 
@@ -3405,7 +3457,8 @@ def get_price_daily_returns(
     insertions: t.List[Amortization.Bare] = [],
     anniversary_date: t.Optional[datetime.date] = None,
     first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
-    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
+    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True,
+    detailed: bool = True
 ) -> t.Generator[DailyReturn, None, None]:
     kwa: t.Dict[str, t.Any] = {}
 
@@ -3415,6 +3468,7 @@ def get_price_daily_returns(
     kwa['capitalisation'] = '30/360'
     kwa['first_dct_rule'] = first_dct_rule
     kwa['is_bizz_day_cb'] = is_bizz_day_cb
+    kwa['detailed'] = detailed
 
     yield from get_daily_returns(**kwa)
 
@@ -3427,7 +3481,8 @@ def get_livre_daily_returns(
     insertions: t.List[Amortization.Bare] = [],
     vir: t.Optional[VariableIndex] = None,
     first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
-    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
+    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True,
+    detailed: bool = True
 ) -> t.Generator[DailyReturn, None, None]:
     kwa: t.Dict[str, t.Any] = {}
 
@@ -3438,6 +3493,7 @@ def get_livre_daily_returns(
     kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else '30/360'
     kwa['first_dct_rule'] = first_dct_rule
     kwa['is_bizz_day_cb'] = is_bizz_day_cb
+    kwa['detailed'] = detailed
 
     yield from get_daily_returns(**kwa)
 # }}}
