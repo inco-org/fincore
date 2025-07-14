@@ -2784,12 +2784,12 @@ def get_daily_returns(
             dr = t.cast(DailyReturnDetailed, dr)
 
             dr.rp = _Q(principal - regs.principal.amortized.total)
-            dr.ri = _Q(regs.interest.accrued - regs.interest.settled.total)
+            dr.ri = _Q(regs.interest.accrued - regs.interest.settled.total - regs.interest.daily)
 
             if vir and vir.code == 'IPCA':
                 dr = t.cast(PriceAdjustedDailyReturnDetailed, dr)
 
-                dr.rc = _Q(calc_balance(facs.correction.value) - (regs.interest.accrued - regs.interest.settled.total) - (principal - regs.principal.amortized.total))
+                dr.rc = _Q(calc_balance(facs.correction.value) - (regs.interest.accrued - regs.interest.settled.total - regs.interest.daily) - (principal - regs.principal.amortized.total))
 
         _LOG.debug(f'T={p}, n={cnt}, f_s={facs.spread} f_v={facs.variable} f_c={facs.correction}')
         _LOG.debug(f'T={p}, n={cnt}, regs={regs}')
