@@ -146,7 +146,6 @@ But be aware that the notebook may be out of date.
 # Python.
 import sys
 import math
-import copy
 import types
 import typing as t
 import decimal
@@ -749,8 +748,6 @@ class Payment:
     It also contains metadata about the payment:
 
       • "vf_mem", is the list of variable indexes used on the calculations of the payment.
-
-      • "_regs", is the state of the internal registers of the "_get_payments_table" function at payment time.
     '''
 
     no: int = 0
@@ -775,9 +772,6 @@ class Payment:
 
     # FIXME: this should be excluded from the dataclass. Especially, if it is made immutable.
     vf_mem: t.List[DailyIndex | RangedIndex] = dataclasses.field(default_factory=list)
-
-    # FIXME: this should be excluded from the dataclass. Especially, if it is made immutable.
-    _regs: types.SimpleNamespace = dataclasses.field(default_factory=types.SimpleNamespace)
 
 @dataclasses.dataclass
 class PriceAdjustedPayment(Payment):
@@ -820,6 +814,10 @@ class DailyReturn:
       • "sf", is the spread, or fixed factor of the entry.
 
       • "vf", is the variable factor of the entry.
+
+      • "op", is the outstanding principal of the entry.
+
+      • "oi", is the outstanding interest of the entry.
     '''
 
     no: int = 0
@@ -836,57 +834,29 @@ class DailyReturn:
 
     vf: decimal.Decimal = _1
 
+    op: decimal.Decimal = _0
+
+    oi: decimal.Decimal = _0
+
 @dataclasses.dataclass
 class PriceAdjustedDailyReturn(DailyReturn):
     '''
     An entry of a daily returns table, with price level adjustment (IPCA or IGPM).
 
-    Besides the fields of the base class, this class has two additional fields, "pla" and "cf".
+    Besides the fields of the base class, this class has three additional fields, "pla", "cf" and "opla".
 
       • "pla", is the monetary correction of the entry, or its price level adjustment.
 
       • "cf", is the correction factor of the entry.
+
+      • "opla", is the outstanding monetary correction of the entry, or outstanding price level adjustment.
     '''
 
     pla: decimal.Decimal = _0
 
     cf: decimal.Decimal = _1
 
-@dataclasses.dataclass
-class DailyReturnDetailed(DailyReturn):
-    '''
-    An entry of a daily returns table, enhanced with detailed fields.
-
-    Besides the fields of the base class, this class has two additional fields, "rp" and "ri".
-
-      • "rp", is the remaining principal balance at the end of the current day.
-
-      • "ri", is the remaining interest balance at the end of the current day.
-    '''
-
-    rp: decimal.Decimal = _0
-
-    ri: decimal.Decimal = _0
-
-@dataclasses.dataclass
-class PriceAdjustedDailyReturnDetailed(PriceAdjustedDailyReturn):
-    '''
-    An entry of a daily returns table, with price level adjustment (IPCA or IGPM), enhanced with detailed fields.
-
-    Besides the fields of the base class, this class has three additional fields, "rp", "ri", and "rc".
-
-      • "rp", is the remaining principal balance at the end of the current day.
-
-      • "ri", is the remaining interest balance at the end of the current day.
-
-      • "rc", is the corresponding correction value of the current day.
-    '''
-
-    rp: decimal.Decimal = _0
-
-    ri: decimal.Decimal = _0
-
-    rc: decimal.Decimal = _0
+    opla: decimal.Decimal = _0
 
 @dataclasses.dataclass
 class LatePayment(Payment):
@@ -1996,9 +1966,6 @@ def get_payments_table(
                 pmt.cf = f_c.value
                 pmt.cf_mem = f_c.mem
 
-            # B.2.3. Faz uma cópia dos registradores para a saída de pagamento.
-            pmt._regs = copy.deepcopy(regs)
-
             yield pmt
 
             if pmt.bal == _0:
@@ -2171,8 +2138,7 @@ def get_daily_returns(
     vir: t.Optional[VariableIndex] = None,
     capitalisation: _CAPITALISATION = '360',
     first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
-    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True,
-    detailed: bool = False,
+    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
 ) -> t.Generator[DailyReturn, None, None]:
     '''
     Generates a yield table for a given loan.
@@ -2771,6 +2737,9 @@ def get_daily_returns(
         dr.sf = facs.spread.discrete
         dr.vf = facs.variable.discrete
 
+        dr.op = _Q(principal - regs.principal.amortized.total)
+        dr.oi = _Q(regs.interest.accrued - regs.interest.settled.total - regs.interest.daily)
+
         if vir and vir.code == 'IPCA':
             dr = t.cast(PriceAdjustedDailyReturn, dr)
             v0 = get_principal_outstanding(facs.correction.prev_value) + regs.interest.deferred
@@ -2780,16 +2749,7 @@ def get_daily_returns(
 
             dr.cf = facs.correction.discrete
 
-        if detailed:
-            dr = t.cast(DailyReturnDetailed, dr)
-
-            dr.rp = _Q(principal - regs.principal.amortized.total)
-            dr.ri = _Q(regs.interest.accrued - regs.interest.settled.total - regs.interest.daily)
-
-            if vir and vir.code == 'IPCA':
-                dr = t.cast(PriceAdjustedDailyReturnDetailed, dr)
-
-                dr.rc = _Q(calc_balance(facs.correction.value) - (regs.interest.accrued - regs.interest.settled.total - regs.interest.daily) - (principal - regs.principal.amortized.total))
+            dr.opla = _Q(calc_balance(facs.correction.value) - calc_balance())
 
         _LOG.debug(f'T={p}, n={cnt}, f_s={facs.spread} f_v={facs.variable} f_c={facs.correction}')
         _LOG.debug(f'T={p}, n={cnt}, regs={regs}')
@@ -3405,8 +3365,7 @@ def get_bullet_daily_returns(
     capitalisation: _DAILY_CAPITALISATION = '360',
     first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
     is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True,
-    verbose: bool = True,
-    detailed: bool = True
+    verbose: bool = True
 ) -> t.Generator[DailyReturn, None, None]:
     kwa: t.Dict[str, t.Any] = {}
 
@@ -3417,7 +3376,6 @@ def get_bullet_daily_returns(
     kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else capitalisation
     kwa['first_dct_rule'] = first_dct_rule
     kwa['is_bizz_day_cb'] = is_bizz_day_cb
-    kwa['detailed'] = detailed
 
     yield from get_daily_returns(**kwa)
 
@@ -3432,8 +3390,7 @@ def get_jm_daily_returns(
     vir: t.Optional[VariableIndex] = None,
     amortizes_correction: bool = True,
     first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
-    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True,
-    detailed: bool = True
+    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
 ) -> t.Generator[DailyReturn, None, None]:
     kwa: t.Dict[str, t.Any] = {}
 
@@ -3444,7 +3401,6 @@ def get_jm_daily_returns(
     kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else '30/360'
     kwa['first_dct_rule'] = first_dct_rule
     kwa['is_bizz_day_cb'] = is_bizz_day_cb
-    kwa['detailed'] = detailed
 
     yield from get_daily_returns(**kwa)
 
@@ -3457,8 +3413,7 @@ def get_price_daily_returns(
     insertions: t.List[Amortization.Bare] = [],
     anniversary_date: t.Optional[datetime.date] = None,
     first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
-    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True,
-    detailed: bool = True
+    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
 ) -> t.Generator[DailyReturn, None, None]:
     kwa: t.Dict[str, t.Any] = {}
 
@@ -3468,7 +3423,6 @@ def get_price_daily_returns(
     kwa['capitalisation'] = '30/360'
     kwa['first_dct_rule'] = first_dct_rule
     kwa['is_bizz_day_cb'] = is_bizz_day_cb
-    kwa['detailed'] = detailed
 
     yield from get_daily_returns(**kwa)
 
@@ -3481,8 +3435,7 @@ def get_livre_daily_returns(
     insertions: t.List[Amortization.Bare] = [],
     vir: t.Optional[VariableIndex] = None,
     first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
-    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True,
-    detailed: bool = True
+    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
 ) -> t.Generator[DailyReturn, None, None]:
     kwa: t.Dict[str, t.Any] = {}
 
@@ -3493,7 +3446,6 @@ def get_livre_daily_returns(
     kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else '30/360'
     kwa['first_dct_rule'] = first_dct_rule
     kwa['is_bizz_day_cb'] = is_bizz_day_cb
-    kwa['detailed'] = detailed
 
     yield from get_daily_returns(**kwa)
 # }}}
