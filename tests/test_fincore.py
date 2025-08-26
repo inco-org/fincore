@@ -4543,14 +4543,14 @@ def test_will_get_delinquency_charges_1():
     kwa = {}
 
     kwa['outstanding_balance'] = decimal.Decimal('100000')
-    kwa['arrears_period'] = (datetime.date(2022, 1, 1), datetime.date(2022, 2, 1))
+    kwa['penalty_arrear_days'] = 1
     kwa['loan_apy'] = decimal.Decimal('10')
 
     obj = fincore.get_delinquency_charges(**kwa)
 
-    assert obj.extra_gain == decimal.Decimal('824.10')
-    assert obj.penalty == decimal.Decimal('1041.85')
-    assert obj.fine == decimal.Decimal('2037.32')
+    assert obj.extra_gain == decimal.Decimal('26.48')
+    assert obj.penalty == decimal.Decimal('33.34')
+    assert obj.fine == decimal.Decimal('2001.20')
 
 def test_will_get_delinquency_charges_2():
     '''
@@ -4563,15 +4563,16 @@ def test_will_get_delinquency_charges_2():
     kwa = {}
 
     kwa['outstanding_balance'] = decimal.Decimal('100000')
-    kwa['arrears_period'] = (datetime.date(2022, 1, 1), datetime.date(2022, 2, 1))
+    kwa['penalty_arrear_days'] = 1
     kwa['loan_apy'] = decimal.Decimal('10')
     kwa['loan_vir'] = fincore.VariableIndex(code='CDI')
+    kwa['loan_vir_ref_date'] = datetime.date(2022, 1, 1)
 
     obj = fincore.get_delinquency_charges(**kwa)
 
-    assert obj.extra_gain == decimal.Decimal('1535.52')
-    assert obj.penalty == decimal.Decimal('1049.20')
-    assert obj.fine == decimal.Decimal('2051.69')
+    assert obj.extra_gain == _0
+    assert obj.penalty == decimal.Decimal('33.33')
+    assert obj.fine == decimal.Decimal('2000.67')
 
 def test_wont_create_late_payment():
     with pytest.raises(TypeError, match=r"get_late_payment\(\) missing 1 required positional argument: 'in_pmt'"):
@@ -5016,11 +5017,15 @@ def test_will_create_loan_daily_returns_bullet_2():
         # Valida fator de juros.
         assert decimal.Decimal.quantize(entry.sf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00038830')
 
-        # Valida valor do rendimento.
-        assert entry.value == _ROUND_CENTI((entry.sf - _1) * bal)
+        if entry.date < kwa['anniversary_date']:
+            # Valida valor do rendimento.
+            assert entry.value == _ROUND_CENTI((entry.sf - _1) * bal)
 
-        if entry.date < kwa['anniversary_date'] - datetime.timedelta(1):
             bal += entry.value
+
+        else:
+            # Valida valor do rendimento.
+            assert entry.value == _0
 
 def test_will_create_loan_daily_returns_bullet_3():
     '''

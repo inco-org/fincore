@@ -794,6 +794,13 @@ def gera_pagamentos(modalidade, principal, taxa_fixa, inicio_prazo='', aniversar
                 else:
                     raise ValueError()
 
+        if aniversario:
+            if (anniversary_date := datetime.date.fromisoformat(aniversario)) == kwa['amortizations'][1].date:
+                kwa['amortizations'][1].dct_override = fincore.DctOverride(anniversary_date, anniversary_date, composes_first_anniversary_period=False)
+
+            else:
+                raise ValueError()
+
         if vir:
             kwa['vir'] = _make_variable_index(vir, pct)
 
@@ -1059,6 +1066,13 @@ def gera_rendimentos_diarios(modalidade, principal, taxa_fixa, inicio_prazo='', 
 
                 else:
                     raise ValueError()
+
+        if aniversario:
+            if (anniversary_date := datetime.date.fromisoformat(aniversario)) == kwa['amortizations'][1].date:
+                kwa['amortizations'][1].dct_override = fincore.DctOverride(anniversary_date, anniversary_date, composes_first_anniversary_period=False)
+
+            else:
+                raise ValueError()
 
         if vir:
             kwa['vir'] = _make_variable_index(vir, pct)
