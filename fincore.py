@@ -3567,7 +3567,9 @@ def amortize_fixed(principal: decimal.Decimal, apy: decimal.Decimal, term: int) 
 @typeguard.typechecked
 def get_delinquency_charges(
     outstanding_balance: decimal.Decimal,  # Unpaid principal plus interest.
-    arrears_period: t.Tuple[datetime.date, datetime.date],  # Arrear, or delinquency period.
+
+    extra_gain_arrears_period: t.Tuple[datetime.date, datetime.date],  # Arrear, or delinquency period, for extra gain.
+    penalty_arrears_period: t.Tuple[datetime.date, datetime.date],  # Arrear, or delinquency period, for penalty.
 
     loan_apy: decimal.Decimal,  # Annual interest rate (spread).
     loan_vir: t.Optional[VariableIndex] = None,  # Variable index.
@@ -3578,15 +3580,16 @@ def get_delinquency_charges(
     '''
     Calculates extra charges for a delinquent loan.
 
-      • "arrears_period" (t.Tuple[datetime.date, datetime.date]): the delinquency period, represented as a tuple with
-        start and end dates.
+      • "outstanding_balance" (decimal.Decimal): the loan's outstanding balance, including unpaid principal and
+        interest, at the initial date.
 
-      • "outstanding_balance" (decimal.Decimal): the loan's outstanding balance, including unpaid principal and interest, at
-        the initial date.
+      • "extra_gain_arrears_period" (t.Tuple[datetime.date, datetime.date]): the extra gain delinquency period,
+        represented as a tuple, with start and end dates.
+
+      • "penalty_arrears_period" (t.Tuple[datetime.date, datetime.date]): the penalty delinquency period, represented
+        as a tuple, with start and end dates.
 
       • "loan_apy" (decimal.Decimal): the annual interest rate (spread).
-
-      • "loan_zero_date" (datetime.date): the initial date of the loan's payment schedule.
 
       • "loan_vir" (t.Optional[VariableIndex], optional): O índice variável, se aplicável. Padrão é None.
 
@@ -3597,13 +3600,13 @@ def get_delinquency_charges(
     Returns an object containing the delinquency charges calculated, including interest, mora, and fine.
 
     Example calculation of interest, mora, and fine, for a loan of R$ 10,000.00, with a fixed interest rate of 5% a.a.,
-    performed on January 1, 2022, and with a delayed payment from January 1, 2023 to January 1, 2023:
+    with a delayed payment from January 1, 2023 to January 1, 2023:
 
         > get_delinquency_charges(  # doctest: +SKIP
-            arrears_period=(datetime.date(2023, 1, 1), datetime.date(2023, 2, 1)),
             outstanding_balance=decimal.Decimal('10000.00'),
-            loan_apy=decimal.Decimal('0.05'),
-            loan_zero_date=datetime.date(2022, 1, 1)
+            extra_gain_arrears_period=(datetime.date(2023, 1, 1), datetime.date(2023, 2, 1)),
+            penalty_arrears_period=(datetime.date(2023, 1, 1), datetime.date(2023, 2, 1)),
+            loan_apy=decimal.Decimal('0.05')
         )
     '''
 
@@ -3633,25 +3636,27 @@ def get_delinquency_charges(
     f_1 = f_2 = f_3 = _1
 
     if not loan_vir:
-        dcp = decimal.Decimal((arrears_period[1] - arrears_period[0]).days)
-        f_1 = calculate_interest_factor(loan_apy, dcp / decimal.Decimal(360))
-        f_2 = _1 + (fee_rate / decimal.Decimal(100)) * (dcp / decimal.Decimal(30))
+        d_1 = decimal.Decimal((extra_gain_arrears_period[1] - extra_gain_arrears_period[0]).days)
+        d_2 = decimal.Decimal((penalty_arrears_period[1] - penalty_arrears_period[0]).days)
+        f_1 = calculate_interest_factor(loan_apy, d_1 / decimal.Decimal(360))
+        f_2 = _1 + (fee_rate / decimal.Decimal(100)) * (d_2 / decimal.Decimal(30))
         f_3 = _1 + (fine_rate / decimal.Decimal(100))
 
     elif loan_vir and loan_vir.code == 'CDI':
-        dcp = decimal.Decimal((arrears_period[1] - arrears_period[0]).days)
-        fv1 = loan_vir.backend.calculate_cdi_factor(arrears_period[0], arrears_period[1], loan_vir.percentage)
+        d_2 = decimal.Decimal((penalty_arrears_period[1] - penalty_arrears_period[0]).days)
+        fv1 = loan_vir.backend.calculate_cdi_factor(extra_gain_arrears_period[0], extra_gain_arrears_period[1], loan_vir.percentage)
         f_s = calculate_interest_factor(loan_apy, decimal.Decimal(fv1.amount) / decimal.Decimal(252))
         f_1 = fv1.value * f_s
-        f_2 = _1 + (fee_rate / decimal.Decimal(100)) * (dcp / decimal.Decimal(30))
+        f_2 = _1 + (fee_rate / decimal.Decimal(100)) * (d_2 / decimal.Decimal(30))
         f_3 = _1 + (fine_rate / decimal.Decimal(100))
 
     elif loan_vir and loan_vir.code == 'IPCA':
-        dcp = decimal.Decimal((arrears_period[1] - arrears_period[0]).days)
+        d_1 = decimal.Decimal((extra_gain_arrears_period[1] - extra_gain_arrears_period[0]).days)
+        d_2 = decimal.Decimal((penalty_arrears_period[1] - penalty_arrears_period[0]).days)
         fv2 = _1  # Como calcular o IPCA, "loan_vir.backend.calculate_ipca_factor(…)"?
-        f_s = calculate_interest_factor(loan_apy, dcp / decimal.Decimal(360))
+        f_s = calculate_interest_factor(loan_apy, d_1 / decimal.Decimal(360))
         f_1 = fv2 * f_s
-        f_2 = _1 + (fee_rate / decimal.Decimal(100)) * (dcp / decimal.Decimal(30))
+        f_2 = _1 + (fee_rate / decimal.Decimal(100)) * (d_2 / decimal.Decimal(30))
         f_3 = _1 + (fine_rate / decimal.Decimal(100))
 
     # FIXME: implement.

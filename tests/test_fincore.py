@@ -4473,7 +4473,8 @@ def test_will_get_delinquency_charges_1():
     kwa = {}
 
     kwa['outstanding_balance'] = decimal.Decimal('100000')
-    kwa['arrears_period'] = (datetime.date(2022, 1, 1), datetime.date(2022, 2, 1))
+    kwa['extra_gain_arrears_period'] = (datetime.date(2022, 1, 1), datetime.date(2022, 2, 1))
+    kwa['penalty_arrears_period'] = (datetime.date(2022, 1, 1), datetime.date(2022, 2, 1))
     kwa['loan_apy'] = decimal.Decimal('10')
 
     obj = fincore.get_delinquency_charges(**kwa)
@@ -4493,7 +4494,8 @@ def test_will_get_delinquency_charges_2():
     kwa = {}
 
     kwa['outstanding_balance'] = decimal.Decimal('100000')
-    kwa['arrears_period'] = (datetime.date(2022, 1, 1), datetime.date(2022, 2, 1))
+    kwa['extra_gain_arrears_period'] = (datetime.date(2022, 1, 1), datetime.date(2022, 2, 1))
+    kwa['penalty_arrears_period'] = (datetime.date(2022, 1, 1), datetime.date(2022, 2, 1))
     kwa['loan_apy'] = decimal.Decimal('10')
     kwa['loan_vir'] = fincore.VariableIndex(code='CDI')
 
