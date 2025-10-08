@@ -1959,6 +1959,76 @@ def test_will_create_jm_pre_11():
 
     assert i == 5
 
+def test_will_create_jm_pre_12():
+    '''
+    Valida duas antecipações depois do aniversário e antes do segundo pagamento do empréstimo.
+
+    Ref File: https://docs.google.com/spreadsheets/d/1qNIfAuvELTXepy6i8yyeNJVwUSLxiFRSDtWDzAk8T2k
+    Tab.....: Hipotética 07 - Duas Antecipações Parciais
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('500000')
+    kwa['apy'] = decimal.Decimal('6')
+    kwa['zero_date'] = datetime.date(2022, 8, 22)
+    kwa['anniversary_date'] = datetime.date(2022, 9, 27)
+    kwa['term'] = 3
+    kwa['insertions'] = []
+
+    kwa['insertions'].append(fincore.Amortization.Bare(date=datetime.date(2022, 10, 2), value=decimal.Decimal('404.81')))
+    kwa['insertions'].append(fincore.Amortization.Bare(date=datetime.date(2022, 10, 7), value=decimal.Decimal('404.81')))
+
+    for i, x in enumerate(fincore.build_jm(**kwa), 1):
+        assert x.no == i
+
+        if x.no == 1:
+            assert x.date == datetime.date(2022, 9, 27)
+            assert x.gain == decimal.Decimal('2827.43')
+            assert x.amort == _0
+            assert x.raw == decimal.Decimal('2827.43')
+            assert x.tax == decimal.Decimal('636.17')
+            assert x.net == decimal.Decimal('2191.26')
+            assert x.bal == decimal.Decimal('500000.00')
+
+        elif x.no == 2:
+            assert x.date == datetime.date(2022, 10, 2)
+            assert x.gain == decimal.Decimal('404.81')
+            assert x.amort == _0
+            assert x.raw == decimal.Decimal('404.81')
+            assert x.tax == decimal.Decimal('91.08')
+            assert x.net == decimal.Decimal('313.73')
+            assert x.bal == decimal.Decimal('500000.00')
+
+        elif x.no == 3:
+            assert x.date == datetime.date(2022, 10, 7)
+            assert x.gain == decimal.Decimal('404.81')
+            assert x.amort == _0
+            assert x.raw == decimal.Decimal('404.81')
+            assert x.tax == decimal.Decimal('91.08')
+            assert x.net == decimal.Decimal('313.73')
+            assert x.bal == decimal.Decimal('500000.00')
+
+        elif x.no == 4:
+            assert x.date == datetime.date(2022, 10, 27)
+            assert x.gain == decimal.Decimal('1621.20')
+            assert x.amort == _0
+            assert x.raw == decimal.Decimal('1621.20')
+            assert x.tax == decimal.Decimal('364.77')
+            assert x.net == decimal.Decimal('1256.43')
+            assert x.bal == decimal.Decimal('500000.00')
+
+        else:
+            assert x.date == datetime.date(2022, 11, 27)
+            assert x.gain == decimal.Decimal('2433.78')
+            assert x.amort == decimal.Decimal('500000.00')
+            assert x.raw == decimal.Decimal('502433.77')
+            assert x.tax == decimal.Decimal('547.60')
+            assert x.net == decimal.Decimal('501886.17')
+            assert x.bal == _0
+
+    assert i == 5
+
 def test_will_create_jm_pos_1():
     '''
     Ref File: https://docs.google.com/spreadsheets/d/1XqaYsV1qg4jFf2ulQAuBh8JttYryPXHAGlwxgXqfwgc
