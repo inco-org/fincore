@@ -630,14 +630,14 @@ class DctOverride:
 
       2. The date of the next scheduled amortization.
 
-      3. A boolean stating if this override information predates the first scheduled amortization.
+      3. A boolean stating if this override information composes the first scheduled anniversary period.
     '''
 
     date_from: datetime.date
 
     date_to: datetime.date
 
-    predates_first_amortization: bool
+    composes_first_anniversary_period: bool
 
 @dataclasses.dataclass
 class Amortization:
@@ -1660,23 +1660,14 @@ def get_payments_table(
                 dcp = (due - ent0.date).days
                 dct = (ent1.date - ent0.date).days
 
-                # Exclusively for the first anniversary date, "DCT" will be considered as the difference in calendar
+                # Exclusively for the first anniversary period, "DCT" will be considered as the difference in calendar
                 # days between the 24th day before and the 24th day after the start of the loan.
                 #
-                if ent1.dct_override and num == 1:
-                    dct = _diff_surrounding_dates(ent0.date, 24)
-
-                elif ent1.dct_override:
+                if ent1.dct_override:
                     dct = (ent1.dct_override.date_to - ent1.dct_override.date_from).days
 
-                    if ent1.dct_override.predates_first_amortization:
+                    if ent1.dct_override.composes_first_anniversary_period:
                         dct = _diff_surrounding_dates(ent1.dct_override.date_from, 24)
-
-                if ent0.dct_override:
-                    dct = (ent1.date - ent0.dct_override.date_from).days
-
-                    if ent0.dct_override.predates_first_amortization:
-                        dct = _diff_surrounding_dates(ent0.dct_override.date_from, 24)
 
                 f_s = calculate_interest_factor(apy, decimal.Decimal(dcp) / (12 * decimal.Decimal(dct)))
 
@@ -1725,20 +1716,11 @@ def get_payments_table(
                 dct = (ent1.date - ent0.date).days
 
                 if first_dct_rule == 'AUTO' or num > 1:
-                    if ent1.dct_override and num == 1:
-                        dct = _diff_surrounding_dates(ent0.date, 24)
-
-                    elif ent1.dct_override:
+                    if ent1.dct_override:
                         dct = (ent1.dct_override.date_to - ent1.dct_override.date_from).days
 
-                        if ent1.dct_override.predates_first_amortization:
+                        if ent1.dct_override.composes_first_anniversary_period:
                             dct = _diff_surrounding_dates(ent1.dct_override.date_from, 24)
-
-                    if ent0.dct_override:
-                        dct = (ent1.date - ent0.dct_override.date_from).days
-
-                        if ent0.dct_override.predates_first_amortization:
-                            dct = _diff_surrounding_dates(ent0.dct_override.date_from, 24)
 
                 else:
                     dct = int(first_dct_rule)
@@ -2298,23 +2280,14 @@ def get_daily_returns(
                 dct = (amort1.date - amort0.date).days
 
                 if first_dct_rule == 'AUTO' or amort0 is not lst[0]:
-                    # Exclusively for the first anniversary date, "DCT" will be considered as the difference in calendar
-                    # days between the 24th day before and the 24th day after the start of the loan.
+                    # Exclusively for the first anniversary period, "DCT" will be considered as the difference in
+                    # calendar days between the 24th day before and the 24th day after the start of the loan.
                     #
-                    if amort1.dct_override and amort0 is lst[0]:
-                        dct = _diff_surrounding_dates(amort0.date, 24)
-
-                    elif amort1.dct_override:
+                    if amort1.dct_override:
                         dct = (amort1.dct_override.date_to - amort1.dct_override.date_from).days
 
-                        if amort1.dct_override.predates_first_amortization:
+                        if amort1.dct_override.composes_first_anniversary_period:
                             dct = _diff_surrounding_dates(amort1.dct_override.date_from, 24)
-
-                    if amort0.dct_override:
-                        dct = (amort1.date - amort0.dct_override.date_from).days
-
-                        if amort0.dct_override.predates_first_amortization:
-                            dct = _diff_surrounding_dates(amort0.dct_override.date_from, 24)
 
                 else:
                     dct = int(first_dct_rule)
@@ -2437,20 +2410,11 @@ def get_daily_returns(
                     kwb: t.Dict[str, t.Any] = {}
                     dcp = dct = (amort1.date - amort0.date).days
 
-                    if amort1.dct_override and i == 0:
-                        dct = _diff_surrounding_dates(amort0.date, 24)
-
-                    elif amort1.dct_override:
+                    if amort1.dct_override:
                         dct = (amort1.dct_override.date_to - amort1.dct_override.date_from).days
 
-                        if amort1.dct_override.predates_first_amortization:
+                        if amort1.dct_override.composes_first_anniversary_period:
                             dct = _diff_surrounding_dates(amort1.dct_override.date_from, 24)
-
-                    if amort0.dct_override:
-                        dct = (amort1.date - amort0.dct_override.date_from).days
-
-                        if amort0.dct_override.predates_first_amortization:
-                            dct = _diff_surrounding_dates(amort0.dct_override.date_from, 24)
 
                     kwb['base'] = pla.base_date
                     kwb['period'] = pla.period
@@ -2809,9 +2773,6 @@ def preprocess_bullet(
         sched.append(Amortization(date=zero_date, amortizes_interest=False))
         sched.append(Amortization(date=anniversary_date or zero_date + _MONTH * term, amortization_ratio=_1))
 
-        if anniversary_date:
-            sched[-1].dct_override = DctOverride(anniversary_date, anniversary_date, predates_first_amortization=False)
-
     # 2.2. Create the amortizations. Regular flow with National Index of Consumer Prices, without insertions. Fast.
     elif not insertions and vir and vir.code == 'IPCA':
         dif = min(_delta_months(calc_date.value, zero_date), term) if calc_date else term
@@ -2819,9 +2780,6 @@ def preprocess_bullet(
 
         sched.append(Amortization(date=zero_date, amortizes_interest=False))
         sched.append(Amortization(date=anniversary_date or zero_date + _MONTH * term, amortization_ratio=_1, price_level_adjustment=pla))
-
-        if anniversary_date:
-            sched[-1].dct_override = DctOverride(anniversary_date, anniversary_date, predates_first_amortization=False)
 
     # 2.3. Create the amortizations. Insertions in the regular flow. Slow.
     else:
@@ -2841,12 +2799,6 @@ def preprocess_bullet(
                 skel.item.price_level_adjustment.base_date = zero_date.replace(day=1)
                 skel.item.price_level_adjustment.period = dif
                 skel.item.price_level_adjustment.amortizes_adjustment = skel.index_a == len(lst) - 1
-
-            elif skel.from_b and anniversary_date:
-                skel.item.dct_override = DctOverride(zero_date, anniversary_date, predates_first_amortization=True)
-
-            elif skel.from_b:
-                skel.item.dct_override = DctOverride(zero_date, zero_date + _MONTH * term, predates_first_amortization=True)
 
     return sched
 
@@ -2896,7 +2848,7 @@ def preprocess_jm(
         ent = Amortization(date=due, amortization_ratio=_0 if i != term else _1)
 
         if i == 1 and anniversary_date:
-            ent.dct_override = DctOverride(anniversary_date, anniversary_date, predates_first_amortization=False)
+            ent.dct_override = DctOverride(zero_date, zero_date + _MONTH * i, composes_first_anniversary_period=True)
 
         # American Amortization systems have, by default, a shift configuration of M-2 months, and a period of one a
         # single index, for each payment. This means that, for a payment P on day D of month M, we consider the IPCA
@@ -2953,6 +2905,8 @@ def preprocess_jm(
 
     # Insertions in the regular flow. Slow.
     if insertions:
+        prev = None
+
         for skel in _interleave(lst1, insertions, key=lambda x: x.date):
             lst2.append(skel.item)
 
@@ -2972,11 +2926,13 @@ def preprocess_jm(
                 skel.item.price_level_adjustment.period = skel.index_a
                 skel.item.price_level_adjustment.amortizes_adjustment = True  # Redundant, since monetary correction is always settled on insertions.
 
-            if skel.from_b:
+            if skel.from_b or (skel.from_a and not skel.item.dct_override and prev and prev.from_b):
                 date1 = lst1[skel.index_a - 1].date
                 date2 = lst1[skel.index_a].date
 
-                skel.item.dct_override = DctOverride(date1, date2, predates_first_amortization=skel.index_a == 1)
+                skel.item.dct_override = DctOverride(date1, date2, composes_first_anniversary_period=skel.index_a == 1)
+
+            prev = skel
 
         return lst2
 
@@ -3026,18 +2982,22 @@ def preprocess_price(
         lst1.append(Amortization(date=due, amortization_ratio=y))
 
         if i == 1 and anniversary_date:
-            lst1[-1].dct_override = DctOverride(anniversary_date, anniversary_date, predates_first_amortization=False)
+            lst1[-1].dct_override = DctOverride(zero_date, zero_date + _MONTH * i, composes_first_anniversary_period=True)
 
     # Insertions in the regular flow. Slow.
     if insertions:
+        prev = None
+
         for skel in _interleave(lst1, insertions, key=lambda x: x.date):
             lst2.append(skel.item)
 
-            if skel.from_b:
+            if skel.from_b or (skel.from_a and not skel.item.dct_override and prev and prev.from_b):
                 date1 = lst1[skel.index_a - 1].date
                 date2 = lst1[skel.index_a].date
 
-                skel.item.dct_override = DctOverride(date1, date2, predates_first_amortization=skel.index_a == 1)
+                skel.item.dct_override = DctOverride(date1, date2, composes_first_anniversary_period=skel.index_a == 1)
+
+            prev = skel
 
         return lst2
 
@@ -3088,19 +3048,18 @@ def preprocess_livre(
         sched.extend(amortizations)
 
     else:  # Extraordinary flow, with insertions.
-        for skel in _interleave(amortizations, insertions, key=lambda x: x.date):
-            if skel.from_a:
-                sched.append(skel.item)
+        prev = None
 
-            else:
-                amort = Amortization.Bare(date=skel.item.date)
+        for skel in _interleave(amortizations, insertions, key=lambda x: x.date):
+            sched.append(skel.item)
+
+            if skel.from_b or (skel.from_a and not skel.item.dct_override and prev and prev.from_b):
                 date1 = amortizations[skel.index_a - 1].date
                 date2 = amortizations[skel.index_a].date
 
-                amort.value = skel.item.value
-                amort.dct_override = DctOverride(date1, date2, predates_first_amortization=skel.index_a == 1)
+                skel.item.dct_override = DctOverride(date1, date2, composes_first_anniversary_period=skel.index_a == 1)
 
-                sched.append(amort)
+            prev = skel
 
     return sched
 
