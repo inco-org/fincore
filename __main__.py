@@ -32,6 +32,7 @@ import urllib.parse
 # Libs.
 import sh2py
 import tabulate
+import dateutil.relativedelta
 
 if typing.TYPE_CHECKING:
     import platformdirs
@@ -92,6 +93,9 @@ _BACEN_API = functools.partial(_SSR, 'api.bcb.gov.br')
 
 # Today in Brazilian Regional Time (BRT).
 _TODAY: typing.Callable[[], datetime.date] = lambda: datetime.datetime.now(zoneinfo.ZoneInfo('America/Sao_Paulo')).date()
+
+# A month.
+_MONTH = dateutil.relativedelta.relativedelta(months=1)
 
 # Function to find sibling files.
 _FILE = functools.partial(os.path.join, os.path.dirname(os.path.abspath(__file__)))
@@ -795,8 +799,8 @@ def gera_pagamentos(modalidade, principal, taxa_fixa, inicio_prazo='', aniversar
                     raise ValueError()
 
         if aniversario:
-            if (anniversary_date := datetime.date.fromisoformat(aniversario)) == kwa['amortizations'][1].date:
-                kwa['amortizations'][1].dct_override = fincore.DctOverride(anniversary_date, anniversary_date, composes_first_anniversary_period=False)
+            if datetime.date.fromisoformat(aniversario) == kwa['amortizations'][1].date:
+                kwa['amortizations'][1].dct_override = fincore.DctOverride(kwa['amortizations'][0].date, kwa['amortizations'][0].date + _MONTH, composes_first_anniversary_period=True)
 
             else:
                 raise ValueError()
@@ -1068,8 +1072,8 @@ def gera_rendimentos_diarios(modalidade, principal, taxa_fixa, inicio_prazo='', 
                     raise ValueError()
 
         if aniversario:
-            if (anniversary_date := datetime.date.fromisoformat(aniversario)) == kwa['amortizations'][1].date:
-                kwa['amortizations'][1].dct_override = fincore.DctOverride(anniversary_date, anniversary_date, composes_first_anniversary_period=False)
+            if datetime.date.fromisoformat(aniversario) == kwa['amortizations'][1].date:
+                kwa['amortizations'][1].dct_override = fincore.DctOverride(kwa['amortizations'][0].date, kwa['amortizations'][0].date + _MONTH, composes_first_anniversary_period=True)
 
             else:
                 raise ValueError()

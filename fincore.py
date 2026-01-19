@@ -2375,9 +2375,9 @@ def get_daily_returns(
                         kwa['ratio'] = _1
 
                         if (obj := backend.calculate_ipca_factor(**kwa)).mem:
-                            dcp = (dt1 - dt0).days
+                            dct = (dt1 - dt0).days
                             fac = max(obj.value, _1) - _1
-                            fac = calculate_interest_factor(fac, _1 / decimal.Decimal(dcp), False)
+                            fac = calculate_interest_factor(fac, _1 / decimal.Decimal(dct), False)
 
                             while dt0 < dt1:
                                 acc = acc * fac
@@ -2408,22 +2408,29 @@ def get_daily_returns(
 
                 if (pla := amort1.price_level_adjustment) and pla.base_date:
                     kwb: t.Dict[str, t.Any] = {}
-                    dcp = dct = (amort1.date - amort0.date).days
+                    dct = (amort1.date - amort0.date).days
 
-                    if amort1.dct_override:
-                        dct = (amort1.dct_override.date_to - amort1.dct_override.date_from).days
+                    if first_dct_rule == 'AUTO' or amort0 is not lst[0]:
+                        # Exclusively for the first anniversary period, "DCT" will be considered as the difference in
+                        # calendar days between the 24th day before and the 24th day after the start of the loan.
+                        #
+                        if amort1.dct_override:
+                            dct = (amort1.dct_override.date_to - amort1.dct_override.date_from).days
 
-                        if amort1.dct_override.composes_first_anniversary_period:
-                            dct = _diff_surrounding_dates(amort1.dct_override.date_from, 24)
+                            if amort1.dct_override.composes_first_anniversary_period:
+                                dct = _diff_surrounding_dates(amort1.dct_override.date_from, 24)
+
+                    else:
+                        dct = int(first_dct_rule)
 
                     kwb['base'] = pla.base_date
                     kwb['period'] = pla.period
                     kwb['shift'] = pla.shift
-                    kwb['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)
+                    kwb['ratio'] = _1
 
                     if (obj := backend.calculate_ipca_factor(**kwb)).mem:
                         fac = max(obj.value, _1) - _1
-                        fac = calculate_interest_factor(fac, _1 / decimal.Decimal(dcp), False)
+                        fac = calculate_interest_factor(fac, _1 / decimal.Decimal(dct), False)
 
                         while dt0 < amort1.date:
                             acc = acc * fac
