@@ -5,7 +5,7 @@ from setuptools.command.install_scripts import install_scripts as InstallScripts
 
 class CustomInstallScripts(InstallScripts):
     def run(self):
-        src_main = os.path.join(os.path.dirname(__file__), '__main__.py')
+        src_main = os.path.join(os.path.dirname(__file__), 'fincore_cli.py')
 
         if not os.path.exists(self.build_dir):
             os.makedirs(self.build_dir)
@@ -22,14 +22,14 @@ class CustomInstallScripts(InstallScripts):
 
 setup(
     name='fincore',
-    version='4.9.0',
+    version='4.10.0',
     description='A financial core library',
     author='Rafael Viotti',
     author_email='viotti@inco.vc',
     url='https://github.com/inco-org/fincore',
     packages=find_packages(),
     py_modules=['fincore'],
-    scripts=['__main__.py'],  # Required to trigger the install_scripts hook
+    scripts=['fincore_cli.py'],  # Required to trigger the install_scripts hook
     cmdclass={'install_scripts': CustomInstallScripts},
     classifiers=[
         'Programming Language :: Python :: 3',
