@@ -155,14 +155,14 @@ def _get_business_days(begin: datetime.date, end: datetime.date) -> typing.List[
     >>> len(_get_business_days(date(2010, 1, 1), date(2020, 1, 1)))
     2512
     >>> lst = _get_business_days(date(2023, 1, 10), date(2023, 3, 2))
-    >>> [x.isoformat() for x in lst]  # doctest: +NORMALIZE_WHITESPACE # Example output
+    >>> [x.isoformat() for x in lst]  # doctest: +NORMALIZE_WHITESPACE
     ['2023-01-10', '2023-01-11', '2023-01-12', '2023-01-13', '2023-01-16', '2023-01-17',
      '2023-01-18', '2023-01-19', '2023-01-20', '2023-01-23', '2023-01-24', '2023-01-25',
      '2023-01-26', '2023-01-27', '2023-01-30', '2023-01-31', '2023-02-01', '2023-02-02',
      '2023-02-03', '2023-02-06', '2023-02-07', '2023-02-08', '2023-02-09', '2023-02-10',
      '2023-02-13', '2023-02-14', '2023-02-15', '2023-02-16', '2023-02-17', '2023-02-22',
      '2023-02-23', '2023-02-24', '2023-02-27', '2023-02-28', '2023-03-01', '2023-03-02']
-    >>> _get_business_days(date(2024, 7, 12), date(2024, 7, 15))  # From Friday to Monday, two biz days.
+    >>> _get_business_days(date(2024, 7, 12), date(2024, 7, 15))
     [datetime.date(2024, 7, 12), datetime.date(2024, 7, 15)]
     '''
 
@@ -798,13 +798,6 @@ def gera_pagamentos(modalidade, principal, taxa_fixa, inicio_prazo='', aniversar
                 else:
                     raise ValueError()
 
-        if aniversario:
-            if datetime.date.fromisoformat(aniversario) == kwa['amortizations'][1].date:
-                kwa['amortizations'][1].dct_override = fincore.DctOverride(kwa['amortizations'][0].date, kwa['amortizations'][0].date + _MONTH, composes_first_anniversary_period=True)
-
-            else:
-                raise ValueError()
-
         if vir:
             kwa['vir'] = _make_variable_index(vir, pct)
 
@@ -1071,13 +1064,6 @@ def gera_rendimentos_diarios(modalidade, principal, taxa_fixa, inicio_prazo='', 
                 else:
                     raise ValueError()
 
-        if aniversario:
-            if datetime.date.fromisoformat(aniversario) == kwa['amortizations'][1].date:
-                kwa['amortizations'][1].dct_override = fincore.DctOverride(kwa['amortizations'][0].date, kwa['amortizations'][0].date + _MONTH, composes_first_anniversary_period=True)
-
-            else:
-                raise ValueError()
-
         if vir:
             kwa['vir'] = _make_variable_index(vir, pct)
 
@@ -1263,7 +1249,8 @@ except locale.Error as e:
     except locale.Error as e_fallback:
         _PR(f'Error: Failed to set fallback locale "en_US.UTF-8": {e_fallback}. Currency formatting will likely fail.')
 
-if cli.run() is sh2py.HALT:
-    exit(1)
+if __name__ == "__main__":
+    if cli.run() is sh2py.HALT:
+        exit(1)
 
 # vi:fdm=marker:
