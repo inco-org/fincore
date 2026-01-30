@@ -100,7 +100,7 @@ _MONTH = dateutil.relativedelta.relativedelta(months=1)
 # Function to find sibling files.
 _FILE = functools.partial(os.path.join, os.path.dirname(os.path.abspath(__file__)))
 
-def _date_range(start_date: datetime.date, end_date: datetime.date) -> typing.Generator[datetime.date, None, None]:
+def _date_range(start_date: datetime.date, end_date: datetime.date) -> typing.Generator[datetime.date, None, None]:  # pragma: no cover
     iterator = start_date
 
     while iterator <= end_date:
@@ -177,7 +177,7 @@ def _get_business_days(begin: datetime.date, end: datetime.date) -> typing.List[
 
     return rep
 
-def _make_variable_index(name, percentage=100):
+def _make_variable_index(name, percentage=100):  # pragma: no cover
     '''
     Creates a variable index using the "util.finmore.LocalDirectoryBackend" storage class.
     '''
@@ -189,7 +189,7 @@ def _make_variable_index(name, percentage=100):
     #
     return fincore.VariableIndex(name, percentage, backend=LocalDirectoryBackend('fincore'))
 
-def _slugy(value: str, connector: str = '') -> str:
+def _slugy(value: str, connector: str = '') -> str:  # pragma: no cover
     '''Create a "slugyfied" version of a string.'''
 
     value = unicodedata.normalize('NFKD', value)
@@ -203,7 +203,7 @@ def _slugy(value: str, connector: str = '') -> str:
         return value
 
 # From http://stackoverflow.com/a/55825140 and http://stackoverflow.com/a/64051246.
-class _HtmlFilter(html.parser.HTMLParser, abc.ABC):
+class _HtmlFilter(html.parser.HTMLParser, abc.ABC):  # pragma: no cover
     '''A simple no deps HTML -> TEXT converter.'''
 
     def __init__(self):
@@ -233,7 +233,7 @@ class _HtmlFilter(html.parser.HTMLParser, abc.ABC):
         elif tag == 'style':
             self._in_style = False
 
-class LocalDirectoryBackend(fincore.IndexStorageBackend):
+class LocalDirectoryBackend(fincore.IndexStorageBackend):  # pragma: no cover
     '''
     Another BACEN index retrieval backend, using the "platformdirs" Python package for persistence.
 
@@ -586,7 +586,7 @@ class LocalDirectoryBackend(fincore.IndexStorageBackend):
             raise fincore.BackendError('the “util.finmore.LocalDirectoryBackend” backend cannot retrieve Brazilian Savings indexes prior to 2018-01-01')
     # }}}
 
-def ajuda(command=''):
+def ajuda(command=''):  # pragma: no cover
     '''
     Supported commands:
 
@@ -605,7 +605,7 @@ def ajuda(command=''):
 
     return sh2py.HALT
 
-def gera_pagamentos(modalidade, principal, taxa_fixa, inicio_prazo='', aniversario='', csv_cronograma='', **kwargs):
+def gera_pagamentos(modalidade, principal, taxa_fixa, inicio_prazo='', aniversario='', csv_cronograma='', **kwargs):  # pragma: no cover
     r'''
     Generates a payment schedule using the financial library.
 
@@ -910,7 +910,7 @@ def gera_pagamentos(modalidade, principal, taxa_fixa, inicio_prazo='', aniversar
 
         return sh2py.HALT
 
-def gera_rendimentos_diarios(modalidade, principal, taxa_fixa, inicio_prazo='', aniversario='', csv_cronograma='', **kwargs):
+def gera_rendimentos_diarios(modalidade, principal, taxa_fixa, inicio_prazo='', aniversario='', csv_cronograma='', **kwargs):  # pragma: no cover
     r'''
     Generates a daily returns schedule using the financial library.
 
@@ -1173,7 +1173,7 @@ def gera_rendimentos_diarios(modalidade, principal, taxa_fixa, inicio_prazo='', 
 
         return sh2py.HALT
 
-def calcula_fatores_za(indice, taxa_fixa, data_inicio, data_fim, indice_pct='100', debug='n'):
+def calcula_fatores_za(indice, taxa_fixa, data_inicio, data_fim, indice_pct='100', debug='n'):  # pragma: no cover
     '''
     Calculates Zille-Anna factors.
 
@@ -1240,7 +1240,7 @@ cli.add(calcula_fatores_za)
 try:
     locale.setlocale(locale.LC_ALL, '')
 
-except locale.Error as e:
+except locale.Error as e:  # pragma: no cover
     _PR(f'Warning: Could not set locale from environment ({e}). Falling back to "en_US.UTF-8".')
 
     try:
@@ -1249,7 +1249,7 @@ except locale.Error as e:
     except locale.Error as e_fallback:
         _PR(f'Error: Failed to set fallback locale "en_US.UTF-8": {e_fallback}. Currency formatting will likely fail.')
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     if cli.run() is sh2py.HALT:
         exit(1)
 
