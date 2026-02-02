@@ -32,7 +32,6 @@ import urllib.parse
 # Libs.
 import sh2py
 import tabulate
-import dateutil.relativedelta
 
 if typing.TYPE_CHECKING:
     import platformdirs
@@ -93,9 +92,6 @@ _BACEN_API = functools.partial(_SSR, 'api.bcb.gov.br')
 
 # Today in Brazilian Regional Time (BRT).
 _TODAY: typing.Callable[[], datetime.date] = lambda: datetime.datetime.now(zoneinfo.ZoneInfo('America/Sao_Paulo')).date()
-
-# A month.
-_MONTH = dateutil.relativedelta.relativedelta(months=1)
 
 # Function to find sibling files.
 _FILE = functools.partial(os.path.join, os.path.dirname(os.path.abspath(__file__)))
