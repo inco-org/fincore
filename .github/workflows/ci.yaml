@@ -29,10 +29,10 @@ name: Continuous Integration
 on:
   push:
     branches: [ master ]
-    paths: [ 'fincore.py' ]
+    paths: [ 'fincore.py', 'fincore_cli.py' ]
 
   pull_request:
-    paths: [ 'fincore.py' ]
+    paths: [ 'fincore.py', 'fincore_cli.py' ]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
