@@ -2759,9 +2759,6 @@ def preprocess_bullet(
     if anniversary_date and anniversary_date <= zero_date:
         raise ValueError(f'the "anniversary_date", {anniversary_date}, must be greater than "zero_date", {zero_date}')
 
-    elif anniversary_date and abs((anniversary_date - (zero_date + _MONTH * term)).days) > 20:
-        raise ValueError(f'the "anniversary_date", {anniversary_date}, is more than 20 days away from the regular payment date, {zero_date + _MONTH * term}')
-
     for i, x in enumerate(insertions):
         if x.value <= 0:
             raise ValueError(f'invalid value for insertion entry #{i} – should be positive')
@@ -2829,9 +2826,6 @@ def preprocess_jm(
 
     if anniversary_date and anniversary_date <= zero_date:
         raise ValueError(f'the "anniversary_date", {anniversary_date}, must be greater than "zero_date", {zero_date}')
-
-    elif anniversary_date and abs((anniversary_date - (zero_date + _MONTH)).days) > 20:
-        raise ValueError(f'the "anniversary_date", {anniversary_date}, is more than 20 days away from the regular payment date, {zero_date + _MONTH}')
 
     if vir and vir.code == 'Poupança':
         raise NotImplementedError('"Poupança" is currently unsupported')  # pragma: no cover
@@ -2933,9 +2927,6 @@ def preprocess_price(
     if anniversary_date and anniversary_date <= zero_date:
         raise ValueError(f'the "anniversary_date", {anniversary_date}, must be greater than "zero_date", {zero_date}')
 
-    elif anniversary_date and abs((anniversary_date - (zero_date + _MONTH)).days) > 20:
-        raise ValueError(f'the "anniversary_date", {anniversary_date}, is more than 20 days away from the regular payment date, {zero_date + _MONTH}')
-
     for i, x in enumerate(insertions):
         if x.date <= zero_date:
             raise ValueError(f'"insertions[{i}].date", {x.date}, must succeed "zero_date", {zero_date}')
@@ -2993,9 +2984,6 @@ def preprocess_livre(
 
         elif y.date > (due := amortizations[-1].date):
             raise ValueError(f'"insertions[{i}].date", {y.date}, succeeds the last regular payment date, {due}')
-
-    if abs((amortizations[1].date - (amortizations[0].date + _MONTH)).days) > 20:
-        raise ValueError(f'the first payment date, {amortizations[1].date}, is more than 20 days away from the regular payment date, {amortizations[0].date + _MONTH}')
 
     if len(set([z.date for z in amortizations])) != len(amortizations):
         raise ValueError('amortization dates must be unique.')

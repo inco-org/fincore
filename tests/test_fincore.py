@@ -182,28 +182,6 @@ def test_wont_create_sched_1():
 
         next(fincore.build_bullet(**kwa))
 
-    with pytest.raises(ValueError, match='the "anniversary_date", 2023-01-22, is more than 20 days away from the regular payment date, 2023-01-01'):
-        kwa = {}
-
-        kwa['principal'] = decimal.Decimal('120000')
-        kwa['apy'] = decimal.Decimal('12')
-        kwa['zero_date'] = datetime.date(2022, 1, 1)
-        kwa['anniversary_date'] = datetime.date(2023, 1, 22)
-        kwa['term'] = 12
-
-        next(fincore.build_bullet(**kwa))
-
-    with pytest.raises(ValueError, match='the "anniversary_date", 2022-12-10, is more than 20 days away from the regular payment date, 2023-01-01'):
-        kwa = {}
-
-        kwa['principal'] = decimal.Decimal('120000')
-        kwa['apy'] = decimal.Decimal('12')
-        kwa['zero_date'] = datetime.date(2022, 1, 1)
-        kwa['anniversary_date'] = datetime.date(2022, 12, 10)
-        kwa['term'] = 12
-
-        next(fincore.build_bullet(**kwa))
-
     with pytest.raises(ValueError, match='the "anniversary_date", 2022-01-01, must be greater than "zero_date", 2022-01-01'):
         kwa = {}
 
@@ -291,28 +269,6 @@ def test_wont_create_sched_2():
 
         next(fincore.build_jm(**kwa))
 
-    with pytest.raises(ValueError, match='the "anniversary_date", 2021-08-22, is more than 20 days away from the regular payment date, 2021-08-01'):
-        kwa = {}
-
-        kwa['principal'] = decimal.Decimal('222000')
-        kwa['apy'] = decimal.Decimal('13.5')
-        kwa['zero_date'] = datetime.date(2021, 7, 1)
-        kwa['anniversary_date'] = datetime.date(2021, 8, 22)
-        kwa['term'] = 9
-
-        next(fincore.build_jm(**kwa))
-
-    with pytest.raises(ValueError, match='the "anniversary_date", 2021-07-10, is more than 20 days away from the regular payment date, 2021-08-01'):
-        kwa = {}
-
-        kwa['principal'] = decimal.Decimal('222000')
-        kwa['apy'] = decimal.Decimal('13.5')
-        kwa['zero_date'] = datetime.date(2021, 7, 1)
-        kwa['anniversary_date'] = datetime.date(2021, 7, 10)
-        kwa['term'] = 9
-
-        next(fincore.build_jm(**kwa))
-
     with pytest.raises(ValueError, match='the "anniversary_date", 2021-07-01, must be greater than "zero_date", 2021-07-01'):
         kwa = {}
 
@@ -386,28 +342,6 @@ def test_wont_create_sched_3():
         kwa['anniversary_date'] = datetime.date(2022, 2, 5)
         kwa['term'] = 12
         kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2023, 1, 10), value=decimal.Decimal(5000))]
-
-        next(fincore.build_price(**kwa))
-
-    with pytest.raises(ValueError, match='the "anniversary_date", 2021-08-22, is more than 20 days away from the regular payment date, 2021-08-01'):
-        kwa = {}
-
-        kwa['principal'] = decimal.Decimal('222000')
-        kwa['apy'] = decimal.Decimal('13.5')
-        kwa['zero_date'] = datetime.date(2021, 7, 1)
-        kwa['anniversary_date'] = datetime.date(2021, 8, 22)
-        kwa['term'] = 9
-
-        next(fincore.build_price(**kwa))
-
-    with pytest.raises(ValueError, match='the "anniversary_date", 2021-07-10, is more than 20 days away from the regular payment date, 2021-08-01'):
-        kwa = {}
-
-        kwa['principal'] = decimal.Decimal('222000')
-        kwa['apy'] = decimal.Decimal('13.5')
-        kwa['zero_date'] = datetime.date(2021, 7, 1)
-        kwa['anniversary_date'] = datetime.date(2021, 7, 10)
-        kwa['term'] = 9
 
         next(fincore.build_price(**kwa))
 
@@ -524,36 +458,6 @@ def test_wont_create_sched_4():
         tab1.append(fincore.Amortization(date=datetime.date(2020, 4, 15), amortization_ratio=decimal.Decimal('0.25')))
         tab1.append(fincore.Amortization(date=datetime.date(2020, 4, 15), amortization_ratio=decimal.Decimal('0.25')))
         tab1.append(fincore.Amortization(date=datetime.date(2020, 5, 15), amortization_ratio=decimal.Decimal('0.25')))
-
-        next(fincore.build(**kwa))
-
-    with pytest.raises(ValueError, match='the first payment date, 2020-05-06, is more than 20 days away from the regular payment date, 2020-04-15'):
-        kwa = {}
-
-        kwa['principal'] = decimal.Decimal('222000')
-        kwa['apy'] = decimal.Decimal('13.5')
-        kwa['amortizations'] = tab1 = []
-
-        # Monta a tabela de amortizações.
-        tab1.append(fincore.Amortization(date=datetime.date(2020, 3, 15), amortization_ratio=decimal.Decimal('0.25')))
-        tab1.append(fincore.Amortization(date=datetime.date(2020, 5, 6), amortization_ratio=decimal.Decimal('0.25')))
-        tab1.append(fincore.Amortization(date=datetime.date(2020, 6, 6), amortization_ratio=decimal.Decimal('0.25')))
-        tab1.append(fincore.Amortization(date=datetime.date(2020, 7, 6), amortization_ratio=decimal.Decimal('0.25')))
-
-        next(fincore.build(**kwa))
-
-    with pytest.raises(ValueError, match='the first payment date, 2020-03-07, is more than 20 days away from the regular payment date, 2020-03-28'):
-        kwa = {}
-
-        kwa['principal'] = decimal.Decimal('222000')
-        kwa['apy'] = decimal.Decimal('13.5')
-        kwa['amortizations'] = tab1 = []
-
-        # Monta a tabela de amortizações.
-        tab1.append(fincore.Amortization(date=datetime.date(2020, 2, 28), amortization_ratio=decimal.Decimal('0.25')))
-        tab1.append(fincore.Amortization(date=datetime.date(2020, 3, 7), amortization_ratio=decimal.Decimal('0.25')))
-        tab1.append(fincore.Amortization(date=datetime.date(2020, 4, 21), amortization_ratio=decimal.Decimal('0.25')))
-        tab1.append(fincore.Amortization(date=datetime.date(2020, 5, 21), amortization_ratio=decimal.Decimal('0.25')))
 
         next(fincore.build(**kwa))
 
