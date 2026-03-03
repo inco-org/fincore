@@ -1068,10 +1068,10 @@ class IndexStorageBackend:
             fac = fac * (_1 + max(x.value, _0) / decimal.Decimal(100)) ** exp
 
         if not mem and period == 1:
-            _LOG.warning(f'no IPCA indexes found for month {ini.year:04d}-{ini.month:02d} (base date is {base}, period is {period}, shift is {shift}, ratio is {ratio})')
+            _LOG.info(f'no IPCA indexes found for month {ini.year:04d}-{ini.month:02d} (base date is {base}, period is {period}, shift is {shift}, ratio is {ratio})')
 
         elif not mem:
-            _LOG.warning(f'no IPCA indexes found between {ini.year:04d}-{ini.month:02d} and {end.year:04d}-{end.month:02d} (base date is {base}, period is {period}, shift is {shift}, ratio is {ratio})')
+            _LOG.info(f'no IPCA indexes found between {ini.year:04d}-{ini.month:02d} and {end.year:04d}-{end.month:02d} (base date is {base}, period is {period}, shift is {shift}, ratio is {ratio})')
 
         return types.SimpleNamespace(value=fac, mem=mem)
 
