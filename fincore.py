@@ -1590,8 +1590,23 @@ def get_payments_table(
         calc_date = CalcDate(value=amortizations[-1].date, runaway=False)
 
     # Registers.
+    #
+    #   • "correction.deferred" é o fator de correção devido e ainda não liquidado, e "correction.settled" é o valor de
+    #     correção já pago sobre esse fator. Ambos só se afastam do neutro quando uma antecipação não alcança a correção
+    #     do seu trecho, pois a ordem de imputação põe os juros à frente dela. O próximo pagamento que liquide correção
+    #     os recolhe.
+    #
+    #     Difere-se o fator, e não o valor, porque a correção compõe: diferir o valor de dois meios períodos daria
+    #     "2 × (F½ − 1)", menor que o "F − 1" do período inteiro. Compondo, "F½ × F½ = F", exato. E o que a antecipação
+    #     chegou a pagar entra como crédito em "settled", em vez de virar fator, porque converter valor em fator e
+    #     dividir deixaria um resíduo de segunda ordem.
+    #
+    #     Diferir e amortizar são mutuamente exclusivos: só sobra valor para o principal depois de a correção estar
+    #     inteiramente liquidada. Logo "settled" nunca atravessa uma mudança da base sobre a qual foi medido.
+    #
     regs.principal = types.SimpleNamespace(amortization_ratio=types.SimpleNamespace(current=_0, regular=_0), amortized=types.SimpleNamespace(current=_0, total=_0))
     regs.interest = types.SimpleNamespace(current=_0, accrued=_0, settled=types.SimpleNamespace(current=_0, total=_0), deferred=_0)
+    regs.correction = types.SimpleNamespace(deferred=_1, settled=_0)
 
     # Control, create generators.
     gens.interest_tracker_1 = track_interest_1()
@@ -1614,6 +1629,7 @@ def get_payments_table(
         f_c = types.SimpleNamespace(value=_1, mem=[])
         due = min(calc_date.value, ent1.date)
         f_s = _1
+        cor = _0  # Correção monetária liquidada por uma antecipação. Ver fase B.1.
 
         # Phase B.0, FZA, or Phase Zille-Anna.
         #
@@ -1730,6 +1746,15 @@ def get_payments_table(
                 f_s = calculate_interest_factor(apy, decimal.Decimal(dcp) / (12 * decimal.Decimal(dct)))
 
                 if type(ent1) is Amortization and ent1.price_level_adjustment or type(ent1) is Amortization.Bare:
+                    # A correção monetária é particionada pelo calendário regular. Cada pagamento regular consome
+                    # exatamente uma janela de índices, e essa partição é disjunta e sem lacuna – é ela que dispensa uma
+                    # memória explícita da correção já liquidada.
+                    #
+                    # Uma antecipação não tem calendário próprio. Ela corrige apenas o trecho em aberto do período
+                    # regular em que se insere, e por isso herda a janela do pagamento regular que a sucede. O índice do
+                    # mês acaba repartido entre os dois eventos pelo "ratio", cada um corrigindo o saldo devedor
+                    # vigente no seu trecho.
+                    #
                     if type(ent1) is Amortization:
                         pla = t.cast(PriceLevelAdjustment, ent1.price_level_adjustment)
                         kwc: t.Dict[str, t.Any] = {}
@@ -1743,15 +1768,19 @@ def get_payments_table(
                         f_c.value = max(f_c.value, _1)  # Lock the price level factor.
 
                     else:  # Implies "type(ent1) is Amortization.Bare".
-                        kwd: t.Dict[str, t.Any] = {}
+                        nxt = next((x for x in amortizations[num + 1:] if type(x) is Amortization and x.price_level_adjustment), None)
 
-                        kwd['base'] = amortizations[0].date.replace(day=1)
-                        kwd['period'] = _delta_months(ent1.date, amortizations[0].date)
-                        kwd['shift'] = 'M-1'  # FIXME.
-                        kwd['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)
+                        if nxt:
+                            pla = t.cast(PriceLevelAdjustment, nxt.price_level_adjustment)
+                            kwd: t.Dict[str, t.Any] = {}
 
-                        f_c = vir.backend.calculate_ipca_factor(**kwd)
-                        f_c.value = max(f_c.value, _1)  # Lock the price level factor.
+                            kwd['base'] = pla.base_date
+                            kwd['period'] = pla.period
+                            kwd['shift'] = pla.shift
+                            kwd['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)
+
+                            f_c = vir.backend.calculate_ipca_factor(**kwd)
+                            f_c.value = max(f_c.value, _1)  # Lock the price level factor.
 
             elif vir:  # pragma: no cover
                 raise NotImplementedError(f'Combination of variable interest rate {vir} and capitalisation {capitalisation} unsupported')  # pragma: no cover
@@ -1814,10 +1843,27 @@ def get_payments_table(
                 if ent1.value != Amortization.Bare.MAX_VALUE and ent1.value > _Q(calc_balance(f_c.value)):
                     raise Exception(f'the value of the amortization, {ent1.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(f_c.value))}')
 
-                # Register the amortization percentage. Notice that the value sent here is adjusted with the monetary
-                # correction factor ("f_c.value").
+                # A correção do trecho incide sobre o saldo devedor vigente, e não sobre a fatia amortizada – a correção
+                # acompanha o saldo, e o principal que sai é nominal. Respeita a ordem de imputação da antecipação:
+                # juros, correção, principal. Caso os juros consumam a antecipação a ponto de não sobrar para a correção
+                # inteira, o que faltar fica diferido.
                 #
-                gens.principal_tracker_1.send(val2 / f_c.value / principal)
+                fac = regs.correction.deferred * f_c.value  # Fator do trecho, composto com o que ficou diferido.
+                val3 = calc_balance(fac) - calc_balance(_1) - regs.correction.settled  # Correção devida.
+                cor = min(val2, val3)  # Correção efetivamente liquidada, limitada pelo que sobrou dos juros.
+                val4 = val2 - cor  # Principal nominal a amortizar.
+
+                # Se a correção não foi liquidada por inteiro, difere o fator e credita o que se pagou dela.
+                if val2 < val3:
+                    regs.correction.deferred = fac
+                    regs.correction.settled = regs.correction.settled + cor
+
+                else:
+                    regs.correction.deferred = _1
+                    regs.correction.settled = _0
+
+                # Register the amortization percentage.
+                gens.principal_tracker_1.send(val4 / principal)
 
                 # Register the interest value to be settled in the period. Unlike above, there is no need to adjust the
                 # interest value with "f_c.value". The interest is already calculated over a monetary corrected
@@ -1880,9 +1926,13 @@ def get_payments_table(
                 if vir and vir.code == 'IPCA':
                     pmt = t.cast(PriceAdjustedPayment, pmt)
 
-                    # Pays monetary correction over the principal amortization.
+                    # Pays monetary correction over the principal amortization. O fator recolhe o que uma antecipação
+                    # anterior tenha deixado diferido.
                     if (pla := t.cast(PriceLevelAdjustment, ent1.price_level_adjustment)) and pmt.amort:
-                        pmt.pla = pmt.amort * (f_c.value - 1)
+                        pmt.pla = pmt.amort * (regs.correction.deferred * f_c.value - 1) - regs.correction.settled
+
+                        regs.correction.deferred = _1
+                        regs.correction.settled = _0
 
                     # If there is no principal amortization in the period, and "pla.amortizes_adjustment" is true, then
                     # "pmt.pla" will be the value of monetary correction of the outstanding balance. This s what
@@ -1890,7 +1940,10 @@ def get_payments_table(
                     # "amortizes_correction" parameter on the "preprocess_jm" function.
                     #
                     elif pla and pla.amortizes_adjustment:
-                        pmt.pla = calc_balance(f_c.value) - calc_balance(_1)
+                        pmt.pla = calc_balance(regs.correction.deferred * f_c.value) - calc_balance(_1) - regs.correction.settled
+
+                        regs.correction.deferred = _1
+                        regs.correction.settled = _0
 
                     pmt.raw = pmt.raw + pmt.pla
                     pmt.tax = _0 if tax_exempt else pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
@@ -1913,7 +1966,7 @@ def get_payments_table(
                 if vir and vir.code == 'IPCA':
                     pmt = t.cast(PriceAdjustedPayment, pmt)
 
-                    pmt.pla = pmt.amort * (f_c.value - 1)
+                    pmt.pla = cor
                     pmt.raw = pmt.raw + pmt.pla
                     pmt.tax = _0 if tax_exempt else pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
 
