@@ -2117,6 +2117,123 @@ def test_will_create_jm_pos_4():
         assert x.bal == decimal.Decimal(tab[i][4])
 
     assert i == 7
+
+# Antecipações em operações indexadas ao IPCA.
+#
+# A correção monetária é particionada pelo calendário regular: cada pagamento consome exatamente uma janela de índices,
+# e a partição é disjunta e sem lacuna.
+#
+# Uma antecipação não tem calendário próprio, e por isso herda a janela do pagamento regular que a sucede. Os dois
+# eventos repartem o índice do mês, e cada um corrige o saldo devedor vigente no seu trecho – a correção acompanha o
+# saldo, e o principal que sai é nominal.
+#
+# Quando os juros consomem a antecipação a ponto de não sobrar para a correção inteira, o que falta fica diferido em
+# "regs.correction", como fator mais crédito, e o próximo pagamento que liquide correção o recolhe.
+#
+# Especificado na thread "Ajustes Motor IPCA", de outubro de 2024:
+#
+#   https://inco1.slack.com/archives/C0103FS2CH4/p1728317663655909
+#
+def test_wont_leak_price_level_adjustment_on_prepayment():
+    '''
+    Conservação da correção monetária diante de uma antecipação que não amortiza principal.
+
+    Uma antecipação integralmente consumida pelos juros acumulados não reduz o saldo devedor nominal. O perfil de saldo
+    ao longo do tempo permanece idêntico ao do fluxo regular, logo a correção monetária total cobrada também deve
+    permanecer idêntica.
+
+    Baseado na operação "YUCA SPE V", Juros mensais - 30 meses - IPCA, ID "cmQFTXLsEB6Bg7Zlae1pV", acrescida de uma data
+    de aniversário e de uma antecipação parcial fictícias.
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('1844500')
+    kwa['apy'] = decimal.Decimal(7)
+    kwa['zero_date'] = datetime.date(2022, 2, 18)
+    kwa['term'] = 30
+    kwa['anniversary_date'] = datetime.date(2022, 4, 5)
+    kwa['vir'] = fincore.VariableIndex(code='IPCA')
+
+    regular = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+
+    # Os juros acumulados entre 05/04 e 20/04 superam cinco mil reais, então a antecipação não amortiza principal.
+    kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 4, 20), value=decimal.Decimal('5000'))]
+
+    prepaid = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+
+    assert sum(x.amort for x in prepaid) == sum(x.amort for x in regular) == kwa['principal']
+    assert sum(x.pla for x in prepaid) == sum(x.pla for x in regular)
+
+def test_wont_leak_partially_deferred_price_level_adjustment_on_prepayment():
+    '''
+    Conservação da correção monetária quando a antecipação liquida apenas parte da correção do seu trecho.
+
+    A ordem de imputação põe os juros à frente da correção. Uma antecipação que cubra os juros e só uma fração da
+    correção deixa o restante diferido, e ainda assim não amortiza principal – logo a correção total do cronograma não
+    pode mudar. Exercita a composição do fator diferido com o crédito do que já foi pago.
+
+    Mesma operação de "test_wont_leak_price_level_adjustment_on_prepayment".
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('1844500')
+    kwa['apy'] = decimal.Decimal(7)
+    kwa['zero_date'] = datetime.date(2022, 2, 18)
+    kwa['term'] = 30
+    kwa['anniversary_date'] = datetime.date(2022, 4, 5)
+    kwa['vir'] = fincore.VariableIndex(code='IPCA')
+
+    regular = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+
+    # Os juros do trecho somam 5.261,68, e a correção devida 14.883,30. Dez mil cobrem os juros e parte da correção.
+    kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 4, 20), value=decimal.Decimal('10000'))]
+
+    prepaid = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+    advance = next(x for x in prepaid if x.date == kwa['insertions'][0].date)
+
+    assert advance.amort == _0
+    assert _0 < advance.pla < decimal.Decimal('14883.30')
+
+    assert sum(x.amort for x in prepaid) == sum(x.amort for x in regular) == kwa['principal']
+    assert sum(x.pla for x in prepaid) == sum(x.pla for x in regular)
+
+def test_wont_recharge_settled_price_level_indexes_on_prepayment():
+    '''
+    Janela de índices de IPCA de uma antecipação.
+
+    A antecipação deve corrigir apenas o trecho em aberto, isto é, o intervalo entre o pagamento regular anterior e a
+    sua própria data. Não deve recobrar índice já liquidado por um pagamento anterior, nem alcançar índice que antecede
+    o primeiro mês do fluxo regular.
+
+    Mesma operação de "test_wont_leak_price_level_adjustment_on_prepayment".
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('1844500')
+    kwa['apy'] = decimal.Decimal(7)
+    kwa['zero_date'] = datetime.date(2022, 2, 18)
+    kwa['term'] = 30
+    kwa['anniversary_date'] = datetime.date(2022, 4, 5)
+    kwa['vir'] = fincore.VariableIndex(code='IPCA')
+    kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 4, 20), value=decimal.Decimal('5000'))]
+
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+
+    # O primeiro pagamento regular liquida o índice de fevereiro de 2022, o primeiro do fluxo. A antecipação o sucede.
+    assert sched[0].date == kwa['anniversary_date']
+    assert [x.date for x in sched[0].cf_mem] == [datetime.date(2022, 2, 1)]
+
+    assert sched[1].date == kwa['insertions'][0].date
+
+    # O trecho em aberto, de 05/04 a 20/04, pertence ao índice de março de 2022, o mesmo que o pagamento de 05/05
+    # consome. Os dois eventos devem reparti-lo, e nada além dele.
+    assert [x.date for x in sched[1].cf_mem] == [datetime.date(2022, 3, 1)]
+
+    assert sched[2].date == kwa['anniversary_date'] + _MONTH
+    assert [x.date for x in sched[2].cf_mem] == [datetime.date(2022, 3, 1)]
 # }}}
 
 # 🎭 Juros Mensais vandalizadas. {{{
