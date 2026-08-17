@@ -2458,9 +2458,12 @@ def test_will_create_jm_ipca_3():
     Mesma operação e mesma antecipação de "test_will_create_jm_ipca_2", com "amortizes_interest" falso.
 
     Aqui os 97.224,53 vão inteiros para o principal. Os juros e a correção do trecho ficam devidos, e o pagamento de
-    07/08 os recolhe: 56.884,83 de juros, que são os 7.259,43 do seu próprio trecho mais os 49.625,40 travados, e
+    07/08 os recolhe: 56.895,02 de juros, que são os 7.269,62 do seu próprio trecho mais os 49.625,40 travados, e
     9.578,22 de correção, que são 8.360,43 dos 27 dias sobre 6.000.000,00 mais 1.217,79 dos 4 dias sobre o saldo já
     reduzido.
+
+    O trecho de quatro dias rende sobre 6.007.221,37, e não sobre os 5.902.775,47 de principal nominal: a correção
+    travada continua incorporada ao saldo devedor enquanto não é liquidada.
 
     A segunda parte do teste é a que pega o defeito: a correção do período tem que crescer com a data da antecipação,
     porque quanto mais tarde ela ocorre, mais tempo o principal antecipado passa rendendo correção. Travar o fator em
@@ -2478,7 +2481,7 @@ def test_will_create_jm_ipca_3():
     # Juros, correção monetária, amortização e valor bruto.
     tab[1] = '72236.23', '43813.36', '0.00', '116049.60'  # Idêntico ao do caso anterior.
     tab[2] = '49625.40', '0.00', '97224.53', '97224.53'  # A antecipação, inteira em principal.
-    tab[3] = '7259.43', '9578.22', '0.00', '66463.05'  # Recolhe o juro e a correção travados.
+    tab[3] = '7269.62', '9578.22', '0.00', '66473.24'  # Recolhe o juro e a correção travados.
     tab[4] = '56010.21', '0.00', '0.00', '56010.21'
     tab[37] = '56010.21', '0.00', '5902775.47', '5958785.68'
 
@@ -2503,6 +2506,50 @@ def test_will_create_jm_ipca_3():
 
     # O limite superior é a correção do mês sem antecipação nenhuma: 0,16% sobre os seis milhões.
     assert max(curva) < decimal.Decimal('9600')
+
+def test_will_accrue_interest_over_deferred_price_level_adjustment():
+    '''
+    Correção devida e não liquidada continua no saldo devedor, e rende juros.
+
+    Mesma operação e mesma data de "test_will_create_jm_ipca_2", com uma antecipação de 52.000. Ela cobre os
+    49.625,40 de juros do trecho e só 2.374,60 dos 8.360,43 de correção devida, deixando 5.985,83 diferidos. Nenhum
+    principal é abatido, porque a ordem de imputação só chega nele depois da correção inteira.
+
+    Os juros do trecho seguinte, de quatro dias, incidem sobre 6.007.221,37 – que são os 6.000.000,00 de principal
+    mais os 5.985,83 diferidos, o conjunto corrigido pelo fator do próprio trecho. Não sobre os 6.000.000,00 secos.
+
+    A especificação de outubro de 2024 chama a correção mensal de "fórmula de correção tradicional mais amortização
+    extraordinária obrigatória do IPCA mensal". Quando a amortização extraordinária sai pela metade, a outra metade
+    permanece incorporada – e é essa a razão de ela render.
+
+    Ref File: https://docs.google.com/spreadsheets/d/1CH47cNnNc1QjcPb-WP7q6Gp1k1UNkDnQ
+    Tab.....: Conferência
+    '''
+
+    kwa = _kwa_cri_ipa()
+    tab = {}
+
+    kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2026, 8, 3), value=decimal.Decimal('52000'))]
+
+    # Juros, correção monetária, amortização e valor bruto.
+    tab[1] = '72236.23', '43813.36', '0.00', '116049.60'
+    tab[2] = '49625.40', '2374.60', '0.00', '52000.00'  # Os juros consomem quase tudo, e a correção fica pela metade.
+    tab[3] = '7324.79', '7225.40', '0.00', '14550.19'  # Juros sobre o saldo com a correção diferida dentro.
+    tab[4] = '56932.76', '0.00', '0.00', '56932.76'
+
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+
+    for i, x in enumerate(sched, 1):
+        if i in tab:
+            assert [x.gain, x.pla, x.amort, x.raw] == [decimal.Decimal(y) for y in tab[i]]
+
+    # Sem a incorporação, os juros do trecho de quatro dias cairiam para 7.317,49 – a diferença é o que a correção
+    # diferida rende. O teste falha por baixo se alguém tirar "regs.correction" da base dos juros.
+    #
+    assert sched[2].gain > decimal.Decimal('7320')
+
+    # E a correção segue conservando: o que a antecipação não pagou, o pagamento seguinte recolhe, recorrigido.
+    assert sum(x.pla for x in sched) == decimal.Decimal('53413.36')
 
 def test_wont_charge_regular_payment_on_the_prepayment_date():
     '''
