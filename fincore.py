@@ -1615,26 +1615,27 @@ def get_payments_table(
 
     # Registers.
     #
-    #   • "correction.deferred" é o fator de correção devido e ainda não liquidado, e "correction.settled" é o valor de
-    #     correção já pago sobre esse fator. Ambos só se afastam do neutro quando uma antecipação não alcança a correção
-    #     do seu trecho, pois a ordem de imputação põe os juros à frente dela. O próximo pagamento que liquide correção
-    #     os recolhe.
+    #   • "correction.deferred" is the adjustment factor due and not yet settled, and "correction.settled" is the
+    #     adjustment already paid against that factor. Both only leave the neutral value when an advancement falls
+    #     short of the adjustment of its stretch, since the imputation order puts interest ahead of it. The next
+    #     payment that settles adjustment collects them.
     #
-    #     Difere-se o fator, e não o valor, porque a correção compõe: diferir o valor de dois meios períodos daria
-    #     "2 × (F½ − 1)", menor que o "F − 1" do período inteiro. Compondo, "F½ × F½ = F", exato. E o que a antecipação
-    #     chegou a pagar entra como crédito em "settled", em vez de virar fator, porque converter valor em fator e
-    #     dividir deixaria um resíduo de segunda ordem.
+    #     What is deferred is the factor, and not the value, because the adjustment compounds: deferring the value of
+    #     two half periods would give "2 × (F½ − 1)", less than the "F − 1" of the whole period. Composed, "F½ × F½ =
+    #     F", exact. And what the advancement did pay enters as a credit in "settled", instead of becoming a factor,
+    #     because converting a value into a factor and dividing would leave a second order residue.
     #
-    #     Diferir e amortizar são mutuamente exclusivos: só sobra valor para o principal depois de a correção estar
-    #     inteiramente liquidada. Logo "settled" nunca atravessa uma mudança da base sobre a qual foi medido.
+    #     Deferring and amortising are mutually exclusive: value only reaches the principal once the adjustment is
+    #     entirely settled. So "settled" never crosses a change of the base over which it was measured.
     #
-    #   • "interest.locked" é o juro que uma antecipação com "amortizes_interest" falso deixou de liquidar. Ele mora
-    #     dentro de "interest.deferred", mas se comporta de outro jeito: o juro diferido por uma carência capitaliza e
-    #     sai à medida que o principal amortiza, enquanto este é cobrado por inteiro no pagamento regular seguinte.
+    #   • "interest.locked" is the interest that an advancement with a false "amortizes_interest" did not settle. It
+    #     lives inside "interest.deferred", but behaves differently: interest deferred by a grace period capitalises
+    #     and comes out as the principal amortises, while this one is charged whole on the next regular payment.
     #
-    #     São eventos distintos que dividem o mesmo balde de juro não liquidado. A carência é o cronograma dizendo que
-    #     aquele mês não paga juros; a antecipação é o tomador escolhendo jogar o valor todo no principal, e seguir
-    #     devendo o juro do mês corrente. Sem separar os dois, liberar um mudaria o outro.
+    #     They are distinct events sharing the same bucket of unsettled interest. A grace period is the schedule
+    #     saying that this month pays no interest; an advancement is the borrower choosing to put the whole value on
+    #     the principal, and to still owe the interest of the current month. Without separating the two, releasing one
+    #     would move the other.
     #
     regs.principal = types.SimpleNamespace(amortization_ratio=types.SimpleNamespace(current=_0, regular=_0), amortized=types.SimpleNamespace(current=_0, total=_0))
     regs.interest = types.SimpleNamespace(current=_0, accrued=_0, settled=types.SimpleNamespace(current=_0, total=_0), deferred=_0, locked=_0)
@@ -1778,14 +1779,14 @@ def get_payments_table(
                 f_s = calculate_interest_factor(apy, decimal.Decimal(dcp) / (12 * decimal.Decimal(dct)))
 
                 if type(ent1) is Amortization and ent1.price_level_adjustment or type(ent1) is Amortization.Bare:
-                    # A correção monetária é particionada pelo calendário regular. Cada pagamento regular consome
-                    # exatamente uma janela de índices, e essa partição é disjunta e sem lacuna – é ela que dispensa uma
-                    # memória explícita da correção já liquidada.
+                    # The price level adjustment is partitioned by the regular calendar. Each regular payment consumes
+                    # exactly one window of indexes, and that partition is disjoint and without a gap – it is what
+                    # spares an explicit memory of the adjustment already settled.
                     #
-                    # Uma antecipação não tem calendário próprio. Ela corrige apenas o trecho em aberto do período
-                    # regular em que se insere, e por isso herda a janela do pagamento regular que a sucede. O índice do
-                    # mês acaba repartido entre os dois eventos pelo "ratio", cada um corrigindo o saldo devedor
-                    # vigente no seu trecho.
+                    # An advancement has no calendar of its own. It corrects only the open stretch of the regular
+                    # period it falls into, and therefore inherits the window of the regular payment that succeeds
+                    # it. The index of the month ends up split between the two events by the "ratio", each one
+                    # correcting the balance in force over its own stretch.
                     #
                     if type(ent1) is Amortization:
                         pla = t.cast(PriceLevelAdjustment, ent1.price_level_adjustment)
@@ -1840,15 +1841,16 @@ def get_payments_table(
         #
         if ent0.date < calc_date.value or ent1.date <= calc_date.value or calc_date.runaway:
             # Register the interest accrued in the period.
-            # Os juros incidem sobre o saldo devedor, e correção devida e ainda não liquidada continua fazendo parte
-            # dele. A especificação de outubro de 2024 define a correção mensal como "fórmula de correção tradicional
-            # mais amortização extraordinária obrigatória do IPCA mensal": o saldo é corrigido, e o pagamento do mês é
-            # uma amortização extraordinária por cima, que o traz de volta ao nominal. Quando essa amortização não sai
-            # por inteiro – uma antecipação que não alcança a correção do seu trecho, ou que não a amortiza de
-            # propósito – o que resta permanece no saldo, e rende, do mesmo modo que o juro não liquidado já rendia
-            # por estar em "calc_balance".
             #
-            # Sem nada diferido, o fator é neutro e os dois valores são zero, então a base é o próprio "calc_balance".
+            # Interest accrues over the balance, and adjustment due and not yet settled is still part of it. The
+            # specification of October of 2024 defines the monthly adjustment as the traditional correction formula
+            # plus a mandatory extraordinary amortisation of the monthly IPCA: the balance is corrected, and the
+            # payment of the month is an extraordinary amortisation on top of it that brings the balance back to
+            # nominal. When that amortisation does not come out whole – an advancement that falls short of the
+            # adjustment of its stretch, or that does not amortise it on purpose – the remainder stays in the balance,
+            # and accrues, the same way unsettled interest already accrued by sitting in "calc_balance".
+            #
+            # With nothing deferred the factor is neutral and both values are zero, so the base is "calc_balance".
             #
             gens.interest_tracker_1.send((calc_balance(regs.correction.deferred * f_c.value) - regs.correction.settled + regs.correction.locked) * (f_s - _1))
 
@@ -1862,8 +1864,9 @@ def get_payments_table(
                 # Register the non adjusted amortization percentage.
                 gens.principal_tracker_2.send(ent1.amortization_ratio)
 
-                # Register the interest to be settled in the period. O juro travado por uma antecipação sai inteiro
-                # aqui; o diferido por uma carência sai na proporção do principal que este pagamento amortiza.
+                # Register the interest to be settled in the period. Interest locked by an advancement comes out
+                # whole here; interest deferred by a grace period comes out in the proportion of the principal that
+                # this payment amortises.
                 #
                 if ent1.amortizes_interest:
                     gens.interest_tracker_2.send(regs.interest.current + regs.interest.locked + regs.principal.amortization_ratio.current * (regs.interest.deferred - regs.interest.locked))
@@ -1881,22 +1884,23 @@ def get_payments_table(
             #
             else:
                 ent1 = t.cast(Amortization.Bare, ent1)  # Mypy can't infer the type of the "ent1" variable here.
-                fac = regs.correction.deferred * f_c.value  # Fator do trecho, composto com o que ficou diferido.
+                fac = regs.correction.deferred * f_c.value  # Factor of the stretch, composed with what was deferred.
 
-                # Antecipação que não amortiza juros. O valor vai inteiro para o principal, e tanto os juros quanto a
-                # correção do trecho ficam devidos para o pagamento regular seguinte.
+                # Advancement that does not amortise interest. The value goes entirely to the principal, and both
+                # the interest and the adjustment of the stretch stay due for the next regular payment.
                 #
-                # Como o valor sai todo do principal nominal, o teto aqui é o principal em aberto, e não o saldo
-                # corrigido. E uma antecipação assim não pode quitar a dívida, porque deixaria juros e correção sem
-                # quem os liquidasse – daí a recusa do valor máximo.
+                # Since the value comes out of the nominal principal, the ceiling here is the outstanding principal,
+                # and not the corrected balance. And an advancement like this may not settle the debt, because it
+                # would leave interest and adjustment with nobody to collect them – hence the refusal of the maximum.
                 #
-                # Repare que aqui se trava o VALOR da correção, e não o fator, ao contrário do que o ramo de baixo faz.
-                # É a única forma de respeitar "a correção incide sobre o saldo devedor vigente" quando o evento também
-                # amortiza: o principal cai nesta data, e o trecho que acabou de correr correu sobre o saldo de antes.
-                # Diferir o fator o aplicaria ao saldo de depois, e a correção passaria a ignorar a data da antecipação.
+                # Note that what is locked here is the VALUE of the adjustment, and not the factor, unlike what the
+                # branch below does. It is the only way to honour "the adjustment accrues over the balance in force"
+                # when the event also amortises: the principal drops on this date, and the stretch that has just run
+                # ran over the balance of before. Deferring the factor would apply it to the balance of after, and the
+                # adjustment would stop depending on the date of the advancement.
                 #
                 if not ent1.amortizes_interest:
-                    res = principal - regs.principal.amortized.total  # Principal nominal em aberto.
+                    res = principal - regs.principal.amortized.total  # Outstanding nominal principal.
 
                     if ent1.value == Amortization.Bare.MAX_VALUE:
                         raise ValueError('an advancement that does not amortize interest cannot settle the entire debt')
@@ -1904,19 +1908,19 @@ def get_payments_table(
                     elif ent1.value > _Q(res):
                         raise Exception(f'the value of the amortization, {ent1.value}, is greater than the outstanding principal of the loan, {_Q(res)}')
 
-                    val1 = cor = _0  # Nada de juros, nada de correção.
-                    val4 = ent1.value  # Principal nominal a amortizar.
+                    val1 = cor = _0  # No interest, no adjustment.
+                    val4 = ent1.value  # Nominal principal to amortize.
 
                     regs.correction.locked += calc_balance(fac) - calc_balance(_1) - regs.correction.settled
                     regs.correction.deferred = _1
                     regs.correction.settled = _0
 
-                    regs.interest.locked += regs.interest.current  # O juro do trecho, idem.
+                    regs.interest.locked += regs.interest.current  # The interest of the stretch, likewise.
 
-                # A correção do trecho incide sobre o saldo devedor vigente, e não sobre a fatia amortizada – a correção
-                # acompanha o saldo, e o principal que sai é nominal. Respeita a ordem de imputação da antecipação:
-                # juros, correção, principal. Caso os juros consumam a antecipação a ponto de não sobrar para a correção
-                # inteira, o que faltar fica diferido.
+                # The adjustment of the stretch accrues over the balance in force, and not over the amortised
+                # slice – the adjustment follows the balance, and the principal that leaves is nominal. Honours the
+                # imputation order of an advancement: interest, adjustment, principal. Should the interest consume the
+                # advancement to the point of leaving nothing for the whole adjustment, what is missing is deferred.
                 #
                 else:
                     val0 = min(ent1.value, calc_balance(f_c.value))  # Ensures that the value of the advance does not exceed the remaining balance of the loan.
@@ -1927,11 +1931,11 @@ def get_payments_table(
                     if ent1.value != Amortization.Bare.MAX_VALUE and ent1.value > _Q(calc_balance(f_c.value)):
                         raise Exception(f'the value of the amortization, {ent1.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(f_c.value))}')
 
-                    val3 = calc_balance(fac) - calc_balance(_1) - regs.correction.settled  # Correção devida.
-                    cor = min(val2, val3)  # Correção efetivamente liquidada, limitada pelo que sobrou dos juros.
-                    val4 = val2 - cor  # Principal nominal a amortizar.
+                    val3 = calc_balance(fac) - calc_balance(_1) - regs.correction.settled  # Adjustment due.
+                    cor = min(val2, val3)  # Adjustment actually settled, bounded by what the interest left over.
+                    val4 = val2 - cor  # Nominal principal to amortize.
 
-                    # Se a correção não foi liquidada por inteiro, difere o fator e credita o que se pagou dela.
+                    # If the adjustment was not settled whole, defer the factor and credit what was paid of it.
                     if val2 < val3:
                         regs.correction.deferred = fac
                         regs.correction.settled = regs.correction.settled + cor
@@ -2004,8 +2008,8 @@ def get_payments_table(
                 if vir and vir.code == 'IPCA':
                     pmt = t.cast(PriceAdjustedPayment, pmt)
 
-                    # Pays monetary correction over the principal amortization. O fator recolhe o que uma antecipação
-                    # anterior tenha deixado diferido.
+                    # Pays monetary correction over the principal amortization. The factor collects whatever an
+                    # earlier advancement has left deferred.
                     if (pla := t.cast(PriceLevelAdjustment, ent1.price_level_adjustment)) and pmt.amort:
                         pmt.pla = pmt.amort * (regs.correction.deferred * f_c.value - 1) - regs.correction.settled + regs.correction.locked
 
