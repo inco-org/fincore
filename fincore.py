@@ -1840,7 +1840,17 @@ def get_payments_table(
         #
         if ent0.date < calc_date.value or ent1.date <= calc_date.value or calc_date.runaway:
             # Register the interest accrued in the period.
-            gens.interest_tracker_1.send(calc_balance(f_c.value) * (f_s - _1))
+            # Os juros incidem sobre o saldo devedor, e correção devida e ainda não liquidada continua fazendo parte
+            # dele. A especificação de outubro de 2024 define a correção mensal como "fórmula de correção tradicional
+            # mais amortização extraordinária obrigatória do IPCA mensal": o saldo é corrigido, e o pagamento do mês é
+            # uma amortização extraordinária por cima, que o traz de volta ao nominal. Quando essa amortização não sai
+            # por inteiro – uma antecipação que não alcança a correção do seu trecho, ou que não a amortiza de
+            # propósito – o que resta permanece no saldo, e rende, do mesmo modo que o juro não liquidado já rendia
+            # por estar em "calc_balance".
+            #
+            # Sem nada diferido, o fator é neutro e os dois valores são zero, então a base é o próprio "calc_balance".
+            #
+            gens.interest_tracker_1.send((calc_balance(regs.correction.deferred * f_c.value) - regs.correction.settled + regs.correction.locked) * (f_s - _1))
 
             # Case of a regular amortization.
             if type(ent1) is Amortization:
@@ -1982,7 +1992,7 @@ def get_payments_table(
                     pmt.raw = _0
                     pmt.tax = _0
 
-                pmt.bal = calc_balance(f_c.value)
+                pmt.bal = calc_balance(regs.correction.deferred * f_c.value) - regs.correction.settled + regs.correction.locked  # Ver o comentário da acumulação de juros.
 
                 # Monetary correction.
                 #
@@ -2040,7 +2050,7 @@ def get_payments_table(
                     pmt.raw = pmt.raw + pmt.pla
                     pmt.tax = _0 if tax_exempt else pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
 
-                pmt.bal = calc_balance(f_c.value)
+                pmt.bal = calc_balance(regs.correction.deferred * f_c.value) - regs.correction.settled + regs.correction.locked  # Ver o comentário da acumulação de juros.
 
             # Sanity check.
             #
