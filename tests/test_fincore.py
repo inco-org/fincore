@@ -102,7 +102,16 @@ class _RicherIpcaBackend(fincore.InMemoryBackend):
         (datetime.date(2024, 5, 1), decimal.Decimal('0.46')),   (datetime.date(2024, 6, 1), decimal.Decimal('0.21')),    # NOQA
         (datetime.date(2024, 7, 1), decimal.Decimal('0.38')),   (datetime.date(2024, 8, 1), decimal.Decimal('-0.02')),   # NOQA
         (datetime.date(2024, 9, 1), decimal.Decimal('0.44')),   (datetime.date(2024, 10, 1), decimal.Decimal('0.56')),   # NOQA
-        (datetime.date(2024, 11, 1), decimal.Decimal('0.39'))
+        (datetime.date(2024, 11, 1), decimal.Decimal('0.39')), (datetime.date(2024, 12, 1), decimal.Decimal('0.52')),   # NOQA
+        (datetime.date(2025, 1, 1), decimal.Decimal('0.16')),  (datetime.date(2025, 2, 1), decimal.Decimal('1.31')),    # NOQA
+        (datetime.date(2025, 3, 1), decimal.Decimal('0.56')),  (datetime.date(2025, 4, 1), decimal.Decimal('0.43')),    # NOQA
+        (datetime.date(2025, 5, 1), decimal.Decimal('0.26')),  (datetime.date(2025, 6, 1), decimal.Decimal('0.24')),    # NOQA
+        (datetime.date(2025, 7, 1), decimal.Decimal('0.26')),  (datetime.date(2025, 8, 1), decimal.Decimal('-0.11')),   # NOQA
+        (datetime.date(2025, 9, 1), decimal.Decimal('0.48')),  (datetime.date(2025, 10, 1), decimal.Decimal('0.09')),   # NOQA
+        (datetime.date(2025, 11, 1), decimal.Decimal('0.18')), (datetime.date(2025, 12, 1), decimal.Decimal('0.33')),   # NOQA
+        (datetime.date(2026, 1, 1), decimal.Decimal('0.33')),  (datetime.date(2026, 2, 1), decimal.Decimal('0.70')),    # NOQA
+        (datetime.date(2026, 3, 1), decimal.Decimal('0.88')),  (datetime.date(2026, 4, 1), decimal.Decimal('0.67')),    # NOQA
+        (datetime.date(2026, 5, 1), decimal.Decimal('0.58')),  (datetime.date(2026, 6, 1), decimal.Decimal('0.16'))     # NOQA
     ]
 
 # 🚩 Parametrizações inválidas. {{{
@@ -2118,6 +2127,81 @@ def test_will_create_jm_pos_4():
 
     assert i == 7
 
+def test_will_create_jm_ipca_1():
+    '''
+    Operação "CRI - Max Tulum 2 (Isento de IR)", Juros mensais - 38 meses - IPCA, ID "SFITBR__Qo2dDrU5GfAGj".
+
+    Primeiro cronograma de Juros Mensais com IPCA conferido contra planilha. Até aqui, o IPCA mensal só tinha
+    referência externa na rotina de retornos diários, em "test_will_create_loan_daily_returns_jm_1".
+
+    A referência é a curva PU diária da TRV, que constrói o fator de correção do mesmo modo que o motor: um único
+    índice mensal por período, elevado a "DCP/DCT". É a coluna "N" da aba, "(K/L)^(H/I)", com o índice buscado pelo
+    número do evento, "F-2". Não confundir com a planilha da operação Yees, que reescreveu essa coluna como um
+    acúmulo diário indexado pelo mês-calendário, e por isso não fecha com o motor.
+
+    A operação nasce em 12/12/2024 e o aniversário é 14/01/2025, então o primeiro período é irregular, com 33 dias
+    corridos. O "first_dct_rule" de "31" reproduz o DCT da planilha, que é a distância entre os aniversários que
+    cercam o pagamento – de 14/12 a 14/01.
+
+    A série do "_RicherIpcaBackend" termina em junho de 2026. Com o deslocamento M-2, ela alcança o vigésimo
+    pagamento, e os dezoito seguintes ficam sem índice, com fator um e correção zero.
+
+    Atenção ao alcance da referência externa: a planilha projeta índice zero a partir de dezembro de 2024, então ela
+    só corrobora o primeiro pagamento – e ali difere em R$ 1,85, porque guarda a variação com quatro casas, 0,5599%,
+    contra os 0,56% do "backend". Para ancorar os demais é preciso regerar a curva da TRV com a série realizada.
+
+    O décimo pagamento tem correção zero com índice existente: agosto de 2025 fechou em -0,11%, e o motor trava o
+    fator de correção em um. É o único caso de deflação da tabela.
+
+    Ref File: https://docs.google.com/spreadsheets/d/13Rr9b0BiQhvse-6-zbPAilfiUMfzHteu
+    Tab.....: Cronograma
+    '''
+
+    kwa = {}
+    tab = {}
+
+    kwa['principal'] = decimal.Decimal('7000000')
+    kwa['apy'] = decimal.Decimal('10.84')
+    kwa['zero_date'] = datetime.date(2024, 12, 12)
+    kwa['term'] = 38
+    kwa['anniversary_date'] = datetime.date(2025, 1, 14)
+    kwa['vir'] = fincore.VariableIndex(code='IPCA', backend=_RicherIpcaBackend())
+    kwa['first_dct_rule'] = '31'
+
+    # Juros, correção monetária, amortização e saldo devedor.
+    tab[1] = '64467.67', '29064.94', '0.00', '7029064.94'  # Período irregular de abertura, 33 dias corridos.
+    tab[2] = '60606.94', '36400.00', '0.00', '7036400.00'
+    tab[3] = '60389.88', '11200.00', '0.00', '7011200.00'
+    tab[4] = '61083.25', '91700.00', '0.00', '7091700.00'
+    tab[5] = '60631.05', '39200.00', '0.00', '7039200.00'
+    tab[6] = '60552.67', '30100.00', '0.00', '7030100.00'
+    tab[7] = '60450.17', '18200.00', '0.00', '7018200.00'
+    tab[8] = '60438.11', '16800.00', '0.00', '7016800.00'
+    tab[9] = '60450.17', '18200.00', '0.00', '7018200.00'
+    tab[10] = '60293.41', '0.00', '0.00', '7000000.00'  # Índice de agosto de 2025, -0,11%. Fator travado em um.
+    tab[11] = '60582.82', '33600.00', '0.00', '7033600.00'
+    tab[12] = '60347.67', '6300.00', '0.00', '7006300.00'
+    tab[13] = '60401.94', '12600.00', '0.00', '7012600.00'
+    tab[14] = '60492.38', '23100.00', '0.00', '7023100.00'
+    tab[15] = '60492.38', '23100.00', '0.00', '7023100.00'
+    tab[16] = '60715.46', '49000.00', '0.00', '7049000.00'
+    tab[17] = '60823.99', '61600.00', '0.00', '7061600.00'
+    tab[18] = '60697.38', '46900.00', '0.00', '7046900.00'
+    tab[19] = '60643.11', '40600.00', '0.00', '7040600.00'
+    tab[20] = '60389.88', '11200.00', '0.00', '7011200.00'  # Último pagamento alcançado pela série.
+    tab[21] = '60293.41', '0.00', '0.00', '7000000.00'  # Vale também para os pagamentos 22 a 37.
+    tab[38] = '60293.41', '0.00', '7000000.00', '0.00'
+
+    for i, x in enumerate(fincore.build_jm(**kwa), 1):
+        x = t.cast(fincore.PriceAdjustedPayment, x)
+
+        assert x.no == i
+        assert x.date == kwa['anniversary_date'] + _MONTH * (i - 1)
+        assert [x.gain, x.pla, x.amort, x.bal] == [decimal.Decimal(y) for y in tab.get(i, tab[21])]
+        assert x.raw == x.gain + x.pla + x.amort
+
+    assert i == kwa['term']
+
 # Antecipações em operações indexadas ao IPCA.
 #
 # A correção monetária é particionada pelo calendário regular: cada pagamento consome exatamente uma janela de índices,
@@ -2234,6 +2318,250 @@ def test_wont_recharge_settled_price_level_indexes_on_prepayment():
 
     assert sched[2].date == kwa['anniversary_date'] + _MONTH
     assert [x.date for x in sched[2].cf_mem] == [datetime.date(2022, 3, 1)]
+
+# Antecipação que não amortiza juros.
+#
+# A ordem de imputação padrão põe juros e correção à frente do principal. Uma antecipação com "amortizes_interest"
+# falso inverte isso: o valor vai inteiro para o principal, e o juro e a correção do trecho ficam devidos.
+#
+# O juro travado assim não se confunde com o de uma carência. O de carência capitaliza e sai à medida que o principal
+# amortiza; este é cobrado por inteiro no pagamento regular seguinte, porque o tomador segue devendo o mês corrente.
+# Daí o registrador "interest.locked", separado de "interest.deferred".
+#
+def test_will_amortize_only_principal_on_prepayment():
+    '''
+    Antecipação que não amortiza juros: o valor vai inteiro para o principal.
+
+    Mesma operação de "test_wont_leak_price_level_adjustment_on_prepayment".
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('1844500')
+    kwa['apy'] = decimal.Decimal(7)
+    kwa['zero_date'] = datetime.date(2022, 2, 18)
+    kwa['term'] = 30
+    kwa['anniversary_date'] = datetime.date(2022, 4, 5)
+    kwa['vir'] = fincore.VariableIndex(code='IPCA')
+    kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 4, 20), value=decimal.Decimal('50000'), amortizes_interest=False)]
+
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+    advance = next(x for x in sched if x.date == kwa['insertions'][0].date)
+    index = sched.index(advance)
+
+    # Os juros do trecho, mais de cinco mil, seriam imputados antes do principal na ordem padrão. Aqui, não.
+    assert advance.gain > _0
+    assert advance.amort == kwa['insertions'][0].value
+    assert advance.pla == _0
+    assert advance.raw == kwa['insertions'][0].value
+
+    # O pagamento regular seguinte liquida o juro travado por inteiro, somado ao do seu próprio trecho. Como o valor
+    # bruto de um pagamento sem amortização é juros liquidados mais correção, a diferença isola os juros.
+    #
+    assert sched[index + 1].raw - sched[index + 1].pla == advance.gain + sched[index + 1].gain
+
+    # E nada fica para trás: o pagamento seguinte a esse liquida apenas o juro do seu próprio trecho.
+    assert sched[index + 2].raw - sched[index + 2].pla == sched[index + 2].gain
+
+    assert sum(x.amort for x in sched) == kwa['principal']
+
+def test_wont_settle_debt_with_prepayment_that_does_not_amortize_interest():
+    '''
+    Uma antecipação que não amortiza juros não pode quitar a dívida, nem exceder o principal em aberto.
+
+    O valor máximo pede a quitação, e quitar exige liquidar juros e correção – não haveria pagamento posterior para
+    recolhê-los. E, como o valor sai todo do principal nominal, o teto é o principal em aberto, e não o saldo
+    corrigido, que é maior.
+
+    Mesma operação de "test_wont_leak_price_level_adjustment_on_prepayment".
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('1844500')
+    kwa['apy'] = decimal.Decimal(7)
+    kwa['zero_date'] = datetime.date(2022, 2, 18)
+    kwa['term'] = 30
+    kwa['anniversary_date'] = datetime.date(2022, 4, 5)
+    kwa['vir'] = fincore.VariableIndex(code='IPCA')
+
+    def build(value):
+        kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 4, 20), value=value, amortizes_interest=False)]
+
+        return list(fincore.build_jm(**kwa))
+
+    with pytest.raises(ValueError, match='an advancement that does not amortize interest cannot settle the entire debt'):
+        build(fincore.Amortization.Bare.MAX_VALUE)
+
+    with pytest.raises(Exception, match='is greater than the outstanding principal of the loan'):
+        build(kwa['principal'] + _1)
+
+    # O saldo devedor corrigido na data já passa do principal, e ainda assim o teto é o principal.
+    assert build(kwa['principal'])[1].amort == kwa['principal']
+
+# Os dois casos de antecipação parcial da operação "CRI IPA Club Residencial", conferidos contra planilha.
+#
+# São o mesmo evento – 97.224,53 em 03/08/2026, dentro do período que vai de 07/07 a 07/08 – sob as duas ordens de
+# imputação. O primeiro pagamento, de 07/07, é anterior à antecipação e é idêntico nos dois: serve de âncora, e bate
+# com o admin da operação no centavo.
+#
+def _kwa_cri_ipa():
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('6000000')
+    kwa['apy'] = decimal.Decimal(12)
+    kwa['zero_date'] = datetime.date(2026, 5, 29)
+    kwa['term'] = 36
+    kwa['anniversary_date'] = datetime.date(2026, 7, 7)
+    kwa['first_dct_rule'] = '31'
+    kwa['vir'] = fincore.VariableIndex(code='IPCA', backend=_RicherIpcaBackend())
+
+    return kwa
+
+def test_will_create_jm_ipca_2():
+    '''
+    Operação "CRI IPA Club Residencial", Juros mensais - 36 meses - IPCA, c/ antecipação parcial.
+
+    Ordem de imputação padrão: juros, correção, principal. Dos 97.224,53 antecipados, 49.625,40 pagam os juros
+    corridos de 07/07 a 03/08, 8.360,43 pagam a correção desse mesmo trecho, e só os 39.238,70 restantes abatem
+    principal.
+
+    A correção dos 27 dias incide sobre os 6.000.000,00 que estavam na operação durante eles, e a dos 4 dias que
+    faltam para 07/08 incide sobre o saldo já reduzido. Os dois fatores compõem o índice do mês, de 0,16%.
+
+    Ref File: https://docs.google.com/spreadsheets/d/1CH47cNnNc1QjcPb-WP7q6Gp1k1UNkDnQ
+    Tab.....: Conferência
+    '''
+
+    kwa = _kwa_cri_ipa()
+    tab = {}
+
+    kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2026, 8, 3), value=decimal.Decimal('97224.53'))]
+
+    # Juros, correção monetária, amortização e valor bruto.
+    tab[1] = '72236.23', '43813.36', '0.00', '116049.60'  # Anterior à antecipação. Bate com o admin da operação.
+    tab[2] = '49625.40', '8360.43', '39238.70', '97224.53'  # A antecipação.
+    tab[3] = '7269.64', '1229.75', '0.00', '8499.39'
+    tab[4] = '56560.43', '0.00', '0.00', '56560.43'  # Vale até o penúltimo: a série de IPCA se esgota aqui.
+    tab[37] = '56560.43', '0.00', '5960761.30', '6017321.73'
+
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+
+    for i, x in enumerate(sched, 1):
+        assert [x.gain, x.pla, x.amort, x.raw] == [decimal.Decimal(y) for y in tab.get(i, tab[4])]
+
+    assert len(sched) == kwa['term'] + 1  # A antecipação acrescenta uma linha ao fluxo regular.
+    assert sum(x.amort for x in sched) == kwa['principal']
+
+def test_will_create_jm_ipca_3():
+    '''
+    Mesma operação e mesma antecipação de "test_will_create_jm_ipca_2", com "amortizes_interest" falso.
+
+    Aqui os 97.224,53 vão inteiros para o principal. Os juros e a correção do trecho ficam devidos, e o pagamento de
+    07/08 os recolhe: 56.884,83 de juros, que são os 7.259,43 do seu próprio trecho mais os 49.625,40 travados, e
+    9.578,22 de correção, que são 8.360,43 dos 27 dias sobre 6.000.000,00 mais 1.217,79 dos 4 dias sobre o saldo já
+    reduzido.
+
+    A segunda parte do teste é a que pega o defeito: a correção do período tem que crescer com a data da antecipação,
+    porque quanto mais tarde ela ocorre, mais tempo o principal antecipado passa rendendo correção. Travar o fator em
+    vez do valor tornava esse número constante, e a data deixava de importar.
+
+    Ref File: https://docs.google.com/spreadsheets/d/1CH47cNnNc1QjcPb-WP7q6Gp1k1UNkDnQ
+    Tab.....: Conferência
+    '''
+
+    kwa = _kwa_cri_ipa()
+    tab = {}
+
+    kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2026, 8, 3), value=decimal.Decimal('97224.53'), amortizes_interest=False)]
+
+    # Juros, correção monetária, amortização e valor bruto.
+    tab[1] = '72236.23', '43813.36', '0.00', '116049.60'  # Idêntico ao do caso anterior.
+    tab[2] = '49625.40', '0.00', '97224.53', '97224.53'  # A antecipação, inteira em principal.
+    tab[3] = '7259.43', '9578.22', '0.00', '66463.05'  # Recolhe o juro e a correção travados.
+    tab[4] = '56010.21', '0.00', '0.00', '56010.21'
+    tab[37] = '56010.21', '0.00', '5902775.47', '5958785.68'
+
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+
+    for i, x in enumerate(sched, 1):
+        assert [x.gain, x.pla, x.amort, x.raw] == [decimal.Decimal(y) for y in tab.get(i, tab[4])]
+
+    assert sum(x.amort for x in sched) == kwa['principal']
+
+    # A correção do período 07/07 a 07/08, variando a data da antecipação dentro dele.
+    def correcao(dia):
+        kwb = _kwa_cri_ipa()
+        kwb['insertions'] = [fincore.Amortization.Bare(date=dia, value=decimal.Decimal('97224.53'), amortizes_interest=False)]
+        sch = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwb)]
+
+        return sum(x.pla for x in sch if datetime.date(2026, 7, 7) < x.date <= datetime.date(2026, 8, 7))
+
+    curva = [correcao(datetime.date(2026, 7, 8) + datetime.timedelta(days=d)) for d in (0, 7, 14, 26, 29)]
+
+    assert curva == sorted(curva) and len(set(curva)) == len(curva)  # Estritamente crescente.
+
+    # O limite superior é a correção do mês sem antecipação nenhuma: 0,16% sobre os seis milhões.
+    assert max(curva) < decimal.Decimal('9600')
+
+def test_wont_charge_regular_payment_on_the_prepayment_date():
+    '''
+    Antecipação lançada na mesma data de um pagamento regular.
+
+    Quando as datas empatam, o cronograma põe a antecipação à frente – ver o parágrafo sobre precedência na
+    "_interleave". Ela então herda o período em aberto inteiro, e o pagamento regular do mesmo dia fica com zero dias:
+    sem juros, sem correção, sem amortização, valor bruto zero.
+
+    Reproduz a sequência que quebrou a operação "CRI IPA Club Residencial" em agosto de 2026: uma antecipação em
+    03/08 e outra em 07/08, esta na data da segunda parcela. O cronograma que o motor produz é consistente – os juros
+    do trecho de 03/08 a 07/08 são cobrados uma vez só, pela antecipação. A duplicidade em produção veio de a parcela
+    ter sido faturada sob o cronograma anterior, e não estornada quando a antecipação entrou uma hora depois.
+
+    Este caso existe para fixar o comportamento, e não para conferir valor: é contra ele que a guarda do controlador
+    – recusar antecipação com data igual ou anterior à de uma cobrança encerrada – precisa ser especificada.
+
+    Thread: https://inco1.slack.com/archives/C05UP765QBA/p1786545421791909
+    '''
+
+    kwa = _kwa_cri_ipa()
+
+    kwa['insertions'] = [
+        fincore.Amortization.Bare(date=datetime.date(2026, 8, 3), value=decimal.Decimal('97224.53')),
+        fincore.Amortization.Bare(date=datetime.date(2026, 8, 7), value=decimal.Decimal('58134.57'))
+    ]
+
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+    linhas = [x for x in sched if x.date == datetime.date(2026, 8, 7)]
+
+    assert len(linhas) == 2
+
+    antecipacao, regular = linhas
+
+    # A antecipação vem primeiro, e leva o trecho de 03/08 a 07/08 inteiro.
+    assert antecipacao.raw == kwa['insertions'][1].value
+    assert [antecipacao.gain, antecipacao.pla, antecipacao.amort] == [decimal.Decimal(y) for y in ('7269.64', '1229.75', '49635.18')]
+
+    # O pagamento regular do mesmo dia sai vazio.
+    assert [regular.gain, regular.pla, regular.amort, regular.raw] == [_0, _0, _0, _0]
+
+    # Nada se cobra duas vezes: o total do dia é o valor da antecipação, e nada além dele.
+    assert antecipacao.raw + regular.raw == kwa['insertions'][1].value
+
+    # No cronograma anterior, sem a segunda antecipação, esses mesmos juros e correção pertenciam ao pagamento
+    # regular. É essa migração – e não um cálculo errado – que produz a cobrança em dobro quando a parcela já foi
+    # faturada antes de a antecipação ser inserida.
+    #
+    kwb = _kwa_cri_ipa()
+
+    kwb['insertions'] = kwa['insertions'][:1]
+
+    anterior = next(x for x in fincore.build_jm(**kwb) if x.date == datetime.date(2026, 8, 7))
+    anterior = t.cast(fincore.PriceAdjustedPayment, anterior)
+
+    assert [anterior.gain, anterior.pla] == [antecipacao.gain, antecipacao.pla]
+    assert anterior.raw == decimal.Decimal('8499.39')
+
+    assert sum(x.amort for x in sched) == kwa['principal']
 # }}}
 
 # 🎭 Juros Mensais vandalizadas. {{{
