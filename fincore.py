@@ -1015,16 +1015,16 @@ class IndexStorageBackend:
         '''
 
         if begin <= end:
-            # Usa-se o 1º dia do mês seguinte como o aniversário dos dias 29, 30 e 31.
+            # The first day of the following month is used as the anniversary of days 29, 30 and 31.
             ini = begin if begin.day <= 28 else (begin + _MONTH).replace(day=1)
             pct = decimal.Decimal(percentage) / decimal.Decimal(100)
             fac = _1
             mem = []
 
-            # Para cada mês, apenas um dos seus 28 índices será selecionado aqui. Lembrar que apenas nos primeiros 28 dias
-            # do mês tem-se publicação de Poupança. Se a data "begin" cair após do dia 28, considera-se o dia primeiro do
-            # mês subsequente. Considera como o índice do mês, M, aquele em que "M.begin_date.day" seja igual a
-            # "begin.day".
+            # For each month, only one of its 28 indexes will be selected here. Remember that Brazilian Savings is
+            # only published on the first 28 days of the month. Should the "begin" date fall after day 28, the first
+            # day of the subsequent month is considered. The index of the month, M, is the one whose
+            # "M.begin_date.day" equals "begin.day".
             #
             for x in self.get_savings_indexes(ini, end):
                 if ini.day == x.begin_date.day:
@@ -1960,7 +1960,7 @@ def get_payments_table(
         if ent0.date < calc_date.value or ent1.date <= calc_date.value or calc_date.runaway:
             pmt = PriceAdjustedPayment() if vir and vir.code == 'IPCA' else Payment()
 
-            # B.2.1. Monta o pagamento (PMT).
+            # B.2.1. Assembles the payment (PMT).
             pmt.no = num
             pmt.date = ent1.date
 
@@ -2058,19 +2058,21 @@ def get_payments_table(
 
             # Sanity check.
             #
-            # Esse teste de sanidade só é necessário caso três critérios sejam atendidos:
+            # This sanity check is only necessary when three criteria are met:
             #
-            #   1. Que a entrada do cronograma seja uma antecipação, "Amortization.Bare".
+            #   1. That the schedule entry is an advancement, "Amortization.Bare".
             #
-            #   2. Que a antecipação esteja na data de cálculo. Se não estiver, obviamente, os valores não vão bater.
+            #   2. That the advancement sits on the calculation date. Should it not, the values obviously will not
+            #      match.
             #
-            #   3. Que o valor da antecipação não seja "Amortization.Bare.MAX_VALUE". Nesse caso a rotina usaria o
-            #      saldo devedor na data do cálculo como valor da antecipação. Não haveria "input" a ser validado.
+            #   3. That the value of the advancement is not "Amortization.Bare.MAX_VALUE". In that case the routine
+            #      would use the balance on the calculation date as the value of the advancement. There would be no
+            #      input to validate.
             #
             if type(ent1) is Amortization.Bare and ent1.date == calc_date.value and ent1.value < Amortization.Bare.MAX_VALUE:
                 assert _Q(pmt.raw) == _Q(ent1.value)
 
-            # B.2.2. Arredonda valores do pagamento, e calcula o seu valor líquido.
+            # B.2.2. Rounds the values of the payment, and calculates its net value.
             pmt.amort = _Q(pmt.amort)
             pmt.gain = _Q(pmt.gain)
             pmt.raw = _Q(pmt.raw)
@@ -2349,7 +2351,7 @@ def get_daily_returns(
         while True:
             ratio = yield
 
-            # O percentual de amortização não deve ultrapassar 100%.
+            # The amortization percentage must not exceed 100%.
             if regs.principal.amortization_ratio.adjusted + ratio > _1:
                 ratio = _1 - regs.principal.amortization_ratio.adjusted
 
@@ -2368,7 +2370,7 @@ def get_daily_returns(
         while True:
             ratio = yield
 
-            # O percentual de amortização não deve ultrapassar 100%.
+            # The amortization percentage must not exceed 100%.
             if regs.principal.amortization_ratio.nominal + ratio > _1:
                 ratio = _1 - regs.principal.amortization_ratio.nominal
 
@@ -2591,7 +2593,7 @@ def get_daily_returns(
 
                         dt0 += datetime.timedelta(days=1)
 
-    # A. Valida e prepara para execução.
+    # A. Validates and prepares for execution.
     gens = types.SimpleNamespace()
     regs = types.SimpleNamespace()
     idxs = types.SimpleNamespace()
@@ -3248,7 +3250,7 @@ def build_jm(
     The "vir" and "calc_date" parameters are the same as in "fincore.get_payments_table".
     '''
 
-    # 3. Gera o cronograma de pagamentos.
+    # 3. Generates the payment schedule.
     kwa: t.Dict[str, t.Any] = {}
 
     kwa['principal'] = principal
@@ -3311,7 +3313,7 @@ def build_price(
     The "calc_date" parameter is the same as in "fincore.get_payments_table".
     '''
 
-    # 3. Gera o cronograma de pagamentos.
+    # 3. Generates the payment schedule.
     kwa: t.Dict[str, t.Any] = {}
 
     kwa['principal'] = principal
@@ -3361,7 +3363,7 @@ def build(
     The "vir" and "calc_date" parameters are the same as in "fincore.get_payments_table".
     '''
 
-    # 3. Gera o cronograma de amortizações a partir do esqueleto.
+    # 3. Generates the amortization schedule out of the skeleton.
     kwa: t.Dict[str, t.Any] = {}
 
     kwa['principal'] = principal
