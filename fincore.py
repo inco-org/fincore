@@ -642,6 +642,26 @@ class Amortization:
 
         This class is useful to specify prepayments. In this case, only the date and the amortization percentage are
         sufficient.
+
+        The "amortizes_interest" flag selects how the gross value is broken down.
+
+          • True, the default, imputes the value to interest first, then to the price level adjustment, and only the
+            remainder to principal. This is the order approved on the thread below, in October of 2024, and it is the
+            one that applies to the buyback of an investment. Use it unless there is an explicit decision otherwise.
+
+          • False sends the whole value to principal. The interest and the price level adjustment of the stretch stay
+            due, and the next regular payment that settles interest collects both. This is NOT the path for the
+            buyback of a live operation – that scenario was ruled out by the business in August of 2026. It exists
+            for products that model an advancement as a pure write-down of principal.
+
+        Two guards apply to the second mode. The value may not be "MAX_VALUE", since settling the whole debt would
+        leave interest and adjustment with no subsequent payment to collect them. And it may not exceed the
+        outstanding nominal principal, a tighter ceiling than the corrected balance that bounds the first mode.
+
+        Both modes are covered by test cases conferred against a spreadsheet. See "test_will_create_jm_ipca_2" and
+        "test_will_create_jm_ipca_3", on the operation that motivated the distinction.
+
+          https://inco1.slack.com/archives/C0103FS2CH4/p1728317663655909
         '''
 
         # Maximum value. Ver "http://stackoverflow.com/a/28082106".
@@ -652,6 +672,10 @@ class Amortization:
 
         # Base field, the bare amortization nominal value.
         value: decimal.Decimal = _0
+
+        # Base field, the imputation order of the value. See the class docstring above, and the homonymous field of
+        # the enclosing class.
+        amortizes_interest: bool = True
 
     # Base field, the amortization date.
     date: datetime.date
@@ -1604,9 +1628,17 @@ def get_payments_table(
     #     Diferir e amortizar são mutuamente exclusivos: só sobra valor para o principal depois de a correção estar
     #     inteiramente liquidada. Logo "settled" nunca atravessa uma mudança da base sobre a qual foi medido.
     #
+    #   • "interest.locked" é o juro que uma antecipação com "amortizes_interest" falso deixou de liquidar. Ele mora
+    #     dentro de "interest.deferred", mas se comporta de outro jeito: o juro diferido por uma carência capitaliza e
+    #     sai à medida que o principal amortiza, enquanto este é cobrado por inteiro no pagamento regular seguinte.
+    #
+    #     São eventos distintos que dividem o mesmo balde de juro não liquidado. A carência é o cronograma dizendo que
+    #     aquele mês não paga juros; a antecipação é o tomador escolhendo jogar o valor todo no principal, e seguir
+    #     devendo o juro do mês corrente. Sem separar os dois, liberar um mudaria o outro.
+    #
     regs.principal = types.SimpleNamespace(amortization_ratio=types.SimpleNamespace(current=_0, regular=_0), amortized=types.SimpleNamespace(current=_0, total=_0))
-    regs.interest = types.SimpleNamespace(current=_0, accrued=_0, settled=types.SimpleNamespace(current=_0, total=_0), deferred=_0)
-    regs.correction = types.SimpleNamespace(deferred=_1, settled=_0)
+    regs.interest = types.SimpleNamespace(current=_0, accrued=_0, settled=types.SimpleNamespace(current=_0, total=_0), deferred=_0, locked=_0)
+    regs.correction = types.SimpleNamespace(deferred=_1, settled=_0, locked=_0)
 
     # Control, create generators.
     gens.interest_tracker_1 = track_interest_1()
@@ -1820,9 +1852,13 @@ def get_payments_table(
                 # Register the non adjusted amortization percentage.
                 gens.principal_tracker_2.send(ent1.amortization_ratio)
 
-                # Register the interest to be settled in the period.
+                # Register the interest to be settled in the period. O juro travado por uma antecipação sai inteiro
+                # aqui; o diferido por uma carência sai na proporção do principal que este pagamento amortiza.
+                #
                 if ent1.amortizes_interest:
-                    gens.interest_tracker_2.send(regs.interest.current + regs.principal.amortization_ratio.current * regs.interest.deferred)
+                    gens.interest_tracker_2.send(regs.interest.current + regs.interest.locked + regs.principal.amortization_ratio.current * (regs.interest.deferred - regs.interest.locked))
+
+                    regs.interest.locked = _0
 
                 # Save the previous regular amortization.
                 prev = ent1
@@ -1835,32 +1871,64 @@ def get_payments_table(
             #
             else:
                 ent1 = t.cast(Amortization.Bare, ent1)  # Mypy can't infer the type of the "ent1" variable here.
-                val0 = min(ent1.value, calc_balance(f_c.value))  # Ensures that the value of the advance does not exceed the remaining balance of the loan.
-                val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)  # Interest to be paid in the period.
-                val2 = val0 - val1  # Principal to be amortized.
+                fac = regs.correction.deferred * f_c.value  # Fator do trecho, composto com o que ficou diferido.
 
-                # Check if the irregular payment value doesn't exceed the remaining balance.
-                if ent1.value != Amortization.Bare.MAX_VALUE and ent1.value > _Q(calc_balance(f_c.value)):
-                    raise Exception(f'the value of the amortization, {ent1.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(f_c.value))}')
+                # Antecipação que não amortiza juros. O valor vai inteiro para o principal, e tanto os juros quanto a
+                # correção do trecho ficam devidos para o pagamento regular seguinte.
+                #
+                # Como o valor sai todo do principal nominal, o teto aqui é o principal em aberto, e não o saldo
+                # corrigido. E uma antecipação assim não pode quitar a dívida, porque deixaria juros e correção sem
+                # quem os liquidasse – daí a recusa do valor máximo.
+                #
+                # Repare que aqui se trava o VALOR da correção, e não o fator, ao contrário do que o ramo de baixo faz.
+                # É a única forma de respeitar "a correção incide sobre o saldo devedor vigente" quando o evento também
+                # amortiza: o principal cai nesta data, e o trecho que acabou de correr correu sobre o saldo de antes.
+                # Diferir o fator o aplicaria ao saldo de depois, e a correção passaria a ignorar a data da antecipação.
+                #
+                if not ent1.amortizes_interest:
+                    res = principal - regs.principal.amortized.total  # Principal nominal em aberto.
+
+                    if ent1.value == Amortization.Bare.MAX_VALUE:
+                        raise ValueError('an advancement that does not amortize interest cannot settle the entire debt')
+
+                    elif ent1.value > _Q(res):
+                        raise Exception(f'the value of the amortization, {ent1.value}, is greater than the outstanding principal of the loan, {_Q(res)}')
+
+                    val1 = cor = _0  # Nada de juros, nada de correção.
+                    val4 = ent1.value  # Principal nominal a amortizar.
+
+                    regs.correction.locked += calc_balance(fac) - calc_balance(_1) - regs.correction.settled
+                    regs.correction.deferred = _1
+                    regs.correction.settled = _0
+
+                    regs.interest.locked += regs.interest.current  # O juro do trecho, idem.
 
                 # A correção do trecho incide sobre o saldo devedor vigente, e não sobre a fatia amortizada – a correção
                 # acompanha o saldo, e o principal que sai é nominal. Respeita a ordem de imputação da antecipação:
                 # juros, correção, principal. Caso os juros consumam a antecipação a ponto de não sobrar para a correção
                 # inteira, o que faltar fica diferido.
                 #
-                fac = regs.correction.deferred * f_c.value  # Fator do trecho, composto com o que ficou diferido.
-                val3 = calc_balance(fac) - calc_balance(_1) - regs.correction.settled  # Correção devida.
-                cor = min(val2, val3)  # Correção efetivamente liquidada, limitada pelo que sobrou dos juros.
-                val4 = val2 - cor  # Principal nominal a amortizar.
-
-                # Se a correção não foi liquidada por inteiro, difere o fator e credita o que se pagou dela.
-                if val2 < val3:
-                    regs.correction.deferred = fac
-                    regs.correction.settled = regs.correction.settled + cor
-
                 else:
-                    regs.correction.deferred = _1
-                    regs.correction.settled = _0
+                    val0 = min(ent1.value, calc_balance(f_c.value))  # Ensures that the value of the advance does not exceed the remaining balance of the loan.
+                    val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)  # Interest to be paid in the period.
+                    val2 = val0 - val1  # Principal to be amortized.
+
+                    # Check if the irregular payment value doesn't exceed the remaining balance.
+                    if ent1.value != Amortization.Bare.MAX_VALUE and ent1.value > _Q(calc_balance(f_c.value)):
+                        raise Exception(f'the value of the amortization, {ent1.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(f_c.value))}')
+
+                    val3 = calc_balance(fac) - calc_balance(_1) - regs.correction.settled  # Correção devida.
+                    cor = min(val2, val3)  # Correção efetivamente liquidada, limitada pelo que sobrou dos juros.
+                    val4 = val2 - cor  # Principal nominal a amortizar.
+
+                    # Se a correção não foi liquidada por inteiro, difere o fator e credita o que se pagou dela.
+                    if val2 < val3:
+                        regs.correction.deferred = fac
+                        regs.correction.settled = regs.correction.settled + cor
+
+                    else:
+                        regs.correction.deferred = _1
+                        regs.correction.settled = _0
 
                 # Register the amortization percentage.
                 gens.principal_tracker_1.send(val4 / principal)
@@ -1929,10 +1997,11 @@ def get_payments_table(
                     # Pays monetary correction over the principal amortization. O fator recolhe o que uma antecipação
                     # anterior tenha deixado diferido.
                     if (pla := t.cast(PriceLevelAdjustment, ent1.price_level_adjustment)) and pmt.amort:
-                        pmt.pla = pmt.amort * (regs.correction.deferred * f_c.value - 1) - regs.correction.settled
+                        pmt.pla = pmt.amort * (regs.correction.deferred * f_c.value - 1) - regs.correction.settled + regs.correction.locked
 
                         regs.correction.deferred = _1
                         regs.correction.settled = _0
+                        regs.correction.locked = _0
 
                     # If there is no principal amortization in the period, and "pla.amortizes_adjustment" is true, then
                     # "pmt.pla" will be the value of monetary correction of the outstanding balance. This s what
@@ -1940,10 +2009,11 @@ def get_payments_table(
                     # "amortizes_correction" parameter on the "preprocess_jm" function.
                     #
                     elif pla and pla.amortizes_adjustment:
-                        pmt.pla = calc_balance(regs.correction.deferred * f_c.value) - calc_balance(_1) - regs.correction.settled
+                        pmt.pla = calc_balance(regs.correction.deferred * f_c.value) - calc_balance(_1) - regs.correction.settled + regs.correction.locked
 
                         regs.correction.deferred = _1
                         regs.correction.settled = _0
+                        regs.correction.locked = _0
 
                     pmt.raw = pmt.raw + pmt.pla
                     pmt.tax = _0 if tax_exempt else pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
