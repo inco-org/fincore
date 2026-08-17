@@ -649,7 +649,7 @@ class Amortization:
             remainder to principal. This is the order approved on the thread below, in October of 2024, and it is the
             one that applies to the buyback of an investment. Use it unless there is an explicit decision otherwise.
 
-          • False sends the whole value to principal. The interest and the price level adjustment of the stretch stay
+          • False sends the whole value to principal. The interest and the price level adjustment of the period stay
             due, and the next regular payment that settles interest collects both. This is NOT the path for the
             buyback of a live operation – that scenario was ruled out by the business in August of 2026. It exists
             for products that model an advancement as a pure write-down of principal.
@@ -1617,7 +1617,7 @@ def get_payments_table(
     #
     #   • "correction.deferred" is the adjustment factor due and not yet settled, and "correction.settled" is the
     #     adjustment already paid against that factor. Both only leave the neutral value when an advancement falls
-    #     short of the adjustment of its stretch, since the imputation order puts interest ahead of it. The next
+    #     short of the adjustment of its period, since the imputation order puts interest ahead of it. The next
     #     payment that settles adjustment collects them.
     #
     #     What is deferred is the factor, and not the value, because the adjustment compounds: deferring the value of
@@ -1783,10 +1783,10 @@ def get_payments_table(
                     # exactly one window of indexes, and that partition is disjoint and without a gap – it is what
                     # spares an explicit memory of the adjustment already settled.
                     #
-                    # An advancement has no calendar of its own. It corrects only the open stretch of the regular
-                    # period it falls into, and therefore inherits the window of the regular payment that succeeds
-                    # it. The index of the month ends up split between the two events by the "ratio", each one
-                    # correcting the balance in force over its own stretch.
+                    # An advancement has no calendar of its own. It corrects only the open period inside the
+                    # regular one it falls into, and therefore inherits the window of the regular payment that
+                    # succeeds it. The index of the month ends up split between the two events by the "ratio", each
+                    # one correcting the balance in force over its own period.
                     #
                     if type(ent1) is Amortization:
                         pla = t.cast(PriceLevelAdjustment, ent1.price_level_adjustment)
@@ -1847,7 +1847,7 @@ def get_payments_table(
             # plus a mandatory extraordinary amortisation of the monthly IPCA: the balance is corrected, and the
             # payment of the month is an extraordinary amortisation on top of it that brings the balance back to
             # nominal. When that amortisation does not come out whole – an advancement that falls short of the
-            # adjustment of its stretch, or that does not amortise it on purpose – the remainder stays in the balance,
+            # adjustment of its period, or that does not amortise it on purpose – the remainder stays in the balance,
             # and accrues, the same way unsettled interest already accrued by sitting in "calc_balance".
             #
             # With nothing deferred the factor is neutral and both values are zero, so the base is "calc_balance".
@@ -1884,10 +1884,10 @@ def get_payments_table(
             #
             else:
                 ent1 = t.cast(Amortization.Bare, ent1)  # Mypy can't infer the type of the "ent1" variable here.
-                fac = regs.correction.deferred * f_c.value  # Factor of the stretch, composed with what was deferred.
+                fac = regs.correction.deferred * f_c.value  # Factor of the period, composed with what was deferred.
 
                 # Advancement that does not amortise interest. The value goes entirely to the principal, and both
-                # the interest and the adjustment of the stretch stay due for the next regular payment.
+                # the interest and the adjustment of the period stay due for the next regular payment.
                 #
                 # Since the value comes out of the nominal principal, the ceiling here is the outstanding principal,
                 # and not the corrected balance. And an advancement like this may not settle the debt, because it
@@ -1895,7 +1895,7 @@ def get_payments_table(
                 #
                 # Note that what is locked here is the VALUE of the adjustment, and not the factor, unlike what the
                 # branch below does. It is the only way to honour "the adjustment accrues over the balance in force"
-                # when the event also amortises: the principal drops on this date, and the stretch that has just run
+                # when the event also amortises: the principal drops on this date, and the period that has just run
                 # ran over the balance of before. Deferring the factor would apply it to the balance of after, and the
                 # adjustment would stop depending on the date of the advancement.
                 #
@@ -1915,9 +1915,9 @@ def get_payments_table(
                     regs.correction.deferred = _1
                     regs.correction.settled = _0
 
-                    regs.interest.locked += regs.interest.current  # The interest of the stretch, likewise.
+                    regs.interest.locked += regs.interest.current  # The interest of the period, likewise.
 
-                # The adjustment of the stretch accrues over the balance in force, and not over the amortised
+                # The adjustment of the period accrues over the balance in force, and not over the amortised
                 # slice – the adjustment follows the balance, and the principal that leaves is nominal. Honours the
                 # imputation order of an advancement: interest, adjustment, principal. Should the interest consume the
                 # advancement to the point of leaving nothing for the whole adjustment, what is missing is deferred.

@@ -2208,7 +2208,7 @@ def test_will_create_jm_ipca_1():
 # e a partição é disjunta e sem lacuna.
 #
 # Uma antecipação não tem calendário próprio, e por isso herda a janela do pagamento regular que a sucede. Os dois
-# eventos repartem o índice do mês, e cada um corrige o saldo devedor vigente no seu trecho – a correção acompanha o
+# eventos repartem o índice do mês, e cada um corrige o saldo devedor vigente no seu período – a correção acompanha o
 # saldo, e o principal que sai é nominal.
 #
 # Quando os juros consomem a antecipação a ponto de não sobrar para a correção inteira, o que falta fica diferido em
@@ -2251,7 +2251,7 @@ def test_wont_leak_price_level_adjustment_on_prepayment():
 
 def test_wont_leak_partially_deferred_price_level_adjustment_on_prepayment():
     '''
-    Conservação da correção monetária quando a antecipação liquida apenas parte da correção do seu trecho.
+    Conservação da correção monetária quando a antecipação liquida apenas parte da correção do seu período.
 
     A ordem de imputação põe os juros à frente da correção. Uma antecipação que cubra os juros e só uma fração da
     correção deixa o restante diferido, e ainda assim não amortiza principal – logo a correção total do cronograma não
@@ -2271,7 +2271,7 @@ def test_wont_leak_partially_deferred_price_level_adjustment_on_prepayment():
 
     regular = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
 
-    # Os juros do trecho somam 5.261,68, e a correção devida 14.883,30. Dez mil cobrem os juros e parte da correção.
+    # Os juros do período somam 5.261,68, e a correção devida 14.883,30. Dez mil cobrem os juros e parte da correção.
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 4, 20), value=decimal.Decimal('10000'))]
 
     prepaid = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
@@ -2287,7 +2287,7 @@ def test_wont_recharge_settled_price_level_indexes_on_prepayment():
     '''
     Janela de índices de IPCA de uma antecipação.
 
-    A antecipação deve corrigir apenas o trecho em aberto, isto é, o intervalo entre o pagamento regular anterior e a
+    A antecipação deve corrigir apenas o período em aberto, isto é, o intervalo entre o pagamento regular anterior e a
     sua própria data. Não deve recobrar índice já liquidado por um pagamento anterior, nem alcançar índice que antecede
     o primeiro mês do fluxo regular.
 
@@ -2312,7 +2312,7 @@ def test_wont_recharge_settled_price_level_indexes_on_prepayment():
 
     assert sched[1].date == kwa['insertions'][0].date
 
-    # O trecho em aberto, de 05/04 a 20/04, pertence ao índice de março de 2022, o mesmo que o pagamento de 05/05
+    # O período em aberto, de 05/04 a 20/04, pertence ao índice de março de 2022, o mesmo que o pagamento de 05/05
     # consome. Os dois eventos devem reparti-lo, e nada além dele.
     assert [x.date for x in sched[1].cf_mem] == [datetime.date(2022, 3, 1)]
 
@@ -2322,7 +2322,7 @@ def test_wont_recharge_settled_price_level_indexes_on_prepayment():
 # Antecipação que não amortiza juros.
 #
 # A ordem de imputação padrão põe juros e correção à frente do principal. Uma antecipação com "amortizes_interest"
-# falso inverte isso: o valor vai inteiro para o principal, e o juro e a correção do trecho ficam devidos.
+# falso inverte isso: o valor vai inteiro para o principal, e o juro e a correção do período ficam devidos.
 #
 # O juro travado assim não se confunde com o de uma carência. O de carência capitaliza e sai à medida que o principal
 # amortiza; este é cobrado por inteiro no pagamento regular seguinte, porque o tomador segue devendo o mês corrente.
@@ -2349,18 +2349,18 @@ def test_will_amortize_only_principal_on_prepayment():
     advance = next(x for x in sched if x.date == kwa['insertions'][0].date)
     index = sched.index(advance)
 
-    # Os juros do trecho, mais de cinco mil, seriam imputados antes do principal na ordem padrão. Aqui, não.
+    # Os juros do período, mais de cinco mil, seriam imputados antes do principal na ordem padrão. Aqui, não.
     assert advance.gain > _0
     assert advance.amort == kwa['insertions'][0].value
     assert advance.pla == _0
     assert advance.raw == kwa['insertions'][0].value
 
-    # O pagamento regular seguinte liquida o juro travado por inteiro, somado ao do seu próprio trecho. Como o valor
+    # O pagamento regular seguinte liquida o juro travado por inteiro, somado ao do seu próprio período. Como o valor
     # bruto de um pagamento sem amortização é juros liquidados mais correção, a diferença isola os juros.
     #
     assert sched[index + 1].raw - sched[index + 1].pla == advance.gain + sched[index + 1].gain
 
-    # E nada fica para trás: o pagamento seguinte a esse liquida apenas o juro do seu próprio trecho.
+    # E nada fica para trás: o pagamento seguinte a esse liquida apenas o juro do seu próprio período.
     assert sched[index + 2].raw - sched[index + 2].pla == sched[index + 2].gain
 
     assert sum(x.amort for x in sched) == kwa['principal']
@@ -2423,7 +2423,7 @@ def test_will_create_jm_ipca_2():
     Operação "CRI IPA Club Residencial", Juros mensais - 36 meses - IPCA, c/ antecipação parcial.
 
     Ordem de imputação padrão: juros, correção, principal. Dos 97.224,53 antecipados, 49.625,40 pagam os juros
-    corridos de 07/07 a 03/08, 8.360,43 pagam a correção desse mesmo trecho, e só os 39.238,70 restantes abatem
+    corridos de 07/07 a 03/08, 8.360,43 pagam a correção desse mesmo período, e só os 39.238,70 restantes abatem
     principal.
 
     A correção dos 27 dias incide sobre os 6.000.000,00 que estavam na operação durante eles, e a dos 4 dias que
@@ -2457,12 +2457,12 @@ def test_will_create_jm_ipca_3():
     '''
     Mesma operação e mesma antecipação de "test_will_create_jm_ipca_2", com "amortizes_interest" falso.
 
-    Aqui os 97.224,53 vão inteiros para o principal. Os juros e a correção do trecho ficam devidos, e o pagamento de
-    07/08 os recolhe: 56.895,02 de juros, que são os 7.269,62 do seu próprio trecho mais os 49.625,40 travados, e
+    Aqui os 97.224,53 vão inteiros para o principal. Os juros e a correção do período ficam devidos, e o pagamento de
+    07/08 os recolhe: 56.895,02 de juros, que são os 7.269,62 do seu próprio período mais os 49.625,40 travados, e
     9.578,22 de correção, que são 8.360,43 dos 27 dias sobre 6.000.000,00 mais 1.217,79 dos 4 dias sobre o saldo já
     reduzido.
 
-    O trecho de quatro dias rende sobre 6.007.221,37, e não sobre os 5.902.775,47 de principal nominal: a correção
+    O período de quatro dias rende sobre 6.007.221,37, e não sobre os 5.902.775,47 de principal nominal: a correção
     travada continua incorporada ao saldo devedor enquanto não é liquidada.
 
     A segunda parte do teste é a que pega o defeito: a correção do período tem que crescer com a data da antecipação,
@@ -2512,11 +2512,11 @@ def test_will_accrue_interest_over_deferred_price_level_adjustment():
     Correção devida e não liquidada continua no saldo devedor, e rende juros.
 
     Mesma operação e mesma data de "test_will_create_jm_ipca_2", com uma antecipação de 52.000. Ela cobre os
-    49.625,40 de juros do trecho e só 2.374,60 dos 8.360,43 de correção devida, deixando 5.985,83 diferidos. Nenhum
+    49.625,40 de juros do período e só 2.374,60 dos 8.360,43 de correção devida, deixando 5.985,83 diferidos. Nenhum
     principal é abatido, porque a ordem de imputação só chega nele depois da correção inteira.
 
-    Os juros do trecho seguinte, de quatro dias, incidem sobre 6.007.221,37 – que são os 6.000.000,00 de principal
-    mais os 5.985,83 diferidos, o conjunto corrigido pelo fator do próprio trecho. Não sobre os 6.000.000,00 secos.
+    Os juros do período seguinte, de quatro dias, incidem sobre 6.007.221,37 – que são os 6.000.000,00 de principal
+    mais os 5.985,83 diferidos, o conjunto corrigido pelo fator do próprio período. Não sobre os 6.000.000,00 secos.
 
     A especificação de outubro de 2024 chama a correção mensal de "fórmula de correção tradicional mais amortização
     extraordinária obrigatória do IPCA mensal". Quando a amortização extraordinária sai pela metade, a outra metade
@@ -2543,7 +2543,7 @@ def test_will_accrue_interest_over_deferred_price_level_adjustment():
         if i in tab:
             assert [x.gain, x.pla, x.amort, x.raw] == [decimal.Decimal(y) for y in tab[i]]
 
-    # Sem a incorporação, os juros do trecho de quatro dias cairiam para 7.317,49 – a diferença é o que a correção
+    # Sem a incorporação, os juros do período de quatro dias cairiam para 7.317,49 – a diferença é o que a correção
     # diferida rende. O teste falha por baixo se alguém tirar "regs.correction" da base dos juros.
     #
     assert sched[2].gain > decimal.Decimal('7320')
@@ -2561,7 +2561,7 @@ def test_wont_charge_regular_payment_on_the_prepayment_date():
 
     Reproduz a sequência que quebrou a operação "CRI IPA Club Residencial" em agosto de 2026: uma antecipação em
     03/08 e outra em 07/08, esta na data da segunda parcela. O cronograma que o motor produz é consistente – os juros
-    do trecho de 03/08 a 07/08 são cobrados uma vez só, pela antecipação. A duplicidade em produção veio de a parcela
+    do período de 03/08 a 07/08 são cobrados uma vez só, pela antecipação. A duplicidade em produção veio de a parcela
     ter sido faturada sob o cronograma anterior, e não estornada quando a antecipação entrou uma hora depois.
 
     Este caso existe para fixar o comportamento, e não para conferir valor: é contra ele que a guarda do controlador
@@ -2584,7 +2584,7 @@ def test_wont_charge_regular_payment_on_the_prepayment_date():
 
     antecipacao, regular = linhas
 
-    # A antecipação vem primeiro, e leva o trecho de 03/08 a 07/08 inteiro.
+    # A antecipação vem primeiro, e leva o período de 03/08 a 07/08 inteiro.
     assert antecipacao.raw == kwa['insertions'][1].value
     assert [antecipacao.gain, antecipacao.pla, antecipacao.amort] == [decimal.Decimal(y) for y in ('7269.64', '1229.75', '49635.18')]
 
