@@ -2609,6 +2609,83 @@ def test_wont_charge_regular_payment_on_the_prepayment_date():
     assert anterior.raw == decimal.Decimal('8499.39')
 
     assert sum(x.amort for x in sched) == kwa['principal']
+
+def test_will_collect_locked_interest_and_adjustment_on_a_later_prepayment():
+    '''
+    Uma antecipação amortizante recolhe o juro e a correção travados por uma antecipação anterior.
+
+    Mesma operação de "test_will_create_jm_ipca_2", com duas antecipações no mesmo período: uma de 50.000 em 20/07,
+    que não amortiza juros e trava os 23.825,55 do seu período junto com a correção; e uma de 150.000 em 03/08, com a
+    ordem de imputação padrão. A segunda liquida o juro travado somado ao do próprio período, a correção travada
+    recorrigida somada à do próprio período, e abate o restante do principal.
+
+    O pagamento regular de 07/08 fica só com os quatro dias que lhe pertencem. É o assert que pega a dupla cobrança:
+    sem o abatimento de "regs.interest.locked" na antecipação que o recolheu, o pagamento regular seguinte, que
+    libera o registrador por inteiro, cobraria os 23.825,55 de novo.
+
+    Os valores fixados aqui saem do próprio motor, conferidos pelas conservações: a soma das amortizações fecha o
+    principal, e nenhum pagamento cobra além do juro e da correção do seu período.
+    '''
+
+    kwa = _kwa_cri_ipa()
+
+    kwa['insertions'] = [
+        fincore.Amortization.Bare(date=datetime.date(2026, 7, 20), value=decimal.Decimal('50000'), amortizes_interest=False),
+        fincore.Amortization.Bare(date=datetime.date(2026, 8, 3), value=decimal.Decimal('150000'))
+    ]
+
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+    travada, coletora, regular = sched[1], sched[2], sched[3]
+
+    # A primeira antecipação vai inteira para o principal, e trava juro e correção.
+    assert [travada.gain, travada.pla, travada.amort, travada.raw] == [decimal.Decimal(y) for y in ('23825.55', '0.00', '50000.00', '50000.00')]
+
+    # A segunda liquida o juro travado mais o do próprio período – o que sobra do valor bruto, tirados a correção e
+    # o principal, são exatamente os juros das duas antecipações.
+    #
+    assert coletora.raw - coletora.pla - coletora.amort == travada.gain + coletora.gain
+    assert [coletora.gain, coletora.pla, coletora.raw] == [decimal.Decimal(y) for y in ('25568.69', '8321.41', '150000.00')]
+
+    # E o pagamento regular seguinte cobra apenas o próprio período: sem dupla cobrança do juro travado.
+    assert regular.raw - regular.pla == regular.gain
+    assert [regular.gain, regular.pla, regular.amort] == [decimal.Decimal(y) for y in ('7143.97', '1208.49', '0.00')]
+
+    # Dali em diante, um Juros Mensais comum: cada parcela cobra o juro do seu mês, e nada mais.
+    assert sched[4].raw == sched[4].gain == decimal.Decimal('55582.65')
+
+    assert sum(x.amort for x in sched) == kwa['principal']
+
+def test_will_settle_debt_with_max_value_prepayment_after_deferral():
+    '''
+    Uma antecipação de valor máximo quita a dívida inteira, mesmo com correção diferida no saldo.
+
+    Mesma operação e mesma antecipação de "test_will_accrue_interest_over_deferred_price_level_adjustment": os
+    52.000 de 03/08 cobrem os juros do período e só parte da correção, deixando 5.985,83 diferidos no saldo. Dois
+    dias depois, uma antecipação de valor máximo pede a quitação.
+
+    O teto da quitação é o saldo em vigor – principal corrigido pelo fator composto com o diferido, mais o juro
+    corrido, menos o crédito do que já se pagou de correção. Medir o teto sem o diferido deixaria os 5.985,83
+    recorrigidos para trás, e a dívida nunca fecharia.
+    '''
+
+    kwa = _kwa_cri_ipa()
+
+    kwa['insertions'] = [
+        fincore.Amortization.Bare(date=datetime.date(2026, 8, 3), value=decimal.Decimal('52000')),
+        fincore.Amortization.Bare(date=datetime.date(2026, 8, 5), value=fincore.Amortization.Bare.MAX_VALUE)
+    ]
+
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+
+    # A quitação zera o saldo e leva todo o principal que restava.
+    assert sched[-1].date == kwa['insertions'][1].date
+    assert sched[-1].bal == _0
+    assert sched[-1].amort == kwa['principal']
+
+    # E leva junto o juro dos dois dias e a correção diferida recorrigida, mais a do próprio período.
+    assert [sched[-1].gain, sched[-1].pla] == [decimal.Decimal(y) for y in ('3660.90', '6605.58')]
+
+    assert sum(x.amort for x in sched) == kwa['principal']
 # }}}
 
 # 🎭 Juros Mensais vandalizadas. {{{

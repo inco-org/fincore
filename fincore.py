@@ -5,6 +5,13 @@
 #
 # Unauthorized copying of this file, via any medium, is strictly prohibited. Proprietary and confidential.
 #
+# [FINCORE V4]
+#
+# Represents a complete rewrite of the daily returns calculation. Released on October 20, 2024.
+#
+# The daily returns function now properly supports IPCA and Brazilian Savings indexers. This was a shortcoming of the
+# previous version.
+#
 # [FINCORE V3]
 #
 # This module is in its third generation. There was also a generation zero, which preceded the creation of this
@@ -52,13 +59,6 @@
 #       • Death of the "fincore.get_remaining_amortization" routine.
 #
 #   • The module decreased by almost 15% in size. From ~1600 to ~1400 lines of code.
-#
-# [FINCORE V4]
-#
-# Represents a complete rewrite of the daily returns calculation. Released on October 20, 2024.
-#
-# The daily returns function now properly supports IPCA and Brazilian Savings indexers. This was a shortcoming of the
-# previous version.
 #
 # [ANNOTATED_TYPES]
 #
@@ -1514,10 +1514,22 @@ def get_payments_table(
     more details about these data structures.
     '''
 
+    # The balance in force. Composes the given factor with the deferred one, credits the adjustment already
+    # settled against it, and carries the adjustment value locked by an advancement. With nothing deferred nor
+    # locked the registers are neutral, and this reduces to the plain corrected balance.
+    #
     def calc_balance(correction_factor: decimal.Decimal = _1) -> decimal.Decimal:
-        val = principal * correction_factor + regs.interest.accrued - regs.principal.amortized.total * correction_factor - regs.interest.settled.total
+        fac = regs.correction.deferred * correction_factor
 
-        return t.cast(decimal.Decimal, val)
+        val = principal * fac + regs.interest.accrued - regs.principal.amortized.total * fac - regs.interest.settled.total
+
+        return t.cast(decimal.Decimal, val - regs.correction.settled + regs.correction.locked)
+
+    # The adjustment embedded in the balance: what "calc_balance" holds beyond the nominal balance.
+    def calc_adjustment(correction_factor: decimal.Decimal = _1) -> decimal.Decimal:
+        val = (principal - regs.principal.amortized.total) * (regs.correction.deferred * correction_factor - _1)
+
+        return t.cast(decimal.Decimal, val - regs.correction.settled + regs.correction.locked)
 
     # First principal generator.
     #
@@ -1664,22 +1676,94 @@ def get_payments_table(
         f_s = _1
         cor = _0  # Correção monetária liquidada por uma antecipação. Ver fase B.1.
 
+        if ent0.date >= calc_date.value and ent1.date > calc_date.value and not calc_date.runaway:
+            continue
+
         # Phase B.0, FZA, or Phase Zille-Anna.
         #
         #  • Calculates FS (spread factor) for fixed rate index; and both FS and FC for price level index.
         #
         #  • Calculates FS for post fixed index (CDI, Brazilian Savings etc).
         #
-        if ent0.date < calc_date.value or ent1.date <= calc_date.value:
-            if not vir and capitalisation == '360':  # Bullet.
-                f_s = calculate_interest_factor(apy, decimal.Decimal((due - ent0.date).days) / decimal.Decimal(360))
+        if not vir and capitalisation == '360':  # Bullet.
+            f_s = calculate_interest_factor(apy, decimal.Decimal((due - ent0.date).days) / decimal.Decimal(360))
 
-            elif not vir and capitalisation == '365':  # Bullet in legacy mode.
-                f_s = calculate_interest_factor(apy, decimal.Decimal((due - ent0.date).days) / decimal.Decimal(365))
+        elif not vir and capitalisation == '365':  # Bullet in legacy mode.
+            f_s = calculate_interest_factor(apy, decimal.Decimal((due - ent0.date).days) / decimal.Decimal(365))
 
-            elif not vir and capitalisation == '30/360':  # American Amortization, Price, Custom.
-                dcp = (due - ent0.date).days
-                dct = (ent1.date - ent0.date).days
+        elif not vir and capitalisation == '30/360':  # American Amortization, Price, Custom.
+            dcp = (due - ent0.date).days
+            dct = (ent1.date - ent0.date).days
+            bit = False
+
+            bit = bit or (type(ent1) is Amortization and prev is amortizations[0] and ent0.date + _MONTH != ent1.date)
+            bit = bit or (type(ent0) is Amortization.Bare) or (type(ent1) is Amortization.Bare)
+
+            # The "DCT" value will be adjusted according to specific rules.
+            #
+            #  • In case of the period between the first regular amortization and the base amortization is not one
+            #    month, the "DCT" value will be adjusted. This signs the presence of an anniversary date.
+            #
+            #  • In case either "ent0" or "ent1" are insertions (Amortization.Bare), the "DCT" value will be
+            #    adjusted. This means the period between the current entries is not regular.
+            #
+            if bit:
+                # Exclusively for the first anniversary period, "DCT" will be considered as the difference in
+                # calendar days between the 24th day before and the 24th day after the start of the loan.
+                #
+                if prev is amortizations[0]:
+                    dct = _diff_surrounding_dates(prev.date, 24)
+
+                else:
+                    dct = (prev.date + _MONTH - prev.date).days
+
+            f_s = calculate_interest_factor(apy, decimal.Decimal(dcp) / (12 * decimal.Decimal(dct)))
+
+        elif vir and vir.code == 'CDI' and capitalisation == '252':  # Bullet, American Amortization, Custom.
+            f_v = vir.backend.calculate_cdi_factor(ent0.date, due, vir.percentage)  # Variable rate (or factor), FV.
+            f_s = calculate_interest_factor(apy, decimal.Decimal(f_v.amount) / decimal.Decimal(252)) * f_v.value
+
+        elif vir and vir.code == 'Poupança' and capitalisation == '360':  # Brazilian Savings only supported in Bullet.
+            # A particular Saving rate will only be incorporated in the current factor if the payment period covers
+            # its entire monthly range.
+            #
+            f_v = vir.backend.calculate_savings_factor(ent0.date, due, vir.percentage)  # Variable rate (or factor), FV.
+            f_s = calculate_interest_factor(apy, decimal.Decimal((due - ent0.date).days) / decimal.Decimal(360)) * f_v.value
+
+        elif vir and vir.code == 'IPCA' and capitalisation == '360':  # Bullet.
+            f_s = calculate_interest_factor(apy, decimal.Decimal((due - ent0.date).days) / decimal.Decimal(360))
+
+            if type(ent1) is Amortization and ent1.price_level_adjustment:
+                kwa: t.Dict[str, t.Any] = {}
+
+                kwa['base'] = ent1.price_level_adjustment.base_date
+                kwa['period'] = ent1.price_level_adjustment.period
+                kwa['shift'] = ent1.price_level_adjustment.shift
+                kwa['ratio'] = _1
+
+                # Ensure the price level factor is at least one, i.e., the correction value must be positive.
+                f_c = vir.backend.calculate_ipca_factor(**kwa)
+                f_c.value = max(f_c.value, _1)
+
+            # In the case of an advancement, the price level adjustment must be paid – "ent1" doesn't
+            # need to have the "price_level_adjustment" attribute.
+            elif type(ent1) is Amortization.Bare:
+                kwb: t.Dict[str, t.Any] = {}
+
+                kwb['base'] = amortizations[0].date.replace(day=1)
+                kwb['period'] = _delta_months(ent1.date, amortizations[0].date)
+                kwb['shift'] = 'M-1'  # FIXME.
+                kwb['ratio'] = _1
+
+                # Ensure the price level factor is at least one, i.e., the correction value must be positive.
+                f_c = vir.backend.calculate_ipca_factor(**kwb)
+                f_c.value = max(f_c.value, _1)
+
+        elif vir and vir.code == 'IPCA' and capitalisation == '30/360':  # American and Custom Amortization systems. See comments of the 30/360, fixed rate, block above.
+            dcp = (due - ent0.date).days
+            dct = (ent1.date - ent0.date).days
+
+            if first_dct_rule == 'AUTO' or num > 1:
                 bit = False
 
                 bit = bit or (type(ent1) is Amortization and prev is amortizations[0] and ent0.date + _MONTH != ent1.date)
@@ -1687,8 +1771,8 @@ def get_payments_table(
 
                 # The "DCT" value will be adjusted according to specific rules.
                 #
-                #  • In case of the period between the first regular amortization and the base amortization is not one
-                #    month, the "DCT" value will be adjusted. This signs the presence of an anniversary date.
+                #  • In case of the period between the first regular amortization and the base amortization is not
+                #    one month, the "DCT" value will be adjusted. This signs the presence of an anniversary date.
                 #
                 #  • In case either "ent0" or "ent1" are insertions (Amortization.Bare), the "DCT" value will be
                 #    adjusted. This means the period between the current entries is not regular.
@@ -1703,128 +1787,71 @@ def get_payments_table(
                     else:
                         dct = (prev.date + _MONTH - prev.date).days
 
-                f_s = calculate_interest_factor(apy, decimal.Decimal(dcp) / (12 * decimal.Decimal(dct)))
+            else:
+                dct = int(first_dct_rule)
 
-            elif vir and vir.code == 'CDI' and capitalisation == '252':  # Bullet, American Amortization, Custom.
-                f_v = vir.backend.calculate_cdi_factor(ent0.date, due, vir.percentage)  # Variable rate (or factor), FV.
-                f_s = calculate_interest_factor(apy, decimal.Decimal(f_v.amount) / decimal.Decimal(252)) * f_v.value
+            f_s = calculate_interest_factor(apy, decimal.Decimal(dcp) / (12 * decimal.Decimal(dct)))
 
-            elif vir and vir.code == 'Poupança' and capitalisation == '360':  # Brazilian Savings only supported in Bullet.
-                # A particular Saving rate will only be incorporated in the current factor if the payment period covers
-                # its entire monthly range.
+            if type(ent1) is Amortization and ent1.price_level_adjustment or type(ent1) is Amortization.Bare:
+                # The price level adjustment is partitioned by the regular calendar. Each regular payment consumes
+                # exactly one window of indexes, and that partition is disjoint and without a gap – it is what
+                # spares an explicit memory of the adjustment already settled.
                 #
-                f_v = vir.backend.calculate_savings_factor(ent0.date, due, vir.percentage)  # Variable rate (or factor), FV.
-                f_s = calculate_interest_factor(apy, decimal.Decimal((due - ent0.date).days) / decimal.Decimal(360)) * f_v.value
+                # An advancement has no calendar of its own. It corrects only the open period inside the
+                # regular one it falls into, and therefore inherits the window of the regular payment that
+                # succeeds it. The index of the month ends up split between the two events by the "ratio", each
+                # one correcting the balance in force over its own period.
+                #
+                if type(ent1) is Amortization:
+                    pla = t.cast(PriceLevelAdjustment, ent1.price_level_adjustment)
+                    kwc: t.Dict[str, t.Any] = {}
 
-            elif vir and vir.code == 'IPCA' and capitalisation == '360':  # Bullet.
-                f_s = calculate_interest_factor(apy, decimal.Decimal((due - ent0.date).days) / decimal.Decimal(360))
+                    kwc['base'] = pla.base_date
+                    kwc['period'] = pla.period
+                    kwc['shift'] = pla.shift
+                    kwc['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)
 
-                if type(ent1) is Amortization and ent1.price_level_adjustment:
-                    kwa: t.Dict[str, t.Any] = {}
+                    f_c = vir.backend.calculate_ipca_factor(**kwc)
+                    f_c.value = max(f_c.value, _1)  # Lock the price level factor.
 
-                    kwa['base'] = ent1.price_level_adjustment.base_date
-                    kwa['period'] = ent1.price_level_adjustment.period
-                    kwa['shift'] = ent1.price_level_adjustment.shift
-                    kwa['ratio'] = _1
+                else:  # Implies "type(ent1) is Amortization.Bare".
+                    nxt = next((x for x in amortizations[num + 1:] if type(x) is Amortization and x.price_level_adjustment), None)
 
-                    # Ensure the price level factor is at least one, i.e., the correction value must be positive.
-                    f_c = vir.backend.calculate_ipca_factor(**kwa)
-                    f_c.value = max(f_c.value, _1)
+                    if nxt:
+                        pla = t.cast(PriceLevelAdjustment, nxt.price_level_adjustment)
+                        kwd: t.Dict[str, t.Any] = {}
 
-                # In the case of an advancement, the price level adjustment must be paid – "ent1" doesn't
-                # need to have the "price_level_adjustment" attribute.
-                elif type(ent1) is Amortization.Bare:
-                    kwb: t.Dict[str, t.Any] = {}
+                        kwd['base'] = pla.base_date
+                        kwd['period'] = pla.period
+                        kwd['shift'] = pla.shift
+                        kwd['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)
 
-                    kwb['base'] = amortizations[0].date.replace(day=1)
-                    kwb['period'] = _delta_months(ent1.date, amortizations[0].date)
-                    kwb['shift'] = 'M-1'  # FIXME.
-                    kwb['ratio'] = _1
-
-                    # Ensure the price level factor is at least one, i.e., the correction value must be positive.
-                    f_c = vir.backend.calculate_ipca_factor(**kwb)
-                    f_c.value = max(f_c.value, _1)
-
-            elif vir and vir.code == 'IPCA' and capitalisation == '30/360':  # American and Custom Amortization systems. See comments of the 30/360, fixed rate, block above.
-                dcp = (due - ent0.date).days
-                dct = (ent1.date - ent0.date).days
-
-                if first_dct_rule == 'AUTO' or num > 1:
-                    bit = False
-
-                    bit = bit or (type(ent1) is Amortization and prev is amortizations[0] and ent0.date + _MONTH != ent1.date)
-                    bit = bit or (type(ent0) is Amortization.Bare) or (type(ent1) is Amortization.Bare)
-
-                    # The "DCT" value will be adjusted according to specific rules.
-                    #
-                    #  • In case of the period between the first regular amortization and the base amortization is not
-                    #    one month, the "DCT" value will be adjusted. This signs the presence of an anniversary date.
-                    #
-                    #  • In case either "ent0" or "ent1" are insertions (Amortization.Bare), the "DCT" value will be
-                    #    adjusted. This means the period between the current entries is not regular.
-                    #
-                    if bit:
-                        # Exclusively for the first anniversary period, "DCT" will be considered as the difference in
-                        # calendar days between the 24th day before and the 24th day after the start of the loan.
-                        #
-                        if prev is amortizations[0]:
-                            dct = _diff_surrounding_dates(prev.date, 24)
-
-                        else:
-                            dct = (prev.date + _MONTH - prev.date).days
-
-                else:
-                    dct = int(first_dct_rule)
-
-                f_s = calculate_interest_factor(apy, decimal.Decimal(dcp) / (12 * decimal.Decimal(dct)))
-
-                if type(ent1) is Amortization and ent1.price_level_adjustment or type(ent1) is Amortization.Bare:
-                    # The price level adjustment is partitioned by the regular calendar. Each regular payment consumes
-                    # exactly one window of indexes, and that partition is disjoint and without a gap – it is what
-                    # spares an explicit memory of the adjustment already settled.
-                    #
-                    # An advancement has no calendar of its own. It corrects only the open period inside the
-                    # regular one it falls into, and therefore inherits the window of the regular payment that
-                    # succeeds it. The index of the month ends up split between the two events by the "ratio", each
-                    # one correcting the balance in force over its own period.
-                    #
-                    if type(ent1) is Amortization:
-                        pla = t.cast(PriceLevelAdjustment, ent1.price_level_adjustment)
-                        kwc: t.Dict[str, t.Any] = {}
-
-                        kwc['base'] = pla.base_date
-                        kwc['period'] = pla.period
-                        kwc['shift'] = pla.shift
-                        kwc['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)
-
-                        f_c = vir.backend.calculate_ipca_factor(**kwc)
+                        f_c = vir.backend.calculate_ipca_factor(**kwd)
                         f_c.value = max(f_c.value, _1)  # Lock the price level factor.
 
-                    else:  # Implies "type(ent1) is Amortization.Bare".
-                        nxt = next((x for x in amortizations[num + 1:] if type(x) is Amortization and x.price_level_adjustment), None)
+        elif vir:  # pragma: no cover
+            raise NotImplementedError(f'Combination of variable interest rate {vir} and capitalisation {capitalisation} unsupported')  # pragma: no cover
 
-                        if nxt:
-                            pla = t.cast(PriceLevelAdjustment, nxt.price_level_adjustment)
-                            kwd: t.Dict[str, t.Any] = {}
-
-                            kwd['base'] = pla.base_date
-                            kwd['period'] = pla.period
-                            kwd['shift'] = pla.shift
-                            kwd['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)
-
-                            f_c = vir.backend.calculate_ipca_factor(**kwd)
-                            f_c.value = max(f_c.value, _1)  # Lock the price level factor.
-
-            elif vir:  # pragma: no cover
-                raise NotImplementedError(f'Combination of variable interest rate {vir} and capitalisation {capitalisation} unsupported')  # pragma: no cover
-
-            else:
-                raise NotImplementedError(f'Unsupported capitalisation {capitalisation} for fixed interest rate')  # pragma: no cover
+        else:
+            raise NotImplementedError(f'Unsupported capitalisation {capitalisation} for fixed interest rate')  # pragma: no cover
 
         # Phase B.1, FRO, or Phase Rafa One.
         #
         # Using the factors calculated in the previous phase, calculates and registers the variations in principal, interest,
         # and price level adjustment.
+        #
+        # [CALCULATES-INTEREST]
+        #
+        # Registers the interest accrued in the period.
+        #
+        # Interest accrues over the balance, and adjustment due and not yet settled is still part of it. The
+        # specification of October of 2024 defines the monthly adjustment as the traditional correction formula
+        # plus a mandatory extraordinary amortisation of the monthly IPCA: the balance is corrected, and the
+        # payment of the month is an extraordinary amortisation on top of it that brings the balance back to
+        # nominal. When that amortisation does not come out whole – an advancement that falls short of the
+        # adjustment of its period, or that does not amortise it on purpose – the remainder stays in the balance,
+        # and accrues, the same way unsettled interest already accrued by sitting in "calc_balance". The
+        # "regs.correction" registers carry that remainder, and "calc_balance" folds them in.
         #
         # [ADJUSTMENT-FACTOR]
         #
@@ -1839,263 +1866,256 @@ def get_payments_table(
         # Where ACUR is the remaining amortization percentage of the payment flow, including extraordinary amortizations
         # (advancements), and AREG is the remaining regular amortization percentage of the payment flow.
         #
-        if ent0.date < calc_date.value or ent1.date <= calc_date.value or calc_date.runaway:
-            # Register the interest accrued in the period.
+        gens.interest_tracker_1.send(calc_balance(f_c.value) * (f_s - _1))  # [CALCULATES-INTEREST]
+
+        # Case of a regular amortization.
+        if type(ent1) is Amortization:
+            adj = (_1 - regs.principal.amortization_ratio.current) / (_1 - regs.principal.amortization_ratio.regular)  # [ADJUSTMENT-FACTOR].
+
+            # Register the amortization percentage.
+            gens.principal_tracker_1.send(ent1.amortization_ratio * adj)
+
+            # Register the non adjusted amortization percentage.
+            gens.principal_tracker_2.send(ent1.amortization_ratio)
+
+            # Register the interest to be settled in the period. Interest locked by an advancement comes out
+            # whole here; interest deferred by a grace period comes out in the proportion of the principal that
+            # this payment amortises.
             #
-            # Interest accrues over the balance, and adjustment due and not yet settled is still part of it. The
-            # specification of October of 2024 defines the monthly adjustment as the traditional correction formula
-            # plus a mandatory extraordinary amortisation of the monthly IPCA: the balance is corrected, and the
-            # payment of the month is an extraordinary amortisation on top of it that brings the balance back to
-            # nominal. When that amortisation does not come out whole – an advancement that falls short of the
-            # adjustment of its period, or that does not amortise it on purpose – the remainder stays in the balance,
-            # and accrues, the same way unsettled interest already accrued by sitting in "calc_balance".
+            if ent1.amortizes_interest:
+                gens.interest_tracker_2.send(regs.interest.current + regs.interest.locked + regs.principal.amortization_ratio.current * (regs.interest.deferred - regs.interest.locked))
+
+                regs.interest.locked = _0
+
+            # Save the previous regular amortization.
+            prev = ent1
+
+        # Case of an advancement (extraordinary amortization).
+        #
+        # Remember that an advance presents only a gross value to be paid on a certain date. This gross value will be
+        # factored into various components of the debt, in an ordered manner. The first component of the debt to be
+        # amortized is the interest (spread). Then, subtract the remaining value of the principal.
+        #
+        else:
+            ent1 = t.cast(Amortization.Bare, ent1)  # Mypy can't infer the type of the "ent1" variable here.
+            fac = regs.correction.deferred * f_c.value  # Factor of the period, composed with what was deferred.
+
+            # Advancement that does not amortise interest. The value goes entirely to the principal, and both
+            # the interest and the adjustment of the period stay due for the next regular payment.
             #
-            # With nothing deferred the factor is neutral and both values are zero, so the base is "calc_balance".
+            # Since the value comes out of the nominal principal, the ceiling here is the outstanding principal,
+            # and not the corrected balance. And an advancement like this may not settle the debt, because it
+            # would leave interest and adjustment with nobody to collect them – hence the refusal of the maximum.
             #
-            gens.interest_tracker_1.send((calc_balance(regs.correction.deferred * f_c.value) - regs.correction.settled + regs.correction.locked) * (f_s - _1))
-
-            # Case of a regular amortization.
-            if type(ent1) is Amortization:
-                adj = (_1 - regs.principal.amortization_ratio.current) / (_1 - regs.principal.amortization_ratio.regular)  # [ADJUSTMENT-FACTOR].
-
-                # Register the amortization percentage.
-                gens.principal_tracker_1.send(ent1.amortization_ratio * adj)
-
-                # Register the non adjusted amortization percentage.
-                gens.principal_tracker_2.send(ent1.amortization_ratio)
-
-                # Register the interest to be settled in the period. Interest locked by an advancement comes out
-                # whole here; interest deferred by a grace period comes out in the proportion of the principal that
-                # this payment amortises.
-                #
-                if ent1.amortizes_interest:
-                    gens.interest_tracker_2.send(regs.interest.current + regs.interest.locked + regs.principal.amortization_ratio.current * (regs.interest.deferred - regs.interest.locked))
-
-                    regs.interest.locked = _0
-
-                # Save the previous regular amortization.
-                prev = ent1
-
-            # Case of an advancement (extraordinary amortization).
+            # Note that what is locked here is the VALUE of the adjustment, and not the factor, unlike what the
+            # branch below does. It is the only way to honour "the adjustment accrues over the balance in force"
+            # when the event also amortises: the principal drops on this date, and the period that has just run
+            # ran over the balance of before. Deferring the factor would apply it to the balance of after, and the
+            # adjustment would stop depending on the date of the advancement.
             #
-            # Remember that an advance presents only a gross value to be paid on a certain date. This gross value will be
-            # factored into various components of the debt, in an ordered manner. The first component of the debt to be
-            # amortized is the interest (spread). Then, subtract the remaining value of the principal.
+            if not ent1.amortizes_interest:
+                res = principal - regs.principal.amortized.total  # Outstanding nominal principal.
+
+                if ent1.value == Amortization.Bare.MAX_VALUE:
+                    raise ValueError('an advancement that does not amortize interest cannot settle the entire debt')
+
+                elif ent1.value > _Q(res):
+                    raise Exception(f'the value of the amortization, {ent1.value}, is greater than the outstanding principal of the loan, {_Q(res)}')
+
+                val1 = cor = _0  # No interest, no adjustment.
+                val4 = ent1.value  # Nominal principal to amortize.
+
+                regs.correction.locked = calc_adjustment(f_c.value)
+                regs.correction.deferred = _1
+                regs.correction.settled = _0
+
+                regs.interest.locked += regs.interest.current  # The interest of the period, likewise.
+
+            # The adjustment of the period accrues over the balance in force, and not over the amortised
+            # slice – the adjustment follows the balance, and the principal that leaves is nominal. Honours the
+            # imputation order of an advancement: interest, adjustment, principal. Should the interest consume the
+            # advancement to the point of leaving nothing for the whole adjustment, what is missing is deferred.
             #
             else:
-                ent1 = t.cast(Amortization.Bare, ent1)  # Mypy can't infer the type of the "ent1" variable here.
-                fac = regs.correction.deferred * f_c.value  # Factor of the period, composed with what was deferred.
+                val0 = min(ent1.value, calc_balance(f_c.value))  # Ensures that the value of the advance does not exceed the remaining balance of the loan.
+                val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)  # Interest to be paid in the period.
+                val2 = val0 - val1  # Principal to be amortized.
 
-                # Advancement that does not amortise interest. The value goes entirely to the principal, and both
-                # the interest and the adjustment of the period stay due for the next regular payment.
-                #
-                # Since the value comes out of the nominal principal, the ceiling here is the outstanding principal,
-                # and not the corrected balance. And an advancement like this may not settle the debt, because it
-                # would leave interest and adjustment with nobody to collect them – hence the refusal of the maximum.
-                #
-                # Note that what is locked here is the VALUE of the adjustment, and not the factor, unlike what the
-                # branch below does. It is the only way to honour "the adjustment accrues over the balance in force"
-                # when the event also amortises: the principal drops on this date, and the period that has just run
-                # ran over the balance of before. Deferring the factor would apply it to the balance of after, and the
-                # adjustment would stop depending on the date of the advancement.
-                #
-                if not ent1.amortizes_interest:
-                    res = principal - regs.principal.amortized.total  # Outstanding nominal principal.
+                # Check if the irregular payment value doesn't exceed the remaining balance.
+                if ent1.value != Amortization.Bare.MAX_VALUE and ent1.value > _Q(calc_balance(f_c.value)):
+                    raise Exception(f'the value of the amortization, {ent1.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(f_c.value))}')
 
-                    if ent1.value == Amortization.Bare.MAX_VALUE:
-                        raise ValueError('an advancement that does not amortize interest cannot settle the entire debt')
+                val3 = calc_adjustment(f_c.value)  # Adjustment due.
+                cor = min(val2, val3)  # Adjustment actually settled, bounded by what the interest left over.
+                val4 = val2 - cor  # Nominal principal to amortize.
 
-                    elif ent1.value > _Q(res):
-                        raise Exception(f'the value of the amortization, {ent1.value}, is greater than the outstanding principal of the loan, {_Q(res)}')
+                # If the adjustment was not settled whole, defer the factor and credit what was paid of it.
+                if val2 < val3:
+                    regs.correction.deferred = fac
+                    regs.correction.settled = regs.correction.settled + cor
 
-                    val1 = cor = _0  # No interest, no adjustment.
-                    val4 = ent1.value  # Nominal principal to amortize.
-
-                    regs.correction.locked += calc_balance(fac) - calc_balance(_1) - regs.correction.settled
+                else:
                     regs.correction.deferred = _1
                     regs.correction.settled = _0
+                    regs.correction.locked = _0
 
-                    regs.interest.locked += regs.interest.current  # The interest of the period, likewise.
+            # Register the amortization percentage.
+            gens.principal_tracker_1.send(val4 / principal)
 
-                # The adjustment of the period accrues over the balance in force, and not over the amortised
-                # slice – the adjustment follows the balance, and the principal that leaves is nominal. Honours the
-                # imputation order of an advancement: interest, adjustment, principal. Should the interest consume the
-                # advancement to the point of leaving nothing for the whole adjustment, what is missing is deferred.
-                #
-                else:
-                    val0 = min(ent1.value, calc_balance(f_c.value))  # Ensures that the value of the advance does not exceed the remaining balance of the loan.
-                    val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)  # Interest to be paid in the period.
-                    val2 = val0 - val1  # Principal to be amortized.
+            # Register the interest value to be settled in the period. Unlike above, there is no need to adjust the
+            # interest value with "f_c.value". The interest is already calculated over a monetary corrected
+            # balance.
+            #
+            gens.interest_tracker_2.send(val1)
 
-                    # Check if the irregular payment value doesn't exceed the remaining balance.
-                    if ent1.value != Amortization.Bare.MAX_VALUE and ent1.value > _Q(calc_balance(f_c.value)):
-                        raise Exception(f'the value of the amortization, {ent1.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(f_c.value))}')
-
-                    val3 = calc_balance(fac) - calc_balance(_1) - regs.correction.settled  # Adjustment due.
-                    cor = min(val2, val3)  # Adjustment actually settled, bounded by what the interest left over.
-                    val4 = val2 - cor  # Nominal principal to amortize.
-
-                    # If the adjustment was not settled whole, defer the factor and credit what was paid of it.
-                    if val2 < val3:
-                        regs.correction.deferred = fac
-                        regs.correction.settled = regs.correction.settled + cor
-
-                    else:
-                        regs.correction.deferred = _1
-                        regs.correction.settled = _0
-
-                # Register the amortization percentage.
-                gens.principal_tracker_1.send(val4 / principal)
-
-                # Register the interest value to be settled in the period. Unlike above, there is no need to adjust the
-                # interest value with "f_c.value". The interest is already calculated over a monetary corrected
-                # balance.
-                #
-                gens.interest_tracker_2.send(val1)
+            # Interest locked by an earlier advancement is settled last, after the interest of the period. So
+            # what remains unsettled bounds the register – without this, the next regular payment, which
+            # releases the register whole, would charge again what this advancement has just collected.
+            #
+            regs.interest.locked = min(regs.interest.locked, regs.interest.accrued - regs.interest.settled.total)
 
         # Phase B.2, FRD, or Phase Rafa Dois.
         #
         # Builds the payment instance, output of the routine. Performs rounding.
         #
-        if ent0.date < calc_date.value or ent1.date <= calc_date.value or calc_date.runaway:
-            pmt = PriceAdjustedPayment() if vir and vir.code == 'IPCA' else Payment()
+        pmt = PriceAdjustedPayment() if vir and vir.code == 'IPCA' else Payment()
 
-            # B.2.1. Assembles the payment (PMT).
-            pmt.no = num
-            pmt.date = ent1.date
+        # B.2.1. Assembles the payment (PMT).
+        pmt.no = num
+        pmt.date = ent1.date
 
-            if type(ent1) is Amortization:
-                pmt.amort = regs.principal.amortized.current
+        if type(ent1) is Amortization:
+            pmt.amort = regs.principal.amortized.current
 
-                if gain_output == 'deferred':
-                    pmt.gain = regs.interest.deferred + regs.interest.current
+            if gain_output == 'deferred':
+                pmt.gain = regs.interest.deferred + regs.interest.current
 
-                elif gain_output == 'settled':
-                    pmt.gain = regs.interest.settled.current if ent1.amortizes_interest else _0
+            elif gain_output == 'settled':
+                pmt.gain = regs.interest.settled.current if ent1.amortizes_interest else _0
 
-                else:  # Implies "gain_output == 'current'."
-                    pmt.gain = regs.interest.current
+            else:  # Implies "gain_output == 'current'."
+                pmt.gain = regs.interest.current
 
-                # Amortizes principal, does not incorporate interest.
-                if pmt.amort and ent1.amortizes_interest:
-                    pmt.raw = pmt.amort + (y := regs.interest.settled.current)
-                    pmt.tax = _0 if tax_exempt else y * calculate_revenue_tax(amortizations[0].date, due)
-
-                # Amortizes principal, incorporates interest.
-                elif pmt.amort:
-                    pmt.raw = pmt.amort
-                    pmt.tax = _0
-
-                # Does not amortize principal, does not incorporate interest.
-                elif ent1.amortizes_interest:
-                    pmt.raw = regs.interest.settled.current
-                    pmt.tax = _0 if tax_exempt else pmt.raw * calculate_revenue_tax(amortizations[0].date, due)
-
-                # Does not amortize principal, incorporates interest.
-                else:
-                    pmt.raw = _0
-                    pmt.tax = _0
-
-                pmt.bal = calc_balance(regs.correction.deferred * f_c.value) - regs.correction.settled + regs.correction.locked  # Ver o comentário da acumulação de juros.
-
-                # Monetary correction.
-                #
-                # Notice that "pmt.pla" is the monetary correction of the principal amortization. This value does not account for
-                # the corrections to the interest paid in the current period, "pmt.gain".
-                #
-                # Applies the price level adjustment to the gross value, and to the revenue tax.
-                #
-                if vir and vir.code == 'IPCA':
-                    pmt = t.cast(PriceAdjustedPayment, pmt)
-
-                    # Pays monetary correction over the principal amortization. The factor collects whatever an
-                    # earlier advancement has left deferred.
-                    if (pla := t.cast(PriceLevelAdjustment, ent1.price_level_adjustment)) and pmt.amort:
-                        pmt.pla = pmt.amort * (regs.correction.deferred * f_c.value - 1) - regs.correction.settled + regs.correction.locked
-
-                        regs.correction.deferred = _1
-                        regs.correction.settled = _0
-                        regs.correction.locked = _0
-
-                    # If there is no principal amortization in the period, and "pla.amortizes_adjustment" is true, then
-                    # "pmt.pla" will be the value of monetary correction of the outstanding balance. This s what
-                    # happens with loans that have the American Amortization system, by default. See the
-                    # "amortizes_correction" parameter on the "preprocess_jm" function.
-                    #
-                    elif pla and pla.amortizes_adjustment:
-                        pmt.pla = calc_balance(regs.correction.deferred * f_c.value) - calc_balance(_1) - regs.correction.settled + regs.correction.locked
-
-                        regs.correction.deferred = _1
-                        regs.correction.settled = _0
-                        regs.correction.locked = _0
-
-                    pmt.raw = pmt.raw + pmt.pla
-                    pmt.tax = _0 if tax_exempt else pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
-
-            else:  # Implies "type(ent1) is Amortization.Bare".
-                pmt.amort = regs.principal.amortized.current
-
-                if gain_output == 'deferred':
-                    pmt.gain = regs.interest.deferred + regs.interest.current
-
-                elif gain_output == 'settled':
-                    pmt.gain = regs.interest.settled.current
-
-                else:  # Implies "gain_output == 'current'."
-                    pmt.gain = regs.interest.current
-
+            # Amortizes principal, does not incorporate interest.
+            if pmt.amort and ent1.amortizes_interest:
                 pmt.raw = pmt.amort + (y := regs.interest.settled.current)
                 pmt.tax = _0 if tax_exempt else y * calculate_revenue_tax(amortizations[0].date, due)
 
-                if vir and vir.code == 'IPCA':
-                    pmt = t.cast(PriceAdjustedPayment, pmt)
+            # Amortizes principal, incorporates interest.
+            elif pmt.amort:
+                pmt.raw = pmt.amort
+                pmt.tax = _0
 
-                    pmt.pla = cor
-                    pmt.raw = pmt.raw + pmt.pla
-                    pmt.tax = _0 if tax_exempt else pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
+            # Does not amortize principal, does not incorporate interest.
+            elif ent1.amortizes_interest:
+                pmt.raw = regs.interest.settled.current
+                pmt.tax = _0 if tax_exempt else pmt.raw * calculate_revenue_tax(amortizations[0].date, due)
 
-                pmt.bal = calc_balance(regs.correction.deferred * f_c.value) - regs.correction.settled + regs.correction.locked  # Ver o comentário da acumulação de juros.
+            # Does not amortize principal, incorporates interest.
+            else:
+                pmt.raw = _0
+                pmt.tax = _0
 
-            # Sanity check.
-            #
-            # This sanity check is only necessary when three criteria are met:
-            #
-            #   1. That the schedule entry is an advancement, "Amortization.Bare".
-            #
-            #   2. That the advancement sits on the calculation date. Should it not, the values obviously will not
-            #      match.
-            #
-            #   3. That the value of the advancement is not "Amortization.Bare.MAX_VALUE". In that case the routine
-            #      would use the balance on the calculation date as the value of the advancement. There would be no
-            #      input to validate.
-            #
-            if type(ent1) is Amortization.Bare and ent1.date == calc_date.value and ent1.value < Amortization.Bare.MAX_VALUE:
-                assert _Q(pmt.raw) == _Q(ent1.value)
+            pmt.bal = calc_balance(f_c.value)
 
-            # B.2.2. Rounds the values of the payment, and calculates its net value.
-            pmt.amort = _Q(pmt.amort)
-            pmt.gain = _Q(pmt.gain)
-            pmt.raw = _Q(pmt.raw)
-            pmt.tax = _Q(pmt.tax)
-            pmt.net = pmt.raw - pmt.tax
-            pmt.bal = _Q(pmt.bal)
+            # Monetary correction.
+            #
+            # Notice that "pmt.pla" is the monetary correction of the principal amortization. This value does not account for
+            # the corrections to the interest paid in the current period, "pmt.gain".
+            #
+            # Applies the price level adjustment to the gross value, and to the revenue tax.
+            #
+            if vir and vir.code == 'IPCA':
+                pmt = t.cast(PriceAdjustedPayment, pmt)
 
-            pmt.sf = f_s
-            pmt.vf = f_v.value
-            pmt.vf_mem = f_v.mem
+                # Pays monetary correction over the principal amortization. The factor collects whatever an
+                # earlier advancement has left deferred.
+                if (pla := t.cast(PriceLevelAdjustment, ent1.price_level_adjustment)) and pmt.amort:
+                    pmt.pla = pmt.amort * (regs.correction.deferred * f_c.value - 1) - regs.correction.settled + regs.correction.locked
+
+                    regs.correction.deferred = _1
+                    regs.correction.settled = _0
+                    regs.correction.locked = _0
+
+                # If there is no principal amortization in the period, and "pla.amortizes_adjustment" is true, then
+                # "pmt.pla" will be the value of monetary correction of the outstanding balance. This s what
+                # happens with loans that have the American Amortization system, by default. See the
+                # "amortizes_correction" parameter on the "preprocess_jm" function.
+                #
+                elif pla and pla.amortizes_adjustment:
+                    pmt.pla = calc_adjustment(f_c.value)
+
+                    regs.correction.deferred = _1
+                    regs.correction.settled = _0
+                    regs.correction.locked = _0
+
+                pmt.raw = pmt.raw + pmt.pla
+                pmt.tax = _0 if tax_exempt else pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
+
+        else:  # Implies "type(ent1) is Amortization.Bare".
+            pmt.amort = regs.principal.amortized.current
+
+            if gain_output == 'deferred':
+                pmt.gain = regs.interest.deferred + regs.interest.current
+
+            elif gain_output == 'settled':
+                pmt.gain = regs.interest.settled.current
+
+            else:  # Implies "gain_output == 'current'."
+                pmt.gain = regs.interest.current
+
+            pmt.raw = pmt.amort + (y := regs.interest.settled.current)
+            pmt.tax = _0 if tax_exempt else y * calculate_revenue_tax(amortizations[0].date, due)
 
             if vir and vir.code == 'IPCA':
                 pmt = t.cast(PriceAdjustedPayment, pmt)
 
-                pmt.pla = _Q(pmt.pla)
+                pmt.pla = cor
+                pmt.raw = pmt.raw + pmt.pla
+                pmt.tax = _0 if tax_exempt else pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
 
-                pmt.cf = f_c.value
-                pmt.cf_mem = f_c.mem
+            pmt.bal = calc_balance(f_c.value)
 
-            yield pmt
+        # Sanity check.
+        #
+        # This sanity check is only necessary when three criteria are met:
+        #
+        #   1. That the schedule entry is an advancement, "Amortization.Bare".
+        #
+        #   2. That the advancement sits on the calculation date. Should it not, the values obviously will not
+        #      match.
+        #
+        #   3. That the value of the advancement is not "Amortization.Bare.MAX_VALUE". In that case the routine
+        #      would use the balance on the calculation date as the value of the advancement. There would be no
+        #      input to validate.
+        #
+        if type(ent1) is Amortization.Bare and ent1.date == calc_date.value and ent1.value < Amortization.Bare.MAX_VALUE:
+            assert _Q(pmt.raw) == _Q(ent1.value)
 
-            if pmt.bal == _0:
-                break  # Se o saldo é zero, o cronograma acabou.
+        # B.2.2. Rounds the values of the payment, and calculates its net value.
+        pmt.amort = _Q(pmt.amort)
+        pmt.gain = _Q(pmt.gain)
+        pmt.raw = _Q(pmt.raw)
+        pmt.tax = _Q(pmt.tax)
+        pmt.net = pmt.raw - pmt.tax
+        pmt.bal = _Q(pmt.bal)
+
+        pmt.sf = f_s
+        pmt.vf = f_v.value
+        pmt.vf_mem = f_v.mem
+
+        if vir and vir.code == 'IPCA':
+            pmt = t.cast(PriceAdjustedPayment, pmt)
+
+            pmt.pla = _Q(pmt.pla)
+
+            pmt.cf = f_c.value
+            pmt.cf_mem = f_c.mem
+
+        yield pmt
+
+        if pmt.bal == _0:
+            break  # Se o saldo é zero, o cronograma acabou.
 # }}}
 
 # Public API. Daily returns. {{{
