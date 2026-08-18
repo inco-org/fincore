@@ -1519,15 +1519,14 @@ def get_payments_table(
     # locked the registers are neutral, and this reduces to the plain corrected balance.
     #
     def calc_balance(correction_factor: decimal.Decimal = _1) -> decimal.Decimal:
-        fac = regs.correction.deferred * correction_factor
-
+        fac = regs.correction.deferred_factor * correction_factor
         val = principal * fac + regs.interest.accrued - regs.principal.amortized.total * fac - regs.interest.settled.total
 
         return t.cast(decimal.Decimal, val - regs.correction.settled + regs.correction.locked)
 
     # The adjustment embedded in the balance: what "calc_balance" holds beyond the nominal balance.
     def calc_adjustment(correction_factor: decimal.Decimal = _1) -> decimal.Decimal:
-        val = (principal - regs.principal.amortized.total) * (regs.correction.deferred * correction_factor - _1)
+        val = (principal - regs.principal.amortized.total) * (regs.correction.deferred_factor * correction_factor - _1)
 
         return t.cast(decimal.Decimal, val - regs.correction.settled + regs.correction.locked)
 
@@ -1627,7 +1626,7 @@ def get_payments_table(
 
     # Registers.
     #
-    #   • "correction.deferred" is the adjustment factor due and not yet settled, and "correction.settled" is the
+    #   • "correction.deferred_factor" is the adjustment factor due and not yet settled, and "correction.settled" is the
     #     adjustment already paid against that factor. Both only leave the neutral value when an advancement falls
     #     short of the adjustment of its period, since the imputation order puts interest ahead of it. The next
     #     payment that settles adjustment collects them.
@@ -1651,7 +1650,7 @@ def get_payments_table(
     #
     regs.principal = types.SimpleNamespace(amortization_ratio=types.SimpleNamespace(current=_0, regular=_0), amortized=types.SimpleNamespace(current=_0, total=_0))
     regs.interest = types.SimpleNamespace(current=_0, accrued=_0, settled=types.SimpleNamespace(current=_0, total=_0), deferred=_0, locked=_0)
-    regs.correction = types.SimpleNamespace(deferred=_1, settled=_0, locked=_0)
+    regs.correction = types.SimpleNamespace(deferred_factor=_1, settled=_0, locked=_0)
 
     # Control, create generators.
     gens.interest_tracker_1 = track_interest_1()
@@ -1674,7 +1673,6 @@ def get_payments_table(
         f_c = types.SimpleNamespace(value=_1, mem=[])
         due = min(calc_date.value, ent1.date)
         f_s = _1
-        cor = _0  # Correção monetária liquidada por uma antecipação. Ver fase B.1.
 
         if ent0.date >= calc_date.value and ent1.date > calc_date.value and not calc_date.runaway:
             continue
@@ -1866,6 +1864,8 @@ def get_payments_table(
         # Where ACUR is the remaining amortization percentage of the payment flow, including extraordinary amortizations
         # (advancements), and AREG is the remaining regular amortization percentage of the payment flow.
         #
+        v01 = v02 = v03 = _0  # Interest, correction, and principal settled in this iteration in case of an advancement.
+
         gens.interest_tracker_1.send(calc_balance(f_c.value) * (f_s - _1))  # [CALCULATES-INTEREST]
 
         # Case of a regular amortization.
@@ -1898,7 +1898,31 @@ def get_payments_table(
         #
         else:
             ent1 = t.cast(Amortization.Bare, ent1)  # Mypy can't infer the type of the "ent1" variable here.
-            fac = regs.correction.deferred * f_c.value  # Factor of the period, composed with what was deferred.
+            fac = regs.correction.deferred_factor * f_c.value  # Factor of the period, composed with what was deferred.
+
+            # The adjustment of the period accrues over the balance in force, and not over the amortised
+            # slice – the adjustment follows the balance, and the principal that leaves is nominal. Honours the
+            # imputation order of an advancement: interest, adjustment, principal. Should the interest consume the
+            # advancement to the point of leaving nothing for the whole adjustment, what is missing is deferred.
+            #
+            if ent1.amortizes_interest:
+                if ent1.value != Amortization.Bare.MAX_VALUE and ent1.value > _Q(calc_balance(f_c.value)):  # Check if the irregular payment value doesn't exceed the remaining balance.
+                    raise Exception(f'the value of the amortization, {ent1.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(f_c.value))}')
+
+                v00 = min(ent1.value, calc_balance(f_c.value))  # Ensures that the value of the advance does not exceed the remaining balance of the loan.
+                v01 = min(v00, regs.interest.accrued - regs.interest.settled.total)  # Interest actually settled, bounded by the amount the advance.
+                v02 = min(v00 - v01, calc_adjustment(f_c.value))  # Adjustment actually settled, bounded by the amount left over.
+                v03 = v00 - v01 - v02  # Amount due after amortizing interest and correction: the nominal principal to amortize.
+
+                # If the adjustment was not settled whole, defer the factor and credit what was paid of it.
+                if v02 < calc_adjustment(f_c.value):
+                    regs.correction.deferred_factor = fac
+                    regs.correction.settled = regs.correction.settled + v02
+
+                else:
+                    regs.correction.deferred_factor = _1
+                    regs.correction.settled = _0
+                    regs.correction.locked = _0
 
             # Advancement that does not amortise interest. The value goes entirely to the principal, and both
             # the interest and the adjustment of the period stay due for the next regular payment.
@@ -1913,60 +1937,30 @@ def get_payments_table(
             # ran over the balance of before. Deferring the factor would apply it to the balance of after, and the
             # adjustment would stop depending on the date of the advancement.
             #
-            if not ent1.amortizes_interest:
-                res = principal - regs.principal.amortized.total  # Outstanding nominal principal.
-
+            else:
                 if ent1.value == Amortization.Bare.MAX_VALUE:
                     raise ValueError('an advancement that does not amortize interest cannot settle the entire debt')
 
-                elif ent1.value > _Q(res):
+                elif ent1.value > _Q(res := principal - regs.principal.amortized.total):  # Outstanding nominal principal.
                     raise Exception(f'the value of the amortization, {ent1.value}, is greater than the outstanding principal of the loan, {_Q(res)}')
 
-                val1 = cor = _0  # No interest, no adjustment.
-                val4 = ent1.value  # Nominal principal to amortize.
+                v01 = v02 = _0  # No interest, no adjustment.
+                v03 = ent1.value  # Nominal principal to amortize.
 
                 regs.correction.locked = calc_adjustment(f_c.value)
-                regs.correction.deferred = _1
+                regs.correction.deferred_factor = _1
                 regs.correction.settled = _0
 
                 regs.interest.locked += regs.interest.current  # The interest of the period, likewise.
 
-            # The adjustment of the period accrues over the balance in force, and not over the amortised
-            # slice – the adjustment follows the balance, and the principal that leaves is nominal. Honours the
-            # imputation order of an advancement: interest, adjustment, principal. Should the interest consume the
-            # advancement to the point of leaving nothing for the whole adjustment, what is missing is deferred.
-            #
-            else:
-                val0 = min(ent1.value, calc_balance(f_c.value))  # Ensures that the value of the advance does not exceed the remaining balance of the loan.
-                val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)  # Interest to be paid in the period.
-                val2 = val0 - val1  # Principal to be amortized.
-
-                # Check if the irregular payment value doesn't exceed the remaining balance.
-                if ent1.value != Amortization.Bare.MAX_VALUE and ent1.value > _Q(calc_balance(f_c.value)):
-                    raise Exception(f'the value of the amortization, {ent1.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(f_c.value))}')
-
-                val3 = calc_adjustment(f_c.value)  # Adjustment due.
-                cor = min(val2, val3)  # Adjustment actually settled, bounded by what the interest left over.
-                val4 = val2 - cor  # Nominal principal to amortize.
-
-                # If the adjustment was not settled whole, defer the factor and credit what was paid of it.
-                if val2 < val3:
-                    regs.correction.deferred = fac
-                    regs.correction.settled = regs.correction.settled + cor
-
-                else:
-                    regs.correction.deferred = _1
-                    regs.correction.settled = _0
-                    regs.correction.locked = _0
-
             # Register the amortization percentage.
-            gens.principal_tracker_1.send(val4 / principal)
+            gens.principal_tracker_1.send(v03 / principal)
 
             # Register the interest value to be settled in the period. Unlike above, there is no need to adjust the
             # interest value with "f_c.value". The interest is already calculated over a monetary corrected
             # balance.
             #
-            gens.interest_tracker_2.send(val1)
+            gens.interest_tracker_2.send(v01)
 
             # Interest locked by an earlier advancement is settled last, after the interest of the period. So
             # what remains unsettled bounds the register – without this, the next regular payment, which
@@ -2031,9 +2025,9 @@ def get_payments_table(
                 # Pays monetary correction over the principal amortization. The factor collects whatever an
                 # earlier advancement has left deferred.
                 if (pla := t.cast(PriceLevelAdjustment, ent1.price_level_adjustment)) and pmt.amort:
-                    pmt.pla = pmt.amort * (regs.correction.deferred * f_c.value - 1) - regs.correction.settled + regs.correction.locked
+                    pmt.pla = pmt.amort * (regs.correction.deferred_factor * f_c.value - 1) - regs.correction.settled + regs.correction.locked
 
-                    regs.correction.deferred = _1
+                    regs.correction.deferred_factor = _1
                     regs.correction.settled = _0
                     regs.correction.locked = _0
 
@@ -2045,7 +2039,7 @@ def get_payments_table(
                 elif pla and pla.amortizes_adjustment:
                     pmt.pla = calc_adjustment(f_c.value)
 
-                    regs.correction.deferred = _1
+                    regs.correction.deferred_factor = _1
                     regs.correction.settled = _0
                     regs.correction.locked = _0
 
@@ -2070,7 +2064,7 @@ def get_payments_table(
             if vir and vir.code == 'IPCA':
                 pmt = t.cast(PriceAdjustedPayment, pmt)
 
-                pmt.pla = cor
+                pmt.pla = v02
                 pmt.raw = pmt.raw + pmt.pla
                 pmt.tax = _0 if tax_exempt else pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
 
