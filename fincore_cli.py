@@ -1,9 +1,20 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
 #
 # Copyright (C) Inco - All Rights Reserved.
 #
 # Written by Rafael Viotti <viotti@inco.vc>, April 2025.
 #
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#     "sh2py",
+#     "tabulate",
+#     "platformdirs",
+#     "requests",
+#     "typeguard",
+#     "python-dateutil",
+# ]
+# ///
 
 '''Fincore CLI.'''
 
