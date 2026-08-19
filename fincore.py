@@ -2986,8 +2986,13 @@ def get_daily_returns(
         _LOG.debug(f'T={p}, n={cnt}, f_s={facs.spread} f_v={facs.variable} f_c={facs.correction}')
         _LOG.debug(f'T={p}, n={cnt}, regs={regs}')
 
-        # If the outstanding principal is zero, and the current day is a business day, the schedule is over.
-        if _Q(get_principal_outstanding()) != _0 or not is_bizz_day_cb(ref):
+        # If the outstanding principal is zero, and the current day is a business day, the schedule is over. The
+        # locked interest holds the series open on its own. An advancement that does not amortise interest may take
+        # the whole outstanding principal and still leave the interest of its period due, and "get_principal_outstanding"
+        # does not see it – the adjustment it carries is zero whenever there is no index. Without this term the
+        # series would end on the date of the advancement, while the payments table still charges that interest.
+        #
+        if _Q(get_principal_outstanding()) != _0 or _Q(regs.interest.locked) != _0 or not is_bizz_day_cb(ref):
             yield dr
 
             cnt += 1
