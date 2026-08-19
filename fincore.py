@@ -327,7 +327,7 @@ def _diff_surrounding_dates(base: datetime.date, day_of_month: int) -> int:
         d02 = d01 + _MONTH if base.day >= day_of_month else d01 - _MONTH
         dff = d02 - d01 if base.day >= day_of_month else d01 - d02
 
-        return t.cast(int, dff.days)
+        return int(dff.days)
 
     else:
         raise ValueError(f"can't find a date prior to the base of {base} on day {day_of_month}")
@@ -3641,7 +3641,7 @@ def calculate_iof(begin: datetime.date, term: int) -> decimal.Decimal:
 
     else:
         data2 = begin + _MONTH * term
-        delta = t.cast(int, (data2 - begin).days)
+        delta = int((data2 - begin).days)
 
         return decimal.Decimal('0.38') + decimal.Decimal('0.00411') * delta
 
