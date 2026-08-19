@@ -327,7 +327,7 @@ def _diff_surrounding_dates(base: datetime.date, day_of_month: int) -> int:
         d02 = d01 + _MONTH if base.day >= day_of_month else d01 - _MONTH
         dff = d02 - d01 if base.day >= day_of_month else d01 - d02
 
-        return dff.days
+        return t.cast(int, dff.days)
 
     else:
         raise ValueError(f"can't find a date prior to the base of {base} on day {day_of_month}")
@@ -1932,7 +1932,7 @@ def get_payments_table(
             # would leave interest and adjustment with nobody to collect them – hence the refusal of the maximum.
             #
             # Note that what is locked here is the VALUE of the adjustment, and not the factor, unlike what the
-            # branch below does. It is the only way to honour "the adjustment accrues over the balance in force"
+            # branch above does. It is the only way to honour "the adjustment accrues over the balance in force"
             # when the event also amortises: the principal drops on this date, and the period that has just run
             # ran over the balance of before. Deferring the factor would apply it to the balance of after, and the
             # adjustment would stop depending on the date of the advancement.
@@ -2328,15 +2328,31 @@ def get_daily_returns(
       • "fc", is the monetary correction component of the day's yield.
     '''
 
+    # The balance in force. Composes the given factor with the deferred one, credits the adjustment already
+    # settled against it, and carries the adjustment value locked by an advancement. With nothing deferred nor
+    # locked the registers are neutral, and this reduces to the plain corrected balance.
+    #
     def calc_balance(correction_factor: decimal.Decimal = _1) -> decimal.Decimal:
-        val = principal * correction_factor + regs.interest.accrued - regs.principal.amortized.total * correction_factor - regs.interest.settled.total
+        fac = regs.correction.deferred_factor * correction_factor
+        val = principal * fac + regs.interest.accrued - regs.principal.amortized.total * fac - regs.interest.settled.total
 
-        return t.cast(decimal.Decimal, val)
+        return t.cast(decimal.Decimal, val - regs.correction.settled + regs.correction.locked)
 
+    # The adjustment embedded in the balance: what "calc_balance" holds beyond the nominal balance.
+    def calc_adjustment(correction_factor: decimal.Decimal = _1) -> decimal.Decimal:
+        val = (principal - regs.principal.amortized.total) * (regs.correction.deferred_factor * correction_factor - _1)
+
+        return t.cast(decimal.Decimal, val - regs.correction.settled + regs.correction.locked)
+
+    # The principal in force. Like "calc_balance", composes the given factor with the deferred one, credits
+    # the adjustment already settled, and carries the value locked by an advancement – adjustment due lives
+    # with the principal, and accrues with it.
+    #
     def get_principal_outstanding(correction_factor: decimal.Decimal = _1) -> decimal.Decimal:
-        val = (principal - regs.principal.amortized.total) * correction_factor
+        fac = regs.correction.deferred_factor * correction_factor
+        val = (principal - regs.principal.amortized.total) * fac
 
-        return t.cast(decimal.Decimal, val)
+        return t.cast(decimal.Decimal, val - regs.correction.settled + regs.correction.locked)
 
     # First generator for principal values.
     #
@@ -2646,9 +2662,33 @@ def get_daily_returns(
     if not math.isclose(aux, _1):
         raise ValueError('the accumulated percentage of the amortizations does not reach 1.0')
 
-    # Registradores.
+    # Registers.
+    #
+    #   • "correction.deferred_factor" is the adjustment factor due and not yet settled, and "correction.settled" is the
+    #     adjustment already paid against that factor. Both only leave the neutral value when an advancement falls
+    #     short of the adjustment of its period, since the imputation order puts interest ahead of it. The next
+    #     payment that settles adjustment collects them.
+    #
+    #     What is deferred is the factor, and not the value, because the adjustment compounds: deferring the value of
+    #     two half periods would give "2 × (F½ − 1)", less than the "F − 1" of the whole period. Composed, "F½ × F½ =
+    #     F", exact. And what the advancement did pay enters as a credit in "settled", instead of becoming a factor,
+    #     because converting a value into a factor and dividing would leave a second order residue.
+    #
+    #     Deferring and amortising are mutually exclusive: value only reaches the principal once the adjustment is
+    #     entirely settled. So "settled" never crosses a change of the base over which it was measured.
+    #
+    #   • "interest.locked" is the interest that an advancement with a false "amortizes_interest" did not settle. It
+    #     lives inside "interest.deferred", but behaves differently: interest deferred by a grace period capitalises
+    #     and comes out as the principal amortises, while this one is charged whole on the next regular payment.
+    #
+    #     They are distinct events sharing the same bucket of unsettled interest. A grace period is the schedule
+    #     saying that this month pays no interest; an advancement is the borrower choosing to put the whole value on
+    #     the principal, and to still owe the interest of the current month. Without separating the two, releasing one
+    #     would move the other.
+    #
     regs.principal = types.SimpleNamespace(amortization_ratio=types.SimpleNamespace(adjusted=_0, nominal=_0), amortized=types.SimpleNamespace(current=_0, total=_0))
-    regs.interest = types.SimpleNamespace(daily=_0, current=_0, accrued=_0, settled=types.SimpleNamespace(current=_0, total=_0), deferred=_0)
+    regs.interest = types.SimpleNamespace(daily=_0, current=_0, accrued=_0, settled=types.SimpleNamespace(current=_0, total=_0), deferred=_0, locked=_0)
+    regs.correction = types.SimpleNamespace(deferred_factor=_1, settled=_0, locked=_0)
 
     # Control, create generators.
     gens.interest_tracker_1 = track_interest_1()
@@ -2772,12 +2812,25 @@ def get_daily_returns(
                 # Registers the nominal amortization percentage.
                 gens.principal_tracker_2.send(tup[1].amortization_ratio)
 
-                # Registers the interest value to be settled in the period.
+                # Register the interest to be settled in the period. Interest locked by an advancement comes out
+                # whole here; interest deferred by a grace period comes out in the proportion of the principal that
+                # this payment amortises.
+                #
                 if tup[1].amortizes_interest:
                     pct = regs.principal.amortization_ratio.adjusted * adj
-                    pt2 = pct * (regs.interest.accrued - regs.interest.settled.total - regs.interest.current)
+                    pt2 = pct * (regs.interest.accrued - regs.interest.settled.total - regs.interest.current - regs.interest.locked)
 
-                    gens.interest_tracker_2.send(regs.interest.current + pt2)
+                    gens.interest_tracker_2.send(regs.interest.current + regs.interest.locked + pt2)
+
+                    regs.interest.locked = _0
+
+                # A regular payment that settles adjustment collects what earlier advancements have left deferred
+                # or locked. Mirrors the "pmt.pla" sites of "get_payments_table".
+                #
+                if (pla := tup[1].price_level_adjustment) and (regs.principal.amortized.current or pla.amortizes_adjustment):
+                    regs.correction.deferred_factor = _1
+                    regs.correction.settled = _0
+                    regs.correction.locked = _0
 
                 # The interest factors have to be renormalized on principal changes. See comments above.
                 if tup[1].amortization_ratio > 0 or tup[1].amortizes_interest:
@@ -2799,25 +2852,76 @@ def get_daily_returns(
             # see if this block will behave properly.
             #
             else:
-                ent = t.cast(Amortization.Bare, tup[1])  # O Mypy não consegue inferir o tipo da variável "ent" aqui.
-                val0 = min(ent.value, calc_balance(facs.correction.value))  # Ensures that the value of the advance does not exceed the remaining balance of the loan.
-                val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)  # Interest to be paid in the period.
-                val2 = val0 - val1  # Principal to be amortized.
+                ent = t.cast(Amortization.Bare, tup[1])  # Mypy can't infer the type of the "ent" variable here.
+                fac = regs.correction.deferred_factor * facs.correction.value  # Factor of the period, composed with what was deferred.
 
-                # Check if the irregular payment value doesn't exceed the remaining balance.
-                if ent.value != Amortization.Bare.MAX_VALUE and ent.value > _Q(calc_balance(facs.correction.value)):
-                    raise Exception(f'the value of the amortization, {ent.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(facs.correction.value))}')
-
-                # Register the amortization percentage. Notice that the value sent here is adjusted with the monetary
-                # correction factor ("facs.correction.value").
+                # The adjustment of the period accrues over the balance in force, and not over the amortised
+                # slice – the adjustment follows the balance, and the principal that leaves is nominal. Honours the
+                # imputation order of an advancement: interest, adjustment, principal. Should the interest consume the
+                # advancement to the point of leaving nothing for the whole adjustment, what is missing is deferred.
                 #
-                gens.principal_tracker_1.send(val2 / facs.correction.value / principal)
+                if ent.amortizes_interest:
+                    if ent.value != Amortization.Bare.MAX_VALUE and ent.value > _Q(calc_balance(facs.correction.value)):  # Check if the irregular payment value doesn't exceed the remaining balance.
+                        raise Exception(f'the value of the amortization, {ent.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(facs.correction.value))}')
+
+                    v00 = min(ent.value, calc_balance(facs.correction.value))  # Ensures that the value of the advance does not exceed the remaining balance of the loan.
+                    v01 = min(v00, regs.interest.accrued - regs.interest.settled.total)  # Interest actually settled, bounded by the amount the advance.
+                    v02 = min(v00 - v01, calc_adjustment(facs.correction.value))  # Adjustment actually settled, bounded by the amount left over.
+                    v03 = v00 - v01 - v02  # Amount due after amortizing interest and correction: the nominal principal to amortize.
+
+                    # If the adjustment was not settled whole, defer the factor and credit what was paid of it.
+                    if v02 < calc_adjustment(facs.correction.value):
+                        regs.correction.deferred_factor = fac
+                        regs.correction.settled = regs.correction.settled + v02
+
+                    else:
+                        regs.correction.deferred_factor = _1
+                        regs.correction.settled = _0
+                        regs.correction.locked = _0
+
+                # Advancement that does not amortise interest. The value goes entirely to the principal, and both
+                # the interest and the adjustment of the period stay due for the next regular payment.
+                #
+                # Since the value comes out of the nominal principal, the ceiling here is the outstanding principal,
+                # and not the corrected balance. And an advancement like this may not settle the debt, because it
+                # would leave interest and adjustment with nobody to collect them – hence the refusal of the maximum.
+                #
+                # Note that what is locked here is the VALUE of the adjustment, and not the factor, unlike what the
+                # branch above does. It is the only way to honour "the adjustment accrues over the balance in force"
+                # when the event also amortises: the principal drops on this date, and the period that has just run
+                # ran over the balance of before. Deferring the factor would apply it to the balance of after, and the
+                # adjustment would stop depending on the date of the advancement.
+                #
+                else:
+                    if ent.value == Amortization.Bare.MAX_VALUE:
+                        raise ValueError('an advancement that does not amortize interest cannot settle the entire debt')
+
+                    elif ent.value > _Q(res := principal - regs.principal.amortized.total):  # Outstanding nominal principal.
+                        raise Exception(f'the value of the amortization, {ent.value}, is greater than the outstanding principal of the loan, {_Q(res)}')
+
+                    v01 = v02 = _0  # No interest, no adjustment.
+                    v03 = ent.value  # Nominal principal to amortize.
+
+                    regs.correction.locked = calc_adjustment(facs.correction.value)
+                    regs.correction.deferred_factor = _1
+                    regs.correction.settled = _0
+
+                    regs.interest.locked += regs.interest.current  # The interest of the period, likewise.
+
+                # Register the amortization percentage.
+                gens.principal_tracker_1.send(v03 / principal)
 
                 # Register the interest value to be settled in the period. Unlike above, there is no need to adjust the
                 # interest value with "facs.correction.value". The interest is already calculated over a monetary
                 # corrected balance.
                 #
-                gens.interest_tracker_2.send(val1)
+                gens.interest_tracker_2.send(v01)
+
+                # Interest locked by an earlier advancement is settled last, after the interest of the period. So
+                # what remains unsettled bounds the register – without this, the next regular payment, which
+                # releases the register whole, would charge again what this advancement has just collected.
+                #
+                regs.interest.locked = min(regs.interest.locked, regs.interest.accrued - regs.interest.settled.total)
 
                 # The interest factors have to be renormalized on principal changes. See comments above.
                 facs.spread = facs.spread.normalize()
@@ -2877,7 +2981,7 @@ def get_daily_returns(
 
             dr.cf = facs.correction.discrete
 
-            dr.opla = _Q(calc_balance(facs.correction.value) - calc_balance())
+            dr.opla = _Q(calc_adjustment(facs.correction.value))
 
         _LOG.debug(f'T={p}, n={cnt}, f_s={facs.spread} f_v={facs.variable} f_c={facs.correction}')
         _LOG.debug(f'T={p}, n={cnt}, regs={regs}')
@@ -3537,7 +3641,7 @@ def calculate_iof(begin: datetime.date, term: int) -> decimal.Decimal:
 
     else:
         data2 = begin + _MONTH * term
-        delta = (data2 - begin).days
+        delta = t.cast(int, (data2 - begin).days)
 
         return decimal.Decimal('0.38') + decimal.Decimal('0.00411') * delta
 

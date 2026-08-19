@@ -6625,6 +6625,78 @@ def test_will_create_loan_daily_returns_jm_2():
     '''
 
     pass  # FIXME: implementar. Já está em planilha de testes.
+
+def test_will_defer_price_level_adjustment_on_daily_returns():
+    '''
+    Correção devida e não liquidada permanece no saldo diário, e rende.
+
+    Espelho diário de "test_will_accrue_interest_over_deferred_price_level_adjustment": a antecipação de 52.000 em
+    03/08 cobre os juros do período e só parte da correção. A ordem de imputação – juros, correção, principal – não
+    deixa a antecipação chegar ao principal, então "op" fica intacto nos 6.000.000,00; o motor antigo abatia
+    principal aqui, deflacionando o valor pelo fator de correção.
+
+    No fim do dia da antecipação, a correção embutida no saldo ("opla") guarda os diferidos, recorrigidos. O
+    pagamento regular de 07/08 os recolhe: "opla" zera, e o saldo do fim do dia volta ao principal nominal mais o
+    rendimento do próprio dia.
+
+    Os valores fixados saem do próprio motor. A tabela de pagamentos não fecha com eles no centavo – os dois motores
+    divergem por construção na acumulação intra-período do IPCA – mas as conservações são as mesmas.
+    '''
+
+    kwa = _kwa_cri_ipa()
+
+    kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2026, 8, 3), value=decimal.Decimal('52000'))]
+
+    drs = {x.date: t.cast(fincore.PriceAdjustedDailyReturn, x) for x in fincore.get_jm_daily_returns(**kwa)}
+
+    # Véspera: a correção do período, de 8.360,43, está embutida no saldo.
+    assert drs[datetime.date(2026, 8, 2)].opla == decimal.Decimal('8360.43')
+
+    # Dia da antecipação: nada de principal amortizado, juros zerados, e o diferido segue no saldo.
+    assert drs[datetime.date(2026, 8, 3)].op == decimal.Decimal('6000000.00')
+    assert drs[datetime.date(2026, 8, 3)].oi == _0
+    assert drs[datetime.date(2026, 8, 3)].opla == decimal.Decimal('6605.58')
+    assert drs[datetime.date(2026, 8, 3)].bal == decimal.Decimal('6008435.75')
+
+    # Pagamento regular seguinte: recolhe o diferido, e o saldo volta ao nominal mais o rendimento do dia.
+    assert drs[datetime.date(2026, 8, 7)].opla == _0
+    assert drs[datetime.date(2026, 8, 7)].bal - drs[datetime.date(2026, 8, 7)].value == decimal.Decimal('6000000.00')
+
+def test_will_lock_interest_and_adjustment_on_daily_returns():
+    '''
+    Antecipação que não amortiza juros trava juro e correção no saldo diário; uma antecipação posterior os recolhe.
+
+    Espelho diário de "test_will_collect_locked_interest_and_adjustment_on_a_later_prepayment". A antecipação de
+    50.000 em 20/07 vai inteira ao principal – "op" cai exatamente pelo seu valor – e deixa os 23.825,55 de juros do
+    período devidos ("oi"), junto com a correção, no saldo. A de 03/08 recolhe tudo: "oi" zera, e o que sobra abate
+    o principal nominal.
+
+    O regular de 07/08 fica só com o rendimento do próprio período: o saldo do fim do dia é o nominal mais o
+    rendimento do dia, sem dupla cobrança do que a antecipação já liquidou.
+    '''
+
+    kwa = _kwa_cri_ipa()
+
+    kwa['insertions'] = [
+        fincore.Amortization.Bare(date=datetime.date(2026, 7, 20), value=decimal.Decimal('50000'), amortizes_interest=False),
+        fincore.Amortization.Bare(date=datetime.date(2026, 8, 3), value=decimal.Decimal('150000'))
+    ]
+
+    drs = {x.date: t.cast(fincore.PriceAdjustedDailyReturn, x) for x in fincore.get_jm_daily_returns(**kwa)}
+
+    # A travada: o valor sai inteiro do principal, e o juro do período fica devido, no saldo.
+    assert drs[datetime.date(2026, 7, 20)].op == decimal.Decimal('5950000.00')
+    assert drs[datetime.date(2026, 7, 20)].oi == decimal.Decimal('23825.55')
+    assert drs[datetime.date(2026, 7, 20)].bal == decimal.Decimal('5980287.59')
+
+    # A coletora: liquida o juro travado e a correção, e abate o restante do principal nominal.
+    assert drs[datetime.date(2026, 8, 3)].op == decimal.Decimal('5858333.70')
+    assert drs[datetime.date(2026, 8, 3)].oi == _0
+    assert drs[datetime.date(2026, 8, 3)].bal == decimal.Decimal('5860420.92')
+
+    # O regular seguinte cobra apenas o próprio período.
+    assert drs[datetime.date(2026, 8, 7)].opla == _0
+    assert drs[datetime.date(2026, 8, 7)].bal - drs[datetime.date(2026, 8, 7)].value == decimal.Decimal('5858333.70')
 # }}}
 
 # Cronograma de pagamentos mensal x retornos diários. {{{
@@ -6720,6 +6792,40 @@ def test_will_match_payments_table_and_daily_returns_4():
     drt = next(_tail(1, (x for x in fincore.get_jm_daily_returns(**kwa) if x.date < pmt.date)))
 
     assert pmt.raw + pmt.bal == drt.bal
+
+def test_will_match_payments_table_and_daily_returns_5():
+    '''
+    Juros mensais prefixado com uma antecipação que não amortiza juros, seguida do regular que recolhe o travado.
+
+    Sem correção monetária os dois motores caminham juntos, então a comparação vale em toda data de pagamento, e não
+    só na última: o saldo do fim do dia, descontado o rendimento do próprio dia, é o saldo do cronograma mensal, ao
+    centavo. Sem a trava no motor diário, a antecipação de 20/07 liquidaria os juros do período, o principal em
+    aberto divergiria dali em diante, e a comparação quebraria de 07/08 até a última parcela.
+
+    Os meses são alinhados de propósito: com "first_dct_rule" fixa e aniversário, o motor diário aplica a regra do
+    primeiro DCT a todos os períodos, e o rendimento total diverge do cronograma mensal mesmo sem antecipação
+    nenhuma. É um desvio pré-existente, que não pertence a este teste.
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('1000000')
+    kwa['apy'] = decimal.Decimal('12')
+    kwa['zero_date'] = datetime.date(2026, 6, 7)
+    kwa['term'] = 6
+    kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2026, 7, 20), value=decimal.Decimal('50000'), amortizes_interest=False)]
+
+    sched = list(fincore.build_jm(**kwa))
+    drs = {x.date: x for x in fincore.get_jm_daily_returns(**kwa)}
+
+    # O motor diário não emite o dia do pagamento final: o saldo da véspera é o que ele paga.
+    for pmt in sched[:-1]:
+        assert drs[pmt.date].bal - drs[pmt.date].value == pmt.bal
+
+    assert sched[-1].raw == list(drs.values())[-1].bal
+
+    # E o principal nominal diário acompanha: a antecipação saiu inteira do principal.
+    assert drs[datetime.date(2026, 7, 20)].op == decimal.Decimal('950000.00')
 # }}}
 
 # vi:fdm=marker:
