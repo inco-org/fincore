@@ -6826,6 +6826,44 @@ def test_will_match_payments_table_and_daily_returns_5():
 
     # E o principal nominal diário acompanha: a antecipação saiu inteira do principal.
     assert drs[datetime.date(2026, 7, 20)].op == decimal.Decimal('950000.00')
+
+def test_will_keep_daily_returns_running_while_interest_stays_locked():
+    '''
+    Antecipação prefixada que leva todo o principal em aberto, sem amortizar juros.
+
+    A lib permite de propósito – o teto do modo é o principal em aberto, e tomá-lo por inteiro não quita a dívida:
+    os juros do trecho ficam devidos, e o pagamento regular seguinte os recolhe.
+
+    O motor diário encerra a série quando o principal em aberto zera. O travado de correção mora dentro do
+    "get_principal_outstanding" e segura a série sozinho, mas só quando há indexador; num prefixado ele é zero, e
+    quem sobra é o juro travado. Sem o termo de juro travado na condição de parada, a série morreria em 19/07, na
+    véspera da antecipação, enquanto o cronograma segue até 07/08 cobrando 3.990,08. Em produção isso congela a
+    posição diária do investidor, e depois entra no extrato um pagamento que a série nunca acumulou.
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('1000000')
+    kwa['apy'] = decimal.Decimal('12')
+    kwa['zero_date'] = datetime.date(2026, 6, 7)
+    kwa['term'] = 6
+    kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2026, 7, 20), value=decimal.Decimal('1000000'), amortizes_interest=False)]
+
+    dbl = kwa['insertions'][0].date
+    sched = list(fincore.build_jm(**kwa))
+    drs = list(fincore.get_jm_daily_returns(**kwa))
+
+    # A antecipação leva o principal a zero, e ainda assim deixa juros em aberto.
+    assert next(x for x in drs if x.date == dbl).op == _0
+    assert next(x for x in drs if x.date == dbl).oi > _0
+
+    # O cronograma tem um pagamento depois dela, que não amortiza nada: é o que recolhe o juro travado.
+    assert (nxt := next(x for x in sched if x.date > dbl)).amort == _0
+    assert nxt.raw > _0
+
+    # E a série diária vai até a véspera desse pagamento, em vez de parar na antecipação.
+    assert drs[-1].date > dbl
+    assert drs[-1].date == sched[-1].date - datetime.timedelta(days=1)
 # }}}
 
 # vi:fdm=marker:
