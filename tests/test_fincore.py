@@ -6548,6 +6548,138 @@ def test_will_create_loan_daily_returns_jm_2():
     '''
 
     pass  # FIXME: implementar. Já está em planilha de testes.
+
+def test_will_create_daily_returns_with_prepayment_that_amortizes_only_principal():
+    '''
+    Retornos diários de uma antecipação que não amortiza juros, sem indexador.
+
+    Sem correção monetária o fator vale um, "correction.locked" fica em zero, e o teste isola o juro travado.
+
+    O principal em aberto tem de cair pelo valor cheio da antecipação, e não pela sobra de uma imputação que
+    liquidasse juros antes. E o juro do trecho não pode sumir: ele volta no pagamento regular seguinte, somado ao do
+    período daquele pagamento.
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('100000')
+    kwa['apy'] = decimal.Decimal(12)
+    kwa['zero_date'] = datetime.date(2024, 1, 5)
+    kwa['term'] = 12
+    kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2024, 3, 20), value=decimal.Decimal('20000'), amortizes_interest=False)]
+
+    dbl = kwa['insertions'][0].date
+    drs = list(fincore.get_jm_daily_returns(**kwa))
+    pmt = list(fincore.build_jm(**kwa))
+
+    # O principal em aberto cai pelo valor nominal cheio. Se a rotina imputasse juros primeiro, cairia menos; se
+    # dividisse o valor pelo fator de correção, cairia diferente do antecipado.
+    #
+    assert next(x for x in drs if x.date == dbl - datetime.timedelta(days=1)).op == kwa['principal']
+    assert next(x for x in drs if x.date == dbl).op == kwa['principal'] - kwa['insertions'][0].value
+
+    # O juro do trecho fica devido, e o pagamento regular seguinte o liquida por inteiro, além do juro do seu próprio
+    # período. A diferença entre o que ele paga e o que rendeu nele é exatamente o juro que estava em aberto no dia da
+    # antecipação.
+    #
+    nxt = next(x for x in pmt if x.date > dbl)
+
+    assert nxt.raw > nxt.gain
+    assert abs(nxt.raw - nxt.gain - next(x for x in drs if x.date == dbl).oi) <= _CENTI
+
+    # As duas rotinas concordam em todo pagamento: o saldo da véspera é o que se paga mais o que fica. É o invariante
+    # que denuncia um saldo diário que tenha esquecido a correção ou o juro travados.
+    #
+    for row in pmt:
+        assert row.raw + row.bal == next(_tail(1, (x for x in drs if x.date < row.date))).bal
+
+    # A série não trunca no dia da antecipação, e o principal fecha. A rotina diária termina na véspera do último
+    # pagamento – é a convenção dela, ver "test_will_match_payments_table_and_daily_returns_4".
+    #
+    assert drs[-1].date == pmt[-1].date - datetime.timedelta(days=1)
+    assert sum(x.amort for x in pmt) == kwa['principal']
+
+def test_will_create_daily_returns_with_prepayment_that_amortizes_only_principal_and_ipca():
+    '''
+    Retornos diários de uma antecipação que não amortiza juros, com IPCA.
+
+    Mesma operação e mesma antecipação de "test_will_create_jm_ipca_3" – aqui pela rotina diária.
+
+    O que o IPCA acrescenta é a correção travada. O valor antecipado é nominal, e o principal em aberto tem de cair
+    exatamente por ele: se a rotina dividisse o valor pelo fator de correção, como faz na imputação padrão, o
+    principal cairia mais do que o tomador pagou, na ordem do índice acumulado. É o defeito que o primeiro assert
+    pega.
+
+    A correção do trecho não se perde: fica em aberto, aparece no "opla", e o pagamento regular seguinte a recolhe.
+
+    Não se compara aqui o saldo diário com o do cronograma de pagamentos. Nesta operação a identidade "saldo da
+    véspera é o que se paga mais o que fica" não vale nem sem antecipação alguma – a componente de correção do
+    pagamento não compõe com o saldo diário do mesmo jeito. É divergência anterior a este modo, e está fora do que
+    este teste cobre.
+    '''
+
+    kwa = _kwa_cri_ipa()
+
+    kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2026, 8, 3), value=decimal.Decimal('97224.53'), amortizes_interest=False)]
+
+    dbl = kwa['insertions'][0].date
+    drs = list(fincore.get_jm_daily_returns(**kwa))
+    pmt = list(fincore.build_jm(**kwa))
+
+    # O principal nominal cai pelo valor cheio, sem ajuste pelo fator de correção.
+    assert next(x for x in drs if x.date == dbl - datetime.timedelta(days=1)).op == kwa['principal']
+    assert next(x for x in drs if x.date == dbl).op == kwa['principal'] - kwa['insertions'][0].value
+
+    # E o valor bruto do pagamento extraordinário é o valor antecipado, nada mais.
+    assert next(x for x in pmt if x.date == dbl).raw == kwa['insertions'][0].value
+    assert next(x for x in pmt if x.date == dbl).pla == _0
+
+    # A correção do trecho fica em aberto no dia da antecipação, e o pagamento regular seguinte a recolhe.
+    assert next(x for x in drs if x.date == dbl).opla > _0
+    assert next(x for x in pmt if x.date > dbl).pla > _0
+
+    # A série não trunca, e o principal fecha.
+    assert drs[-1].date == pmt[-1].date - datetime.timedelta(days=1)
+    assert sum(x.amort for x in pmt) == kwa['principal']
+
+def test_wont_settle_debt_with_daily_returns_prepayment_that_does_not_amortize_interest():
+    '''
+    As travas do modo "somente principal" valem também na rotina de retornos diários.
+
+    Ela é ponto de entrada independente – o cron a chama sem passar pela "get_payments_table" – então as duas
+    recusas têm de existir aqui, com as mesmas mensagens.
+
+    A rotina é geradora, e por isso as exceções só saem ao consumi-la.
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('100000')
+    kwa['apy'] = decimal.Decimal(12)
+    kwa['zero_date'] = datetime.date(2024, 1, 5)
+    kwa['term'] = 12
+
+    # Quitar a dívida deixaria juro e correção sem pagamento posterior que os recolhesse.
+    kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2024, 3, 20), value=fincore.Amortization.Bare.MAX_VALUE, amortizes_interest=False)]
+
+    with pytest.raises(ValueError, match='an advancement that does not amortize interest cannot settle the entire debt'):
+        list(fincore.get_jm_daily_returns(**kwa))
+
+    # O teto é o principal em aberto, e não o saldo devedor, que é maior.
+    kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2024, 3, 20), value=decimal.Decimal('100000.01'), amortizes_interest=False)]
+
+    with pytest.raises(Exception, match='is greater than the outstanding principal of the loan'):
+        list(fincore.get_jm_daily_returns(**kwa))
+
+    # No limite, amortizar todo o principal é permitido: juro e correção seguem devidos, e a série continua até o fim
+    # do cronograma para recolhê-los.
+    #
+    kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2024, 3, 20), value=decimal.Decimal('100000'), amortizes_interest=False)]
+
+    drs = list(fincore.get_jm_daily_returns(**kwa))
+
+    assert drs[-1].date > kwa['insertions'][0].date
+    assert drs[-1].date == max(x.date for x in fincore.build_jm(**kwa)) - datetime.timedelta(days=1)
 # }}}
 
 # Cronograma de pagamentos mensal x retornos diários. {{{

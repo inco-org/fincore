@@ -2633,8 +2633,19 @@ def get_daily_returns(
         raise ValueError('the accumulated percentage of the amortizations does not reach 1.0')
 
     # Registradores.
+    #
+    #   • "interest.locked" is the interest that an advancement with a false "amortizes_interest" did not settle, and
+    #     "correction.locked" is the price level adjustment of the same stretch. They are the counterparts of the
+    #     homonymous registers of "get_payments_table" – see the comment on the registers over there.
+    #
+    #     Here the adjustment only holds what was locked. The role that "correction.deferred" and "correction.settled"
+    #     play in the other routine is structural in this one: what restarts the correction factor is
+    #     "FactorTriplet.normalize", and normalising is the operational definition of "the adjustment of the stretch
+    #     was settled".
+    #
     regs.principal = types.SimpleNamespace(amortization_ratio=types.SimpleNamespace(adjusted=_0, nominal=_0), amortized=types.SimpleNamespace(current=_0, total=_0))
-    regs.interest = types.SimpleNamespace(daily=_0, current=_0, accrued=_0, settled=types.SimpleNamespace(current=_0, total=_0), deferred=_0)
+    regs.interest = types.SimpleNamespace(daily=_0, current=_0, accrued=_0, settled=types.SimpleNamespace(current=_0, total=_0), deferred=_0, locked=_0)
+    regs.correction = types.SimpleNamespace(locked=_0)
 
     # Control, create generators.
     gens.interest_tracker_1 = track_interest_1()
@@ -2747,7 +2758,7 @@ def get_daily_returns(
         #
         while ref < amortizations[-1].date and ref == tup[1].date:
             if not buf and not is_bizz_day_cb(ref):
-                buf = _Q(calc_balance(facs.correction.value))
+                buf = _Q(calc_balance(facs.correction.value) + regs.correction.locked)
 
             if type(tup[1]) is Amortization:  # Case of a regular amortization.
                 adj = (_1 - regs.principal.amortization_ratio.adjusted) / (_1 - regs.principal.amortization_ratio.nominal)  # [FATOR-AJUSTE].
@@ -2758,18 +2769,29 @@ def get_daily_returns(
                 # Registers the nominal amortization percentage.
                 gens.principal_tracker_2.send(tup[1].amortization_ratio)
 
-                # Registers the interest value to be settled in the period.
+                # Registers the interest value to be settled in the period. The interest locked by an advancement
+                # comes out whole here, and for that reason it also leaves the base of the pro rata share – otherwise
+                # it would come out twice, once whole and once apportioned. The interest deferred by a grace period
+                # keeps coming out in the proportion of the principal that this payment amortises.
+                #
                 if tup[1].amortizes_interest:
                     pct = regs.principal.amortization_ratio.adjusted * adj
-                    pt2 = pct * (regs.interest.accrued - regs.interest.settled.total - regs.interest.current)
+                    pt2 = pct * (regs.interest.accrued - regs.interest.settled.total - regs.interest.current - regs.interest.locked)
 
-                    gens.interest_tracker_2.send(regs.interest.current + pt2)
+                    gens.interest_tracker_2.send(regs.interest.current + regs.interest.locked + pt2)
 
-                # The interest factors have to be renormalized on principal changes. See comments above.
+                    regs.interest.locked = _0
+
+                # The interest factors have to be renormalized on principal changes. See comments above. Normalising
+                # the correction settles the stretch locked by an advancement: the factor restarts from the nominal
+                # value, and what was withheld has just been charged on the payment of this event.
+                #
                 if tup[1].amortization_ratio > 0 or tup[1].amortizes_interest:
                     facs.spread = facs.spread.normalize()
                     facs.variable = facs.variable.normalize()
                     facs.correction = facs.correction.normalize()
+
+                    regs.correction.locked = _0
 
                 # The macro period only increments in the case of regular amortizations.
                 p, cnt = p + 1, 1
@@ -2786,18 +2808,47 @@ def get_daily_returns(
             #
             else:
                 ent = t.cast(Amortization.Bare, tup[1])  # O Mypy não consegue inferir o tipo da variável "ent" aqui.
-                val0 = min(ent.value, calc_balance(facs.correction.value))  # Ensures that the value of the advance does not exceed the remaining balance of the loan.
-                val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)  # Interest to be paid in the period.
-                val2 = val0 - val1  # Principal to be amortized.
 
-                # Check if the irregular payment value doesn't exceed the remaining balance.
-                if ent.value != Amortization.Bare.MAX_VALUE and ent.value > _Q(calc_balance(facs.correction.value)):
-                    raise Exception(f'the value of the amortization, {ent.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(facs.correction.value))}')
-
-                # Register the amortization percentage. Notice that the value sent here is adjusted with the monetary
-                # correction factor ("facs.correction.value").
+                # An advancement that does not amortize interest. The value goes entirely to principal, and both the
+                # interest and the price level adjustment of the stretch stay due for the next regular payment. The
+                # two guards are the ones of "get_payments_table", with the same messages: this routine is an
+                # independent entry point, and is called without passing through there.
                 #
-                gens.principal_tracker_1.send(val2 / facs.correction.value / principal)
+                # The locked adjustment is measured BEFORE the principal falls. The stretch that has just run ran over
+                # the balance of before, and that is why the value is locked, and not the factor – see the comment on
+                # the homologous branch of the other routine.
+                #
+                if not ent.amortizes_interest:
+                    res = principal - regs.principal.amortized.total  # Outstanding nominal principal.
+
+                    if ent.value == Amortization.Bare.MAX_VALUE:
+                        raise ValueError('an advancement that does not amortize interest cannot settle the entire debt')
+
+                    elif ent.value > _Q(res):
+                        raise Exception(f'the value of the amortization, {ent.value}, is greater than the outstanding principal of the loan, {_Q(res)}')
+
+                    regs.correction.locked += calc_balance(facs.correction.value) - calc_balance(_1)
+                    regs.interest.locked += regs.interest.current
+
+                    val1 = _0  # No interest at all.
+                    rat = ent.value / principal  # The value leaves the nominal principal, so it takes no factor.
+
+                else:
+                    val0 = min(ent.value, calc_balance(facs.correction.value))  # Ensures that the value of the advance does not exceed the remaining balance of the loan.
+                    val1 = min(val0, regs.interest.accrued - regs.interest.settled.total)  # Interest to be paid in the period.
+                    val2 = val0 - val1  # Principal to be amortized.
+
+                    # Check if the irregular payment value doesn't exceed the remaining balance.
+                    if ent.value != Amortization.Bare.MAX_VALUE and ent.value > _Q(calc_balance(facs.correction.value)):
+                        raise Exception(f'the value of the amortization, {ent.value}, is greater than the remaining balance of the loan, {_Q(calc_balance(facs.correction.value))}')
+
+                    # Notice that the value sent here is adjusted with the monetary correction factor
+                    # ("facs.correction.value").
+                    #
+                    rat = val2 / facs.correction.value / principal
+
+                # Register the amortization percentage.
+                gens.principal_tracker_1.send(rat)
 
                 # Register the interest value to be settled in the period. Unlike above, there is no need to adjust the
                 # interest value with "facs.correction.value". The interest is already calculated over a monetary
@@ -2819,9 +2870,13 @@ def get_daily_returns(
         # The interest have to be calculated after processing all amortizations of the current day, i.e., after phase
         # B.1 above. This way we get the correct balance value to apply the factors on.
         #
+        # The adjustment locked by an advancement earns interest, and for that reason it enters the base. It enters
+        # outside the multiplication by the factor: it is a value, already corrected, and is not corrected again. The
+        # locked interest is NOT added here – it already lives inside "interest.deferred".
+        #
         if ref < amortizations[-1].date:
-            v0 = (facs.spread.prev_value * facs.variable.prev_value - _1) * (get_principal_outstanding(facs.correction.prev_value) + regs.interest.deferred)
-            v1 = (facs.spread.value * facs.variable.value - _1) * (get_principal_outstanding(facs.correction.value) + regs.interest.deferred)
+            v0 = (facs.spread.prev_value * facs.variable.prev_value - _1) * (get_principal_outstanding(facs.correction.prev_value) + regs.interest.deferred + regs.correction.locked)
+            v1 = (facs.spread.value * facs.variable.value - _1) * (get_principal_outstanding(facs.correction.value) + regs.interest.deferred + regs.correction.locked)
 
             gens.interest_tracker_1.send(v1 - v0)
 
@@ -2846,7 +2901,7 @@ def get_daily_returns(
         else:
             buf = _0
 
-            dr.bal = _Q(calc_balance(facs.correction.value))  # Balance at the end of the day.
+            dr.bal = _Q(calc_balance(facs.correction.value) + regs.correction.locked)  # Balance at the end of the day.
 
         dr.sf = facs.spread.discrete
         dr.vf = facs.variable.discrete
@@ -2863,13 +2918,17 @@ def get_daily_returns(
 
             dr.cf = facs.correction.discrete
 
-            dr.opla = _Q(calc_balance(facs.correction.value) - calc_balance())
+            dr.opla = _Q(calc_balance(facs.correction.value) - calc_balance() + regs.correction.locked)
 
         _LOG.debug(f'T={p}, n={cnt}, f_s={facs.spread} f_v={facs.variable} f_c={facs.correction}')
         _LOG.debug(f'T={p}, n={cnt}, regs={regs}')
 
-        # If the outstanding principal is zero, and the current day is a business day, the schedule is over.
-        if _Q(get_principal_outstanding()) != _0 or not is_bizz_day_cb(ref):
+        # If the outstanding principal is zero, and the current day is a business day, the schedule is over. An
+        # advancement that does not amortize interest may zero the principal and still leave interest and adjustment
+        # due – while anything remains locked the series goes on, or the schedule would be cut short of the payment
+        # that collects what the borrower still owes.
+        #
+        if _Q(get_principal_outstanding()) != _0 or _Q(regs.interest.locked) != _0 or _Q(regs.correction.locked) != _0 or not is_bizz_day_cb(ref):
             yield dr
 
             cnt += 1
