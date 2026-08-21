@@ -6802,9 +6802,8 @@ def test_will_match_payments_table_and_daily_returns_5():
     centavo. Sem a trava no motor diário, a antecipação de 20/07 liquidaria os juros do período, o principal em
     aberto divergiria dali em diante, e a comparação quebraria de 07/08 até a última parcela.
 
-    Os meses são alinhados de propósito: com "first_dct_rule" fixa e aniversário, o motor diário aplica a regra do
-    primeiro DCT a todos os períodos, e o rendimento total diverge do cronograma mensal mesmo sem antecipação
-    nenhuma. É um desvio pré-existente, que não pertence a este teste.
+    Os meses são alinhados de propósito, para que este teste meça só a trava. O caso de "first_dct_rule" fixa com
+    aniversário tem teste próprio, o "test_will_apply_first_dct_rule_to_the_first_period_only_on_daily_returns".
     '''
 
     kwa = {}
@@ -6864,6 +6863,122 @@ def test_will_keep_daily_returns_running_while_interest_stays_locked():
     # E a série diária vai até a véspera desse pagamento, em vez de parar na antecipação.
     assert drs[-1].date > dbl
     assert drs[-1].date == sched[-1].date - datetime.timedelta(days=1)
+
+def test_will_apply_first_dct_rule_to_the_first_period_only_on_daily_returns():
+    '''
+    Uma "first_dct_rule" fixa alcança só o primeiro período, também no motor diário.
+
+    O cronograma mensal sempre fez assim – ver a guarda "num > 1" da fase FZA. O motor diário aplicava a regra a
+    todos os períodos: um mês de DCT 30 rendia na base de 31, e cada mês cheio acumulava só 360/372 do juro devido.
+    A cobrança não errava, porque vem do cronograma mensal; o que desviava era a posição diária, por volta de 3,2%
+    do juro do mês na véspera de cada pagamento. As vinte operações CRI IPCA com regra 31 em produção caem neste
+    caso.
+
+    Duas verificações. No prefixado com aniversário, o rendimento total da série diária tem que fechar com o
+    pagamento final do cronograma. E no IPCA da operação "CRI IPA Club Residencial", cujo primeiro período tem DCT
+    31 também pelo cálculo automático, a série com regra 31 tem que coincidir dia a dia com a série em AUTO – antes
+    do conserto elas divergiam a partir do segundo período.
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('1000000')
+    kwa['apy'] = decimal.Decimal('12')
+    kwa['zero_date'] = datetime.date(2026, 5, 29)
+    kwa['term'] = 6
+    kwa['anniversary_date'] = datetime.date(2026, 7, 7)
+    kwa['first_dct_rule'] = '31'
+
+    sched = list(fincore.build_jm(**kwa))
+    drs = list(fincore.get_jm_daily_returns(**kwa))
+
+    assert sched[-1].raw == drs[-1].bal
+
+    kwb = _kwa_cri_ipa()
+    kwc = _kwa_cri_ipa()
+
+    del kwc['first_dct_rule']  # Volta ao AUTO, que calcula DCT 31 para o primeiro período desta operação.
+
+    for x, y in zip(fincore.get_jm_daily_returns(**kwb), fincore.get_jm_daily_returns(**kwc), strict=True):
+        assert (x.date, x.value, x.bal) == (y.date, y.value, y.bal)
+
+def test_will_match_payments_table_and_daily_returns_6():
+    '''
+    Operação "Bossa Nova CCB 7", Bullet - 120 meses - IPCA.
+
+    Um Bullet tem só duas amortizações, e é o que aciona o ramo "len(lst) == 2" do "normalize_ipca_indexes": a
+    correção de cada mês é diluída nos dias do próprio mês. No vencimento a diluição recompõe os fatores mensais
+    inteiros, e o saldo final da série diária fecha ao centavo com o pagamento único do cronograma – com e sem
+    spread. No meio do caminho os dois motores divergem de propósito: o cronograma projeta a correção do período
+    inteiro pró-rata, a série diária só acumula os índices já decorridos.
+
+    Paga os dois FIXMEs históricos do "normalize_ipca_indexes".
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('176000')
+    kwa['apy'] = _0
+    kwa['zero_date'] = datetime.date(2022, 10, 24)
+    kwa['term'] = 120
+    kwa['vir'] = fincore.VariableIndex('IPCA')
+
+    pmt = next(fincore.build_bullet(**kwa))
+    drt = next(_tail(1, fincore.get_bullet_daily_returns(**kwa)))
+
+    assert pmt.raw == drt.bal == decimal.Decimal('193510.84')  # Conferido em "test_will_create_bullet_ipca_1a".
+
+    # Com spread, para exercitar juro e correção juntos.
+    kwa['apy'] = decimal.Decimal('8')
+
+    pmt = next(fincore.build_bullet(**kwa))
+    drt = next(_tail(1, fincore.get_bullet_daily_returns(**kwa)))
+
+    assert pmt.raw == drt.bal
+
+def test_will_match_payments_table_and_daily_returns_7():
+    '''
+    Antecipação parcial que alcança o juro diferido por uma carência, sobre a estrutura da operação "Mirante da
+    Mata - Parcelas Amortizadas - 36 meses": seis meses de carência total a partir de 26/02/2024, e trinta parcelas
+    amortizantes dali em diante. Simulada a juro prefixado – a operação real é CDI + 6,5%, mas o ponto do FIXME
+    histórico é o diferimento, não o indexador.
+
+    Em 10/11/2024 os juros do período em curso são 12.723,63. A antecipação de 100.000 os liquida, avança sobre o
+    juro diferido pela carência, e não toca o principal – a ordem de imputação põe os juros na frente. E os dois
+    motores atravessam o evento juntos: em toda data de pagamento o saldo diário do fim do dia, menos o rendimento
+    do próprio dia, é o saldo do cronograma, com a tolerância de um centavo que a docstring da rotina documenta.
+    '''
+
+    kwa = {}
+    lst = [fincore.Amortization(date=datetime.date(2024, 2, 26), amortizes_interest=False)]
+
+    for i in range(1, 37):
+        pct = _0 if i < 7 else decimal.Decimal('0.03333333333333') if i < 36 else decimal.Decimal('0.03333333333344')
+
+        lst.append(fincore.Amortization(date=datetime.date(2024, 2, 28) + _MONTH * i, amortization_ratio=pct, amortizes_interest=i >= 7))
+
+    lst.append(fincore.Amortization.Bare(date=datetime.date(2024, 11, 10), value=decimal.Decimal('100000')))
+
+    kwa['principal'] = decimal.Decimal('6000000')
+    kwa['apy'] = decimal.Decimal('6.5')
+    kwa['amortizations'] = sorted(lst, key=lambda x: x.date)
+    kwa['capitalisation'] = '30/360'
+
+    sched = list(fincore.get_payments_table(**kwa))
+    drs = {x.date: x for x in fincore.get_daily_returns(**kwa)}
+    adv = next(x for x in sched if x.date == datetime.date(2024, 11, 10))
+
+    # A antecipação liquida os juros do período e avança sobre o diferido, sem tocar o principal.
+    assert adv.gain == decimal.Decimal('12723.63')
+    assert adv.amort == _0
+    assert adv.raw == decimal.Decimal('100000.00')
+
+    # Os motores atravessam juntos o evento, a carência e as parcelas.
+    for pmt in sched[:-1]:
+        assert abs(drs[pmt.date].bal - drs[pmt.date].value - pmt.bal) <= _CENTI
+
+    assert sched[-1].raw == next(_tail(1, iter(drs.values()))).bal
+    assert sum(x.amort for x in sched) == kwa['principal']
 # }}}
 
 # vi:fdm=marker:
