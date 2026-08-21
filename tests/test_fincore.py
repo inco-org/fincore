@@ -6950,7 +6950,7 @@ def test_will_match_payments_table_and_daily_returns_7():
     '''
 
     kwa = {}
-    lst = [fincore.Amortization(date=datetime.date(2024, 2, 26), amortizes_interest=False)]
+    lst: t.List[fincore.Amortization | fincore.Amortization.Bare] = [fincore.Amortization(date=datetime.date(2024, 2, 26), amortizes_interest=False)]
 
     for i in range(1, 37):
         pct = _0 if i < 7 else decimal.Decimal('0.03333333333333') if i < 36 else decimal.Decimal('0.03333333333344')
