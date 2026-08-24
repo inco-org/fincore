@@ -32,7 +32,7 @@ import typeguard
 # Inco.
 import fincore
 
-# Data e hora em que essa instrução global foi executada.
+# Date and time this global statement was executed.
 _NOW = datetime.datetime.now(datetime.timezone.utc)
 
 # A month.
@@ -436,9 +436,9 @@ def _get_custom_daily_returns(
     yield from fincore.get_daily_returns(**kwa)
 # }}}
 
-# 🚩 Parametrizações inválidas. {{{
+# 🚩 Invalid parametrizations. {{{
 def test_wont_create_sched_5():
-    '''Fincore deve falhar ao criar um empréstimo com principal maior que zero e menor que R$ 0,01.'''
+    '''Fincore should fail to create a loan with a principal greater than zero and less than R$ 0.01.'''
 
     ent0 = fincore.Amortization(date=datetime.date(2018, 1, 1))
     ent1 = fincore.Amortization(date=datetime.date(2018, 5, 1), amortizes_interest=True)
@@ -447,13 +447,13 @@ def test_wont_create_sched_5():
         next(fincore.get_payments_table(_CENTI / 2, _0, [ent0, ent1]))
 
 def test_wont_create_sched_6():
-    '''Fincore deve falhar ao criar um empréstimo sem um cronograma de amortizações.'''
+    '''Fincore should fail to create a loan without an amortization schedule.'''
 
     with pytest.raises(ValueError, match='at least two amortizations are required: the start of the schedule, and its end'):
         next(fincore.get_payments_table(_1, _0, []))
 
 def test_wont_create_sched_7():
-    '''Fincore deve falhar ao criar um empréstimo sem indexador e com base 252.'''
+    '''Fincore should fail to create a loan without an index and with the 252 capitalisation basis.'''
 
     ent0 = fincore.Amortization(date=datetime.date(2018, 1, 1))
     ent1 = fincore.Amortization(date=datetime.date(2018, 5, 1), amortizes_interest=True)
@@ -462,7 +462,7 @@ def test_wont_create_sched_7():
         next(fincore.get_payments_table(_1, _0, [ent0, ent1], capitalisation='252'))
 
 def test_wont_create_sched_8():
-    '''Fincore deve falhar ao criar um empréstimo com indexador CDI e base diferente de 252.'''
+    '''Fincore should fail to create a loan with a CDI index and a capitalisation basis other than 252.'''
 
     ent0 = fincore.Amortization(date=datetime.date(2018, 1, 1))
     ent1 = fincore.Amortization(date=datetime.date(2018, 5, 1), amortizes_interest=True)
@@ -471,7 +471,7 @@ def test_wont_create_sched_8():
         next(fincore.get_payments_table(_1, _0, [ent0, ent1], vir=fincore.VariableIndex('CDI'), capitalisation='360'))
 
 def test_wont_create_sched_9():
-    '''Fincore deve falhar ao criar um empréstimo sem indexador IPCA/IGPM e com PLA na amortização.'''
+    '''Fincore should fail to create a loan without an IPCA/IGPM index but with a PLA on the amortization.'''
 
     ent0 = fincore.Amortization(date=datetime.date(2018, 1, 1))
     ent1 = fincore.Amortization(date=datetime.date(2018, 5, 1), amortizes_interest=True)
@@ -482,7 +482,7 @@ def test_wont_create_sched_9():
         next(fincore.get_payments_table(_1, _0, [ent0, ent1], vir=fincore.VariableIndex('CDI'), capitalisation='252'))
 
 def test_wont_create_sched_10():
-    '''Fincore deve falhar ao criar um empréstimo cujo percentual de amortização acumulado ultrapassa 1.0.'''
+    '''Fincore should fail to create a loan whose accumulated amortization percentage exceeds 1.0.'''
 
     ent0 = fincore.Amortization(date=datetime.date(2018, 1, 1))
     ent1 = fincore.Amortization(date=datetime.date(2018, 5, 1), amortization_ratio=_1 + _1, amortizes_interest=True)
@@ -491,7 +491,7 @@ def test_wont_create_sched_10():
         next(fincore.get_payments_table(_1, _0, [ent0, ent1]))
 
 def test_wont_create_sched_11():
-    '''Fincore deve falhar ao criar um empréstimo cujo percentual de amortização acumulado seja menor que 1.0.'''
+    '''Fincore should fail to create a loan whose accumulated amortization percentage is less than 1.0.'''
 
     ent0 = fincore.Amortization(date=datetime.date(2018, 1, 1))
     ent1 = fincore.Amortization(date=datetime.date(2018, 5, 1), amortizes_interest=True)
@@ -500,7 +500,7 @@ def test_wont_create_sched_11():
         next(fincore.get_payments_table(_1, _0, [ent0, ent1]))
 
 def test_wont_create_sched_12():
-    '''Fincore deve falhar ao criar um empréstimo com antecipação maior do que o saldo devedor.'''
+    '''Fincore should fail to create a loan with a prepayment greater than the outstanding balance.'''
 
     kwa = {}
 
@@ -516,7 +516,7 @@ def test_wont_create_sched_12():
         next(fincore.get_payments_table(**kwa))
 
 def test_wont_create_sched_13():
-    '''Fincore deve falhar ao criar um empréstimo com datas de amortização duplicadas.'''
+    '''Fincore should fail to create a loan with duplicate amortization dates.'''
 
     tab = []
 
@@ -535,7 +535,7 @@ def test_wont_create_sched_13():
 # 🎈 Bullets. {{{
 def test_will_create_bullet_pre360_1():
     '''
-    Operação pré-fixada modalidade Bullet.
+    Fixed-rate operation, Bullet mode.
 
     Ref File: https://docs.google.com/spreadsheets/d/1ijJLZYP8BnuENPrTLFlfdqbiSx8Gs7wtO7T85cgkLgM
     Tab.....: Hipotética 01
@@ -562,7 +562,7 @@ def test_will_create_bullet_pre360_1():
 
 def test_will_create_bullet_pre360_2():
     '''
-    Operação pré-fixada modalidade Bullet com aniversário.
+    Fixed-rate operation, Bullet mode with anniversary.
 
     Ref File: https://docs.google.com/spreadsheets/d/1ijJLZYP8BnuENPrTLFlfdqbiSx8Gs7wtO7T85cgkLgM
     Tab.....: Hipotética 02 - Aniversário
@@ -655,7 +655,7 @@ def test_will_create_bullet_pre360_4():
 
 def test_will_create_bullet_pre365_1(caplog):
     '''
-    Operação pré-fixada modalidade Bullet legada (com SPEC 365).
+    Legacy fixed-rate operation, Bullet mode (with SPEC 365).
 
     Ref File: https://docs.google.com/spreadsheets/d/1ijJLZYP8BnuENPrTLFlfdqbiSx8Gs7wtO7T85cgkLgM
     Tab.....: Felicidade Residencial Clube
@@ -687,7 +687,7 @@ def test_will_create_bullet_pre365_1(caplog):
 
 def test_will_create_bullet_pre365_2(caplog):
     '''
-    Operação pré-fixada modalidade Bullet legada (com SPEC 365).
+    Legacy fixed-rate operation, Bullet mode (with SPEC 365).
 
     Ref File: https://docs.google.com/spreadsheets/d/1ijJLZYP8BnuENPrTLFlfdqbiSx8Gs7wtO7T85cgkLgM
     Tab.....: Villa VIC Pisa
@@ -719,9 +719,9 @@ def test_will_create_bullet_pre365_2(caplog):
 
 def test_will_create_bullet_cdi_1():
     '''
-    Operação pós-fixada CDI, modalidade Bullet.
+    Post-fixed CDI operation, Bullet mode.
 
-    Carteira Pride - Tranche X - Bullet - 3 meses
+    Carteira Pride - Tranche X - Bullet - 3 months
 
     Ref File: https://docs.google.com/spreadsheets/d/1z0PhJcLK-noG-rH-t24NcdPQJZJ1-B0P0b0o4muv3rY
     Tab.....: 14
@@ -749,9 +749,9 @@ def test_will_create_bullet_cdi_1():
 
 def test_will_create_bullet_cdi_2():
     '''
-    Operação pós-fixada CDI, modalidade Bullet.
+    Post-fixed CDI operation, Bullet mode.
 
-    Carteira Pride - Tranche XIV - 27 meses - Pride
+    Carteira Pride - Tranche XIV - 27 months - Pride
 
     Ref File: https://docs.google.com/spreadsheets/d/1z0PhJcLK-noG-rH-t24NcdPQJZJ1-B0P0b0o4muv3rY
     Tab.....: 31
@@ -779,19 +779,19 @@ def test_will_create_bullet_cdi_2():
 
 def test_will_create_bullet_cdi_3():
     '''
-    Operação pós-fixada CDI, modalidade Bullet.
+    Post-fixed CDI operation, Bullet mode.
 
-    Ágata - Bullet, ID "HpVcJYvhUSrRDLqQVWKaN". A operação teve um pagamento parcial no dia do seu vencimento,
-    28/06/2023, no valor bruto de R$ 650.323,76. O valor remanescente do empréstimo foi pago um mês depois, em atraso,
-    no dia 28/07/2023.
+    Ágata - Bullet, ID "HpVcJYvhUSrRDLqQVWKaN". The operation had a partial payment on its maturity date,
+    28/06/2023, in the gross amount of R$ 650.323,76. The remaining loan amount was paid one month later, in arrears,
+    on 28/07/2023.
 
-    Essa operação teve mais de um erro no segundo pagamento. O primeiro problema foi que apenas os juros foram pagos, a
-    amortização do principal não. Isso foi corrigido pela migração 32, revisão “735ea22b58a”. O segundo problema foi
-    que o sistema não cobrou a multa devida. Mais uma migração teve que ser elaborada. Na data de escrita desse caso
-    de teste, ainda não estava pronta.
+    This operation had more than one error in its second payment. The first problem was that only the interest was paid,
+    not the principal amortization. That was fixed by migration 32, revision “735ea22b58a”. The second problem was
+    that the system did not charge the fine due. Yet another migration had to be written. As of the writing of this test
+    case, it was not ready yet.
 
-    Dada a complexidade da operação, que além de pós-fixada entrou em default e teve dois pagamentos parciais, o
-    primeiro na data prevista, acabei elaborando duas planilhas para validá-la, e suportar os casos de teste.
+    Given the complexity of the operation, which besides being post-fixed went into default and had two partial payments,
+    the first on the scheduled date, I ended up building two spreadsheets to validate it and support the test cases.
 
     Ref File: https://docs.google.com/spreadsheets/d/1PpLL9ETtng9mfCWQbSWNnszoCfDd1MFAuKIrcHehwFE
     Tab.....: Ágata
@@ -799,13 +799,13 @@ def test_will_create_bullet_cdi_3():
     Ref File: https://docs.google.com/spreadsheets/d/1WEqqUWzJ5Pq_E1xNNjGDuUmwElDTN7MjsOGmjqLZZMU
     Tab.....: BULLET CDI - Ágata
 
-    Sei que cada caso de teste deve ter um propósito específico, mas esse tem dois.
+    I know each test case should have a specific purpose, but this one has two.
 
-      1. Validar que o pagamento parcial no dia final do cronograma foi calculado corretamente, e validar os valores
-      remanescentes do segundo pagamento.
+      1. Validate that the partial payment on the final day of the schedule was computed correctly, and validate the
+      remaining amounts of the second payment.
 
-      2. Validar que o pagamento em atraso, no dia 28/07/2023, tem todos os valores corretos. Ou seja, essa rotina é
-      também um teste de atraso.
+      2. Validate that the late payment, on 28/07/2023, has all the correct amounts. In other words, this routine is
+      also an arrears test.
     '''
 
     kwa = {}
@@ -817,15 +817,15 @@ def test_will_create_bullet_cdi_3():
     kwa['term'] = 18
     kwa['vir'] = fincore.VariableIndex(code='CDI')
 
-    # Observe pela documentação desse caso de teste que o primeiro pagamento dessa operação foi parcial.
-    # No Fincore, modela-se com uma inserção (“Amortization.Bare”). Inserções normalmente são usadas para antecipações
-    # nos sistemas da INCO. Então, para os atentos, isso é contra-intuitivo. Um pagamento parcial no dia do vencimento
-    # da operação indica que o restante do montante vai atrasar. Difícil enxergar essa situação como uma antecipação.
+    # Note from this test case's documentation that the first payment of this operation was partial.
+    # In Fincore, it is modeled with an insertion (“Amortization.Bare”). Insertions are normally used for prepayments
+    # in INCO's systems. So, for the attentive, this is counter-intuitive. A partial payment on the operation's maturity
+    # date indicates that the rest of the amount will be paid late. It is hard to see this situation as a prepayment.
     #
-    # Mas para o Fincore isso não faz diferença. A inserção é apenas uma entrada anormal em um cronograma de pagamento,
-    # pode ocorrer no mesmo dia de um pagamento ordinário, e tem prioridade sobre ele. Ou seja, semanticamente serve
-    # para representar uma antecipação total, parcial, ou mesmo um pagamento parcial, contanto que seja na data final
-    # do cronograma previsto. Pagamentos parciais em atraso não podem ser modelados via inserções.
+    # But for Fincore this makes no difference. The insertion is just an abnormal entry in a payment schedule; it can
+    # occur on the same day as an ordinary payment, and takes priority over it. In other words, semantically it serves
+    # to represent a total or partial prepayment, or even a partial payment, as long as it falls on the final date of
+    # the expected schedule. Late partial payments cannot be modeled via insertions.
     #
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2023, 6, 28), value=decimal.Decimal('650323.76'))]
 
@@ -890,7 +890,7 @@ def test_will_create_bullet_cdi_3():
 
 def test_will_create_bullet_cdi_4():
     '''
-    Operação pós-fixada CDI, modalidade Bullet com aniversário.
+    Post-fixed CDI operation, Bullet mode with anniversary.
 
     Ref File: https://docs.google.com/spreadsheets/d/1PpLL9ETtng9mfCWQbSWNnszoCfDd1MFAuKIrcHehwFE
     Tab.....: Hipotética CDI c/ Aniv.
@@ -919,7 +919,7 @@ def test_will_create_bullet_cdi_4():
 
 def test_will_create_bullet_cdi_5():
     '''
-    Operação pós-fixada CDI, modalidade Bullet com antecipação total.
+    Post-fixed CDI operation, Bullet mode with total prepayment.
 
     Ref File: https://docs.google.com/spreadsheets/d/1PpLL9ETtng9mfCWQbSWNnszoCfDd1MFAuKIrcHehwFE
     Tab.....: Hipotética CDI c/ AT.
@@ -948,7 +948,7 @@ def test_will_create_bullet_cdi_5():
 
 def test_will_create_bullet_ipca_1a():
     '''
-    Operação pós-fixada IPCA, modalidade Bullet.
+    Post-fixed IPCA operation, Bullet mode.
 
     Bossa Nova CCB 7
 
@@ -981,7 +981,7 @@ def test_will_create_bullet_ipca_1a():
 
 def test_will_create_bullet_ipca_1b():
     '''
-    Operação pós-fixada IPCA, modalidade Bullet (com data de cálculo).
+    Post-fixed IPCA operation, Bullet mode (with calculation date).
 
     Bossa Nova CCB 7
 
@@ -1015,7 +1015,7 @@ def test_will_create_bullet_ipca_1b():
 
 def test_will_create_bullet_ipca_1c():
     '''
-    Operação pós-fixada IPCA, modalidade Bullet c/ antecipação parcial.
+    Post-fixed IPCA operation, Bullet mode w/ partial prepayment.
 
     Ref File: https://docs.google.com/spreadsheets/d/1PpLL9ETtng9mfCWQbSWNnszoCfDd1MFAuKIrcHehwFE
     Tab.....: Hipotética c/ AP
@@ -1054,16 +1054,16 @@ def test_will_create_bullet_ipca_1c():
     assert i == 2
 # }}}
 
-# 🎭 Bullets vandalizadas. {{{
+# 🎭 Vandalized Bullets. {{{
 #
-# Operações modalidade Bullet, bizarras.
+# Bullet mode operations, bizarre ones.
 #
 @pytest.mark.parametrize('term', [1, 3, 6, 12, 60])
 def test_will_create_bullet_zanzy_1(term):
     '''
-    Cria cronogramas para operação Bullet com principal zero, taxa zero.
+    Creates schedules for a Bullet operation with zero principal, zero rate.
 
-    Cinco prazos são parametrizados.
+    Five terms are parametrized.
     '''
 
     assert len(list(_get_bullet_payments(_0, _0, datetime.date.min, term))) == 0
@@ -1162,11 +1162,11 @@ def test_will_warn_about_bullet_365(caplog):
     assert caplog.record_tuples == [('fincore', logging.WARNING, 'capitalising 365 days per year exists solely for legacy Bullet support – prefer 360 days')]
 # }}}
 
-# US Juros Mensais. {{{
+# US American Amortization. {{{
 #
 def test_will_create_american_pre_1():
     '''
-    Operação pré-fixada modalidade Juros Mensais.
+    Fixed-rate operation, American Amortization mode.
 
     Ref File: https://docs.google.com/spreadsheets/d/1qNIfAuvELTXepy6i8yyeNJVwUSLxiFRSDtWDzAk8T2k
     Tab.....: Felicidade Residencial Clube
@@ -1344,7 +1344,7 @@ def test_will_create_american_pre_4():
             assert x.net == decimal.Decimal('23841.03')
             assert x.bal == decimal.Decimal('1861200')
 
-        # Antecipação total.
+        # Full prepayment.
         else:
             assert x.amort == decimal.Decimal('1861200')
             assert x.gain == decimal.Decimal('28832.55')
@@ -1389,7 +1389,7 @@ def test_will_create_american_pre_5():
             assert x.net == decimal.Decimal('23841.03')
             assert x.bal == decimal.Decimal('1861200')
 
-        # Antecipação total.
+        # Full prepayment.
         else:
             assert x.date == kwa['insertions'][0].date
             assert x.amort == decimal.Decimal('1861200')
@@ -1403,7 +1403,7 @@ def test_will_create_american_pre_5():
 
 def test_will_create_american_pre_6():
     '''
-    Nesse teste a data de antecipação coincide com a data de pagamento da prestação 13.
+    In this test the prepayment date coincides with the payment date of installment 13.
 
     Ref File: https://docs.google.com/spreadsheets/d/1qNIfAuvELTXepy6i8yyeNJVwUSLxiFRSDtWDzAk8T2k
     Tab.....: Hipotética 04 - Antecipação Total
@@ -1444,7 +1444,7 @@ def test_will_create_american_pre_6():
             assert x.net == decimal.Decimal('24586.06')
             assert x.bal == decimal.Decimal('1861200')
 
-        # Antecipação total.
+        # Full prepayment.
         else:
             assert x.date == kwa['insertions'][0].date
             assert x.amort == decimal.Decimal('1861200')
@@ -1492,7 +1492,7 @@ def test_will_create_american_pre_7():
             assert x.net == decimal.Decimal('23841.03')
             assert x.bal == decimal.Decimal('1861200')
 
-        # Antecipação parcial 1.
+        # Partial prepayment 1.
         elif i == 7:
             assert x.date == kwa['insertions'][0].date
             assert x.amort == decimal.Decimal('465300')
@@ -1526,7 +1526,7 @@ def test_will_create_american_pre_7():
             assert x.net == decimal.Decimal('18439.55')
             assert x.bal == decimal.Decimal('1395900')
 
-        # Antecipação parcial 2.
+        # Partial prepayment 2.
         elif i == 15:
             assert x.date == kwa['insertions'][1].date
             assert x.amort == decimal.Decimal('465300')
@@ -1600,7 +1600,7 @@ def test_will_create_american_pre_8():
             assert x.net == decimal.Decimal('23841.03')
             assert x.bal == decimal.Decimal('1861200')
 
-        # Antecipação parcial 1.
+        # Partial prepayment 1.
         elif i == 7:
             assert x.date == kwa['insertions'][0].date
             assert x.amort == decimal.Decimal('465300')
@@ -1634,7 +1634,7 @@ def test_will_create_american_pre_8():
             assert x.net == decimal.Decimal('18439.55')
             assert x.bal == decimal.Decimal('1395900')
 
-        # Antecipação parcial 2.
+        # Partial prepayment 2.
         elif i == 15:
             assert x.date == kwa['insertions'][1].date
             assert x.amort == decimal.Decimal('465300')
@@ -1660,7 +1660,7 @@ def test_will_create_american_pre_8():
             assert x.net == decimal.Decimal('12293.03')
             assert x.bal == decimal.Decimal('930600')
 
-        # Antecipação total.
+        # Full prepayment.
         else:
             assert x.date == kwa['insertions'][2].date
             assert x.amort == decimal.Decimal('930600')
@@ -1673,7 +1673,7 @@ def test_will_create_american_pre_8():
     assert i == kwa['term']
 
 def test_will_create_american_pre_9():
-    '''Valida uma antecipação antes do primeiro pagamento regular.'''
+    '''Validates a prepayment before the first regular payment.'''
 
     kwa = {}
 
@@ -1725,7 +1725,7 @@ def test_will_create_american_pre_9():
     assert i == 4
 
 def test_will_create_american_pre_10():
-    '''Valida uma antecipação antes do aniversário do empréstimo.'''
+    '''Validates a prepayment before the loan's anniversary.'''
 
     kwa = {}
 
@@ -1778,7 +1778,7 @@ def test_will_create_american_pre_10():
     assert i == 4
 
 def test_will_create_american_pre_11():
-    '''Valida duas antecipações antes do aniversário do empréstimo.'''
+    '''Validates two prepayments before the loan's anniversary.'''
 
     kwa = {}
 
@@ -1844,7 +1844,7 @@ def test_will_create_american_pre_11():
 
 def test_will_create_american_pre_12():
     '''
-    Valida duas antecipações depois do aniversário e antes do segundo pagamento do empréstimo.
+    Validates two prepayments after the anniversary and before the loan's second payment.
 
     Ref File: https://docs.google.com/spreadsheets/d/1qNIfAuvELTXepy6i8yyeNJVwUSLxiFRSDtWDzAk8T2k
     Tab.....: Hipotética 07 - Duas Antecipações Parciais
@@ -1927,7 +1927,7 @@ def test_will_create_american_pos_1():
     kwa['vir'] = fincore.VariableIndex('CDI')
     kwa['term'] = 12
 
-    # Juros, I.R. e líquido.
+    # Interest, income tax, and net.
     tab[1] = '8486.55', '1909.47', '6577.08'
     tab[2] = '6764.7', '1522.06', '5242.64'
     tab[3] = '9066.63', '2039.99', '7026.64'
@@ -1978,7 +1978,7 @@ def test_will_create_american_pos_2():
     kwa['vir'] = fincore.VariableIndex('CDI')
     kwa['term'] = 12
 
-    # Juros, I.R. e líquido.
+    # Interest, income tax, and net.
     tab[1] = '9996.71', '2249.26', '7747.45',
     tab[2] = '8033.05', '1807.44', '6225.61',
     tab[3] = '8679.28', '1952.84', '6726.44',
@@ -2029,14 +2029,14 @@ def test_will_create_american_pos_3():
     kwa['term'] = 12
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 9, 27), value=decimal.Decimal('100000.00'))]
 
-    # Juros, bruto, I.R., líquido e saldo devedor.
+    # Interest, gross, income tax, net, and outstanding balance.
     tab[1] = '8486.55', '8486.55', '1909.47', '6577.08', '555500.00',
     tab[2] = '6764.70', '6764.70', '1522.06', '5242.64', '555500.00',
     tab[3] = '9066.63', '9066.63', '2039.99', '7026.64', '555500.00',
     tab[4] = '8430.91', '8430.91', '1896.95', '6533.96', '555500.00',
     tab[5] = '8510.07', '8510.07', '1914.77', '6595.30', '555500.00',
     tab[6] = '9104.85', '9104.85', '1820.97', '7283.88', '555500.00',
-    tab[7] = '4947.93', '100000.00', '989.59', '99010.41', '460447.93',  # Antecipação parcial.
+    tab[7] = '4947.93', '100000.00', '989.59', '99010.41', '460447.93',  # Partial prepayment.
     tab[8] = '3072.55', '3072.55', '614.51', '2458.04', '460447.93',
     tab[9] = '6855.75', '6855.75', '1371.15', '5484.60', '460447.93',
     tab[10] = '7201.20', '7201.20', '1440.24', '5760.96', '460447.93',
@@ -2077,14 +2077,14 @@ def test_will_create_american_pos_4():
     kwa['term'] = 12
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 9, 27), value=decimal.Decimal('560447.93'))]
 
-    # Juros, bruto, I.R., líquido e saldo devedor.
+    # Interest, gross, income tax, net, and outstanding balance.
     tab[1] = '8486.55', '8486.55', '1909.47', '6577.08', '555500.00',
     tab[2] = '6764.70', '6764.70', '1522.06', '5242.64', '555500.00',
     tab[3] = '9066.63', '9066.63', '2039.99', '7026.64', '555500.00',
     tab[4] = '8430.91', '8430.91', '1896.95', '6533.96', '555500.00',
     tab[5] = '8510.07', '8510.07', '1914.77', '6595.30', '555500.00',
     tab[6] = '9104.85', '9104.85', '1820.97', '7283.88', '555500.00',
-    tab[7] = '4947.93', '560447.93', '989.59', '559458.34', '0.00',  # Antecipação total.
+    tab[7] = '4947.93', '560447.93', '989.59', '559458.34', '0.00',  # Full prepayment.
 
     for i, x in enumerate(_get_american_payments(**kwa), 1):
         assert x.no == i
@@ -2099,29 +2099,29 @@ def test_will_create_american_pos_4():
 
 def test_will_create_american_ipca_1():
     '''
-    Operação "CRI - Max Tulum 2 (Isento de IR)", Juros mensais - 38 meses - IPCA, ID "SFITBR__Qo2dDrU5GfAGj".
+    Operation "CRI - Max Tulum 2 (Isento de IR)", American Amortization - 38 months - IPCA, ID "SFITBR__Qo2dDrU5GfAGj".
 
-    Primeiro cronograma de Juros Mensais com IPCA conferido contra planilha. Até aqui, o IPCA mensal só tinha
-    referência externa na rotina de retornos diários, em "test_will_create_loan_daily_returns_jm_1".
+    First American Amortization schedule with IPCA checked against a spreadsheet. Until now, the monthly IPCA only had
+    an external reference in the daily returns routine, in "test_will_create_loan_daily_returns_jm_1".
 
-    A referência é a curva PU diária da TRV, que constrói o fator de correção do mesmo modo que o motor: um único
-    índice mensal por período, elevado a "DCP/DCT". É a coluna "N" da aba, "(K/L)^(H/I)", com o índice buscado pelo
-    número do evento, "F-2". Não confundir com a planilha da operação Yees, que reescreveu essa coluna como um
-    acúmulo diário indexado pelo mês-calendário, e por isso não fecha com o motor.
+    The reference is TRV's daily PU curve, which builds the correction factor the same way the engine does: a single
+    monthly index per period, raised to "DCP/DCT". It is column "N" of the tab, "(K/L)^(H/I)", with the index looked up by
+    the event number, "F-2". Not to be confused with the Yees operation's spreadsheet, which rewrote that column as a
+    daily accrual indexed by calendar month, and therefore does not match the engine.
 
-    A operação nasce em 12/12/2024 e o aniversário é 14/01/2025, então o primeiro período é irregular, com 33 dias
-    corridos. O "first_dct_rule" de "31" reproduz o DCT da planilha, que é a distância entre os aniversários que
-    cercam o pagamento – de 14/12 a 14/01.
+    The operation starts on 12/12/2024 and the anniversary falls on 14/01/2025, so the first period is irregular, with 33
+    calendar days. The "first_dct_rule" of "31" reproduces the spreadsheet's DCT, which is the distance between the anniversaries
+    that surround the payment – from 14/12 to 14/01.
 
-    A série do "_RicherIpcaBackend" termina em junho de 2026. Com o deslocamento M-2, ela alcança o vigésimo
-    pagamento, e os dezoito seguintes ficam sem índice, com fator um e correção zero.
+    The "_RicherIpcaBackend" series ends in June 2026. With the M-2 shift, it reaches the twentieth
+    payment, and the following eighteen are left without an index, with a factor of one and zero correction.
 
-    Atenção ao alcance da referência externa: a planilha projeta índice zero a partir de dezembro de 2024, então ela
-    só corrobora o primeiro pagamento – e ali difere em R$ 1,85, porque guarda a variação com quatro casas, 0,5599%,
-    contra os 0,56% do "backend". Para ancorar os demais é preciso regerar a curva da TRV com a série realizada.
+    Mind the reach of the external reference: the spreadsheet projects a zero index from December 2024 onward, so it
+    only corroborates the first payment – and there it differs by R$ 1.85, because it stores the variation with four decimal places, 0.5599%,
+    against the "backend"'s 0.56%. To anchor the remaining ones, TRV's curve must be regenerated with the realized series.
 
-    O décimo pagamento tem correção zero com índice existente: agosto de 2025 fechou em -0,11%, e o motor trava o
-    fator de correção em um. É o único caso de deflação da tabela.
+    The tenth payment has zero correction despite an existing index: August 2025 closed at -0.11%, and the engine locks the
+    correction factor at one. It is the only deflation case in the table.
 
     Ref File: https://docs.google.com/spreadsheets/d/13Rr9b0BiQhvse-6-zbPAilfiUMfzHteu
     Tab.....: Cronograma
@@ -2138,8 +2138,8 @@ def test_will_create_american_ipca_1():
     kwa['vir'] = fincore.VariableIndex(code='IPCA', backend=_RicherIpcaBackend())
     kwa['first_dct_rule'] = '31'
 
-    # Juros, correção monetária, amortização e saldo devedor.
-    tab[1] = '64467.67', '29064.94', '0.00', '7029064.94'  # Período irregular de abertura, 33 dias corridos.
+    # Interest, monetary correction, amortization, and outstanding balance.
+    tab[1] = '64467.67', '29064.94', '0.00', '7029064.94'  # Irregular opening period, 33 calendar days.
     tab[2] = '60606.94', '36400.00', '0.00', '7036400.00'
     tab[3] = '60389.88', '11200.00', '0.00', '7011200.00'
     tab[4] = '61083.25', '91700.00', '0.00', '7091700.00'
@@ -2148,7 +2148,7 @@ def test_will_create_american_ipca_1():
     tab[7] = '60450.17', '18200.00', '0.00', '7018200.00'
     tab[8] = '60438.11', '16800.00', '0.00', '7016800.00'
     tab[9] = '60450.17', '18200.00', '0.00', '7018200.00'
-    tab[10] = '60293.41', '0.00', '0.00', '7000000.00'  # Índice de agosto de 2025, -0,11%. Fator travado em um.
+    tab[10] = '60293.41', '0.00', '0.00', '7000000.00'  # August 2025 index, -0.11%. Factor locked at one.
     tab[11] = '60582.82', '33600.00', '0.00', '7033600.00'
     tab[12] = '60347.67', '6300.00', '0.00', '7006300.00'
     tab[13] = '60401.94', '12600.00', '0.00', '7012600.00'
@@ -2158,8 +2158,8 @@ def test_will_create_american_ipca_1():
     tab[17] = '60823.99', '61600.00', '0.00', '7061600.00'
     tab[18] = '60697.38', '46900.00', '0.00', '7046900.00'
     tab[19] = '60643.11', '40600.00', '0.00', '7040600.00'
-    tab[20] = '60389.88', '11200.00', '0.00', '7011200.00'  # Último pagamento alcançado pela série.
-    tab[21] = '60293.41', '0.00', '0.00', '7000000.00'  # Vale também para os pagamentos 22 a 37.
+    tab[20] = '60389.88', '11200.00', '0.00', '7011200.00'  # Last payment reached by the series.
+    tab[21] = '60293.41', '0.00', '0.00', '7000000.00'  # Also applies to payments 22 through 37.
     tab[38] = '60293.41', '0.00', '7000000.00', '0.00'
 
     for i, x in enumerate(_get_american_payments(**kwa), 1):
@@ -2172,32 +2172,32 @@ def test_will_create_american_ipca_1():
 
     assert i == kwa['term']
 
-# Antecipações em operações indexadas ao IPCA.
+# Prepayments in IPCA-indexed operations.
 #
-# A correção monetária é particionada pelo calendário regular: cada pagamento consome exatamente uma janela de índices,
-# e a partição é disjunta e sem lacuna.
+# The monetary correction is partitioned by the regular schedule: each payment consumes exactly one window of indexes,
+# and the partition is disjoint and gapless.
 #
-# Uma antecipação não tem calendário próprio, e por isso herda a janela do pagamento regular que a sucede. Os dois
-# eventos repartem o índice do mês, e cada um corrige o saldo devedor vigente no seu período – a correção acompanha o
-# saldo, e o principal que sai é nominal.
+# A prepayment has no schedule of its own, and therefore inherits the window of the regular payment that follows it. The two
+# events split the month's index, and each one adjusts the outstanding balance in effect during its period – the correction follows the
+# balance, and the principal that leaves is nominal.
 #
-# Quando os juros consomem a antecipação a ponto de não sobrar para a correção inteira, o que falta fica diferido em
-# "regs.correction", como fator mais crédito, e o próximo pagamento que liquide correção o recolhe.
+# When interest consumes the prepayment to the point that not enough is left for the full correction, the remainder is deferred in
+# "regs.correction", as a factor plus a credit, and the next payment that settles correction collects it.
 #
-# Especificado na thread "Ajustes Motor IPCA", de outubro de 2024:
+# Specified in the "Ajustes Motor IPCA" thread, from October 2024:
 #
 #   https://inco1.slack.com/archives/C0103FS2CH4/p1728317663655909
 #
 def test_wont_leak_price_level_adjustment_on_prepayment():
     '''
-    Conservação da correção monetária diante de uma antecipação que não amortiza principal.
+    Conservation of the monetary correction in the face of a prepayment that does not amortize principal.
 
-    Uma antecipação integralmente consumida pelos juros acumulados não reduz o saldo devedor nominal. O perfil de saldo
-    ao longo do tempo permanece idêntico ao do fluxo regular, logo a correção monetária total cobrada também deve
-    permanecer idêntica.
+    A prepayment fully consumed by accrued interest does not reduce the nominal outstanding balance. The balance profile
+    over time remains identical to that of the regular flow, so the total monetary correction charged must also
+    remain identical.
 
-    Baseado na operação "YUCA SPE V", Juros mensais - 30 meses - IPCA, ID "cmQFTXLsEB6Bg7Zlae1pV", acrescida de uma data
-    de aniversário e de uma antecipação parcial fictícias.
+    Based on the "YUCA SPE V" operation, American Amortization - 30 months - IPCA, ID "cmQFTXLsEB6Bg7Zlae1pV", plus a fictitious
+    anniversary date and partial prepayment.
     '''
 
     kwa = {}
@@ -2211,7 +2211,7 @@ def test_wont_leak_price_level_adjustment_on_prepayment():
 
     regular = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_american_payments(**kwa)]
 
-    # Os juros acumulados entre 05/04 e 20/04 superam cinco mil reais, então a antecipação não amortiza principal.
+    # The interest accrued between 04/05 and 04/20 exceeds five thousand reais, so the prepayment does not amortize principal.
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 4, 20), value=decimal.Decimal('5000'))]
 
     prepaid = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_american_payments(**kwa)]
@@ -2221,13 +2221,13 @@ def test_wont_leak_price_level_adjustment_on_prepayment():
 
 def test_wont_leak_partially_deferred_price_level_adjustment_on_prepayment():
     '''
-    Conservação da correção monetária quando a antecipação liquida apenas parte da correção do seu período.
+    Conservation of the price level adjustment when the prepayment settles only part of its period's adjustment.
 
-    A ordem de imputação põe os juros à frente da correção. Uma antecipação que cubra os juros e só uma fração da
-    correção deixa o restante diferido, e ainda assim não amortiza principal – logo a correção total do cronograma não
-    pode mudar. Exercita a composição do fator diferido com o crédito do que já foi pago.
+    The imputation order puts interest ahead of the adjustment. A prepayment that covers the interest and only a
+    fraction of the adjustment leaves the remainder deferred, and still does not amortize principal – so the schedule's
+    total adjustment cannot change. Exercises the composition of the deferred factor with the credit for what was already paid.
 
-    Mesma operação de "test_wont_leak_price_level_adjustment_on_prepayment".
+    Same operation as "test_wont_leak_price_level_adjustment_on_prepayment".
     '''
 
     kwa = {}
@@ -2241,7 +2241,7 @@ def test_wont_leak_partially_deferred_price_level_adjustment_on_prepayment():
 
     regular = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_american_payments(**kwa)]
 
-    # Os juros do período somam 5.261,68, e a correção devida 14.883,30. Dez mil cobrem os juros e parte da correção.
+    # The period's interest totals 5,261.68, and the adjustment due 14,883.30. Ten thousand covers the interest and part of the adjustment.
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 4, 20), value=decimal.Decimal('10000'))]
 
     prepaid = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_american_payments(**kwa)]
@@ -2255,13 +2255,13 @@ def test_wont_leak_partially_deferred_price_level_adjustment_on_prepayment():
 
 def test_wont_recharge_settled_price_level_indexes_on_prepayment():
     '''
-    Janela de índices de IPCA de uma antecipação.
+    The IPCA index window of a prepayment.
 
-    A antecipação deve corrigir apenas o período em aberto, isto é, o intervalo entre o pagamento regular anterior e a
-    sua própria data. Não deve recobrar índice já liquidado por um pagamento anterior, nem alcançar índice que antecede
-    o primeiro mês do fluxo regular.
+    The prepayment must adjust only the open period, that is, the interval between the previous regular payment and
+    its own date. It must not recharge an index already settled by a previous payment, nor reach an index that precedes
+    the first month of the regular flow.
 
-    Mesma operação de "test_wont_leak_price_level_adjustment_on_prepayment".
+    Same operation as "test_wont_leak_price_level_adjustment_on_prepayment".
     '''
 
     kwa = {}
@@ -2276,33 +2276,33 @@ def test_wont_recharge_settled_price_level_indexes_on_prepayment():
 
     sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_american_payments(**kwa)]
 
-    # O primeiro pagamento regular liquida o índice de fevereiro de 2022, o primeiro do fluxo. A antecipação o sucede.
+    # The first regular payment settles the February 2022 index, the first of the flow. The prepayment comes after it.
     assert sched[0].date == kwa['anniversary_date']
     assert [x.date for x in sched[0].cf_mem] == [datetime.date(2022, 2, 1)]
 
     assert sched[1].date == kwa['insertions'][0].date
 
-    # O período em aberto, de 05/04 a 20/04, pertence ao índice de março de 2022, o mesmo que o pagamento de 05/05
-    # consome. Os dois eventos devem reparti-lo, e nada além dele.
+    # The open period, from 04/05 to 04/20, belongs to the March 2022 index, the same one the 05/05 payment
+    # consumes. The two events must split it, and nothing beyond it.
     assert [x.date for x in sched[1].cf_mem] == [datetime.date(2022, 3, 1)]
 
     assert sched[2].date == kwa['anniversary_date'] + _MONTH
     assert [x.date for x in sched[2].cf_mem] == [datetime.date(2022, 3, 1)]
 
-# Antecipação que não amortiza juros.
+# A prepayment that does not amortize interest.
 #
-# A ordem de imputação padrão põe juros e correção à frente do principal. Uma antecipação com "amortizes_interest"
-# falso inverte isso: o valor vai inteiro para o principal, e o juro e a correção do período ficam devidos.
+# The standard imputation order puts interest and adjustment ahead of principal. A prepayment with "amortizes_interest"
+# set to false inverts that: the value goes entirely to principal, and the period's interest and adjustment remain due.
 #
-# O juro travado assim não se confunde com o de uma carência. O de carência capitaliza e sai à medida que o principal
-# amortiza; este é cobrado por inteiro no pagamento regular seguinte, porque o tomador segue devendo o mês corrente.
-# Daí o registrador "interest.locked", separado de "interest.deferred".
+# Interest locked this way is not the same as grace period interest. Grace period interest compounds and is paid out as
+# the principal amortizes; this one is charged in full on the next regular payment, because the borrower still owes the current month.
+# Hence the "interest.locked" register, separate from "interest.deferred".
 #
 def test_will_amortize_only_principal_on_prepayment():
     '''
-    Antecipação que não amortiza juros: o valor vai inteiro para o principal.
+    A prepayment that does not amortize interest: the value goes entirely to principal.
 
-    Mesma operação de "test_wont_leak_price_level_adjustment_on_prepayment".
+    Same operation as "test_wont_leak_price_level_adjustment_on_prepayment".
     '''
 
     kwa = {}
@@ -2319,31 +2319,31 @@ def test_will_amortize_only_principal_on_prepayment():
     advance = next(x for x in sched if x.date == kwa['insertions'][0].date)
     index = sched.index(advance)
 
-    # Os juros do período, mais de cinco mil, seriam imputados antes do principal na ordem padrão. Aqui, não.
+    # The period's interest, over five thousand, would be imputed before principal under the standard order. Not here.
     assert advance.gain > _0
     assert advance.amort == kwa['insertions'][0].value
     assert advance.pla == _0
     assert advance.raw == kwa['insertions'][0].value
 
-    # O pagamento regular seguinte liquida o juro travado por inteiro, somado ao do seu próprio período. Como o valor
-    # bruto de um pagamento sem amortização é juros liquidados mais correção, a diferença isola os juros.
+    # The next regular payment settles the locked interest in full, added to that of its own period. Since the gross
+    # value of a payment with no amortization is settled interest plus adjustment, the difference isolates the interest.
     #
     assert sched[index + 1].raw - sched[index + 1].pla == advance.gain + sched[index + 1].gain
 
-    # E nada fica para trás: o pagamento seguinte a esse liquida apenas o juro do seu próprio período.
+    # And nothing is left behind: the payment after that one settles only the interest of its own period.
     assert sched[index + 2].raw - sched[index + 2].pla == sched[index + 2].gain
 
     assert sum(x.amort for x in sched) == kwa['principal']
 
 def test_wont_settle_debt_with_prepayment_that_does_not_amortize_interest():
     '''
-    Uma antecipação que não amortiza juros não pode quitar a dívida, nem exceder o principal em aberto.
+    A prepayment that does not amortize interest cannot settle the debt, nor exceed the outstanding principal.
 
-    O valor máximo pede a quitação, e quitar exige liquidar juros e correção – não haveria pagamento posterior para
-    recolhê-los. E, como o valor sai todo do principal nominal, o teto é o principal em aberto, e não o saldo
-    corrigido, que é maior.
+    The maximum value requests full settlement, and settling requires liquidating interest and adjustment – there
+    would be no later payment to collect them. And, since the value comes entirely out of the nominal principal, the
+    ceiling is the outstanding principal, not the adjusted balance, which is larger.
 
-    Mesma operação de "test_wont_leak_price_level_adjustment_on_prepayment".
+    Same operation as "test_wont_leak_price_level_adjustment_on_prepayment".
     '''
 
     kwa = {}
@@ -2366,14 +2366,14 @@ def test_wont_settle_debt_with_prepayment_that_does_not_amortize_interest():
     with pytest.raises(Exception, match='is greater than the outstanding principal of the loan'):
         build(kwa['principal'] + _1)
 
-    # O saldo devedor corrigido na data já passa do principal, e ainda assim o teto é o principal.
+    # The adjusted outstanding balance on that date already exceeds the principal, and yet the ceiling is the principal.
     assert build(kwa['principal'])[1].amort == kwa['principal']
 
-# Os dois casos de antecipação parcial da operação "CRI IPA Club Residencial", conferidos contra planilha.
+# The two partial prepayment cases of the "CRI IPA Club Residencial" operation, checked against a spreadsheet.
 #
-# São o mesmo evento – 97.224,53 em 03/08/2026, dentro do período que vai de 07/07 a 07/08 – sob as duas ordens de
-# imputação. O primeiro pagamento, de 07/07, é anterior à antecipação e é idêntico nos dois: serve de âncora, e bate
-# com o admin da operação no centavo.
+# They are the same event – 97,224.53 on 08/03/2026, within the period running from 07/07 to 08/07 – under the two
+# imputation orders. The first payment, on 07/07, precedes the prepayment and is identical in both: it serves as an
+# anchor, and matches the operation's admin to the cent.
 #
 def _kwa_cri_ipa():
     kwa = {}
@@ -2390,14 +2390,14 @@ def _kwa_cri_ipa():
 
 def test_will_create_american_ipca_2():
     '''
-    Operação "CRI IPA Club Residencial", Juros mensais - 36 meses - IPCA, c/ antecipação parcial.
+    "CRI IPA Club Residencial" operation, American Amortization - 36 months - IPCA, with a partial prepayment.
 
-    Ordem de imputação padrão: juros, correção, principal. Dos 97.224,53 antecipados, 49.625,40 pagam os juros
-    corridos de 07/07 a 03/08, 8.360,43 pagam a correção desse mesmo período, e só os 39.238,70 restantes abatem
+    Standard imputation order: interest, adjustment, principal. Of the 97,224.53 prepaid, 49,625.40 pays the interest
+    accrued from 07/07 to 08/03, 8,360.43 pays the adjustment of that same period, and only the remaining 39,238.70 reduces
     principal.
 
-    A correção dos 27 dias incide sobre os 6.000.000,00 que estavam na operação durante eles, e a dos 4 dias que
-    faltam para 07/08 incide sobre o saldo já reduzido. Os dois fatores compõem o índice do mês, de 0,16%.
+    The 27-day adjustment accrues on the 6,000,000.00 that was in the operation during them, and that of the 4 days
+    remaining until 08/07 accrues on the already reduced balance. The two factors compose the month's index, of 0.16%.
 
     Ref File: https://docs.google.com/spreadsheets/d/1CH47cNnNc1QjcPb-WP7q6Gp1k1UNkDnQ
     Tab.....: Conferência
@@ -2408,11 +2408,11 @@ def test_will_create_american_ipca_2():
 
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2026, 8, 3), value=decimal.Decimal('97224.53'))]
 
-    # Juros, correção monetária, amortização e valor bruto.
-    tab[1] = '72236.23', '43813.36', '0.00', '116049.60'  # Anterior à antecipação. Bate com o admin da operação.
-    tab[2] = '49625.40', '8360.43', '39238.70', '97224.53'  # A antecipação.
+    # Interest, price level adjustment, amortization, and gross value.
+    tab[1] = '72236.23', '43813.36', '0.00', '116049.60'  # Precedes the prepayment. Matches the operation's admin.
+    tab[2] = '49625.40', '8360.43', '39238.70', '97224.53'  # The prepayment.
     tab[3] = '7269.64', '1229.75', '0.00', '8499.39'
-    tab[4] = '56560.43', '0.00', '0.00', '56560.43'  # Vale até o penúltimo: a série de IPCA se esgota aqui.
+    tab[4] = '56560.43', '0.00', '0.00', '56560.43'  # Holds through the next-to-last: the IPCA series runs out here.
     tab[37] = '56560.43', '0.00', '5960761.30', '6017321.73'
 
     sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_american_payments(**kwa)]
@@ -2420,24 +2420,24 @@ def test_will_create_american_ipca_2():
     for i, x in enumerate(sched, 1):
         assert [x.gain, x.pla, x.amort, x.raw] == [decimal.Decimal(y) for y in tab.get(i, tab[4])]
 
-    assert len(sched) == kwa['term'] + 1  # A antecipação acrescenta uma linha ao fluxo regular.
+    assert len(sched) == kwa['term'] + 1  # The prepayment adds one row to the regular flow.
     assert sum(x.amort for x in sched) == kwa['principal']
 
 def test_will_create_american_ipca_3():
     '''
-    Mesma operação e mesma antecipação de "test_will_create_jm_ipca_2", com "amortizes_interest" falso.
+    Same operation and same prepayment as "test_will_create_jm_ipca_2", with "amortizes_interest" false.
 
-    Aqui os 97.224,53 vão inteiros para o principal. Os juros e a correção do período ficam devidos, e o pagamento de
-    07/08 os recolhe: 56.895,02 de juros, que são os 7.269,62 do seu próprio período mais os 49.625,40 travados, e
-    9.578,22 de correção, que são 8.360,43 dos 27 dias sobre 6.000.000,00 mais 1.217,79 dos 4 dias sobre o saldo já
-    reduzido.
+    Here the 97,224.53 goes entirely to principal. The period's interest and adjustment remain due, and the 08/07
+    payment collects them: 56,895.02 of interest, which is the 7,269.62 of its own period plus the 49,625.40 locked,
+    and 9,578.22 of adjustment, which is 8,360.43 for the 27 days on 6,000,000.00 plus 1,217.79 for the 4 days on the
+    already reduced balance.
 
-    O período de quatro dias rende sobre 6.007.221,37, e não sobre os 5.902.775,47 de principal nominal: a correção
-    travada continua incorporada ao saldo devedor enquanto não é liquidada.
+    The four-day period accrues on 6,007,221.37, not on the 5,902,775.47 of nominal principal: the locked adjustment
+    remains incorporated into the outstanding balance for as long as it is unsettled.
 
-    A segunda parte do teste é a que pega o defeito: a correção do período tem que crescer com a data da antecipação,
-    porque quanto mais tarde ela ocorre, mais tempo o principal antecipado passa rendendo correção. Travar o fator em
-    vez do valor tornava esse número constante, e a data deixava de importar.
+    The second part of the test is the one that catches the defect: the period's adjustment must grow with the
+    prepayment date, because the later it occurs, the longer the prepaid principal keeps accruing adjustment. Locking
+    the factor instead of the value made that number constant, and the date no longer mattered.
 
     Ref File: https://docs.google.com/spreadsheets/d/1CH47cNnNc1QjcPb-WP7q6Gp1k1UNkDnQ
     Tab.....: Conferência
@@ -2448,10 +2448,10 @@ def test_will_create_american_ipca_3():
 
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2026, 8, 3), value=decimal.Decimal('97224.53'), amortizes_interest=False)]
 
-    # Juros, correção monetária, amortização e valor bruto.
-    tab[1] = '72236.23', '43813.36', '0.00', '116049.60'  # Idêntico ao do caso anterior.
-    tab[2] = '49625.40', '0.00', '97224.53', '97224.53'  # A antecipação, inteira em principal.
-    tab[3] = '7269.62', '9578.22', '0.00', '66473.24'  # Recolhe o juro e a correção travados.
+    # Interest, price level adjustment, amortization, and gross value.
+    tab[1] = '72236.23', '43813.36', '0.00', '116049.60'  # Identical to the previous case's.
+    tab[2] = '49625.40', '0.00', '97224.53', '97224.53'  # The prepayment, entirely in principal.
+    tab[3] = '7269.62', '9578.22', '0.00', '66473.24'  # Collects the locked interest and adjustment.
     tab[4] = '56010.21', '0.00', '0.00', '56010.21'
     tab[37] = '56010.21', '0.00', '5902775.47', '5958785.68'
 
@@ -2462,7 +2462,7 @@ def test_will_create_american_ipca_3():
 
     assert sum(x.amort for x in sched) == kwa['principal']
 
-    # A correção do período 07/07 a 07/08, variando a data da antecipação dentro dele.
+    # The adjustment of the 07/07 to 08/07 period, varying the prepayment date within it.
     def correcao(dia):
         kwb = _kwa_cri_ipa()
         kwb['insertions'] = [fincore.Amortization.Bare(date=dia, value=decimal.Decimal('97224.53'), amortizes_interest=False)]
@@ -2472,25 +2472,25 @@ def test_will_create_american_ipca_3():
 
     curva = [correcao(datetime.date(2026, 7, 8) + datetime.timedelta(days=d)) for d in (0, 7, 14, 26, 29)]
 
-    assert curva == sorted(curva) and len(set(curva)) == len(curva)  # Estritamente crescente.
+    assert curva == sorted(curva) and len(set(curva)) == len(curva)  # Strictly increasing.
 
-    # O limite superior é a correção do mês sem antecipação nenhuma: 0,16% sobre os seis milhões.
+    # The upper bound is the month's adjustment with no prepayment at all: 0.16% on the six million.
     assert max(curva) < decimal.Decimal('9600')
 
 def test_will_accrue_interest_over_deferred_price_level_adjustment():
     '''
-    Correção devida e não liquidada continua no saldo devedor, e rende juros.
+    Adjustment due and unsettled remains in the outstanding balance, and accrues interest.
 
-    Mesma operação e mesma data de "test_will_create_jm_ipca_2", com uma antecipação de 52.000. Ela cobre os
-    49.625,40 de juros do período e só 2.374,60 dos 8.360,43 de correção devida, deixando 5.985,83 diferidos. Nenhum
-    principal é abatido, porque a ordem de imputação só chega nele depois da correção inteira.
+    Same operation and same date as "test_will_create_jm_ipca_2", with a prepayment of 52,000. It covers the
+    49,625.40 of the period's interest and only 2,374.60 of the 8,360.43 of adjustment due, leaving 5,985.83 deferred.
+    No principal is reduced, because the imputation order only reaches it after the entire adjustment.
 
-    Os juros do período seguinte, de quatro dias, incidem sobre 6.007.221,37 – que são os 6.000.000,00 de principal
-    mais os 5.985,83 diferidos, o conjunto corrigido pelo fator do próprio período. Não sobre os 6.000.000,00 secos.
+    The next period's interest, four days long, accrues on 6,007,221.37 – which is the 6,000,000.00 of principal
+    plus the 5,985.83 deferred, the whole adjusted by the factor of its own period. Not on the bare 6,000,000.00.
 
-    A especificação de outubro de 2024 chama a correção mensal de "fórmula de correção tradicional mais amortização
-    extraordinária obrigatória do IPCA mensal". Quando a amortização extraordinária sai pela metade, a outra metade
-    permanece incorporada – e é essa a razão de ela render.
+    The October 2024 specification calls the monthly adjustment "traditional adjustment formula plus mandatory
+    extraordinary amortization of the monthly IPCA". When the extraordinary amortization goes out only halfway, the
+    other half remains incorporated – and that is why it accrues.
 
     Ref File: https://docs.google.com/spreadsheets/d/1CH47cNnNc1QjcPb-WP7q6Gp1k1UNkDnQ
     Tab.....: Conferência
@@ -2501,10 +2501,10 @@ def test_will_accrue_interest_over_deferred_price_level_adjustment():
 
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2026, 8, 3), value=decimal.Decimal('52000'))]
 
-    # Juros, correção monetária, amortização e valor bruto.
+    # Interest, price level adjustment, amortization, and gross value.
     tab[1] = '72236.23', '43813.36', '0.00', '116049.60'
-    tab[2] = '49625.40', '2374.60', '0.00', '52000.00'  # Os juros consomem quase tudo, e a correção fica pela metade.
-    tab[3] = '7324.79', '7225.40', '0.00', '14550.19'  # Juros sobre o saldo com a correção diferida dentro.
+    tab[2] = '49625.40', '2374.60', '0.00', '52000.00'  # The interest consumes almost everything, and the adjustment is left halfway.
+    tab[3] = '7324.79', '7225.40', '0.00', '14550.19'  # Interest on the balance with the deferred adjustment inside.
     tab[4] = '56932.76', '0.00', '0.00', '56932.76'
 
     sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_american_payments(**kwa)]
@@ -2513,29 +2513,29 @@ def test_will_accrue_interest_over_deferred_price_level_adjustment():
         if i in tab:
             assert [x.gain, x.pla, x.amort, x.raw] == [decimal.Decimal(y) for y in tab[i]]
 
-    # Sem a incorporação, os juros do período de quatro dias cairiam para 7.317,49 – a diferença é o que a correção
-    # diferida rende. O teste falha por baixo se alguém tirar "regs.correction" da base dos juros.
+    # Without the incorporation, the four-day period's interest would drop to 7,317.49 – the difference is what the
+    # deferred adjustment yields. The test fails low if someone removes "regs.correction" from the interest base.
     #
     assert sched[2].gain > decimal.Decimal('7320')
 
-    # E a correção segue conservando: o que a antecipação não pagou, o pagamento seguinte recolhe, recorrigido.
+    # And the adjustment is still conserved: what the prepayment did not pay, the next payment collects, re-adjusted.
     assert sum(x.pla for x in sched) == decimal.Decimal('53413.36')
 
 def test_wont_charge_regular_payment_on_the_prepayment_date():
     '''
-    Antecipação lançada na mesma data de um pagamento regular.
+    A prepayment entered on the same date as a regular payment.
 
-    Quando as datas empatam, o cronograma põe a antecipação à frente – ver o parágrafo sobre precedência na
-    "_interleave". Ela então herda o período em aberto inteiro, e o pagamento regular do mesmo dia fica com zero dias:
-    sem juros, sem correção, sem amortização, valor bruto zero.
+    When the dates tie, the schedule puts the prepayment first – see the paragraph on precedence in "_interleave".
+    It then inherits the entire open period, and the regular payment of the same day is left with zero days: no
+    interest, no adjustment, no amortization, zero gross value.
 
-    Reproduz a sequência que quebrou a operação "CRI IPA Club Residencial" em agosto de 2026: uma antecipação em
-    03/08 e outra em 07/08, esta na data da segunda parcela. O cronograma que o motor produz é consistente – os juros
-    do período de 03/08 a 07/08 são cobrados uma vez só, pela antecipação. A duplicidade em produção veio de a parcela
-    ter sido faturada sob o cronograma anterior, e não estornada quando a antecipação entrou uma hora depois.
+    Reproduces the sequence that broke the "CRI IPA Club Residencial" operation in August 2026: one prepayment on
+    08/03 and another on 08/07, the latter on the date of the second installment. The schedule the engine produces is
+    consistent – the interest of the 08/03 to 08/07 period is charged only once, by the prepayment. The duplication in
+    production came from the installment being invoiced under the previous schedule, and not reversed when the prepayment came in an hour later.
 
-    Este caso existe para fixar o comportamento, e não para conferir valor: é contra ele que a guarda do controlador
-    – recusar antecipação com data igual ou anterior à de uma cobrança encerrada – precisa ser especificada.
+    This case exists to pin down the behavior, not to check values: it is against it that the controller's guard –
+    refusing a prepayment dated on or before a closed charge – must be specified.
 
     Thread: https://inco1.slack.com/archives/C05UP765QBA/p1786545421791909
     '''
@@ -2554,19 +2554,19 @@ def test_wont_charge_regular_payment_on_the_prepayment_date():
 
     antecipacao, regular = linhas
 
-    # A antecipação vem primeiro, e leva o período de 03/08 a 07/08 inteiro.
+    # The prepayment comes first, and takes the entire 08/03 to 08/07 period.
     assert antecipacao.raw == kwa['insertions'][1].value
     assert [antecipacao.gain, antecipacao.pla, antecipacao.amort] == [decimal.Decimal(y) for y in ('7269.64', '1229.75', '49635.18')]
 
-    # O pagamento regular do mesmo dia sai vazio.
+    # The regular payment of the same day comes out empty.
     assert [regular.gain, regular.pla, regular.amort, regular.raw] == [_0, _0, _0, _0]
 
-    # Nada se cobra duas vezes: o total do dia é o valor da antecipação, e nada além dele.
+    # Nothing is charged twice: the day's total is the prepayment's value, and nothing beyond it.
     assert antecipacao.raw + regular.raw == kwa['insertions'][1].value
 
-    # No cronograma anterior, sem a segunda antecipação, esses mesmos juros e correção pertenciam ao pagamento
-    # regular. É essa migração – e não um cálculo errado – que produz a cobrança em dobro quando a parcela já foi
-    # faturada antes de a antecipação ser inserida.
+    # In the previous schedule, without the second prepayment, those same interest and adjustment belonged to the
+    # regular payment. It is this migration – and not a wrong calculation – that produces the double charge when the
+    # installment was already invoiced before the prepayment was inserted.
     #
     kwb = _kwa_cri_ipa()
 
@@ -2582,19 +2582,19 @@ def test_wont_charge_regular_payment_on_the_prepayment_date():
 
 def test_will_collect_locked_interest_and_adjustment_on_a_later_prepayment():
     '''
-    Uma antecipação amortizante recolhe o juro e a correção travados por uma antecipação anterior.
+    An amortizing prepayment collects the interest and adjustment locked by a previous prepayment.
 
-    Mesma operação de "test_will_create_jm_ipca_2", com duas antecipações no mesmo período: uma de 50.000 em 20/07,
-    que não amortiza juros e trava os 23.825,55 do seu período junto com a correção; e uma de 150.000 em 03/08, com a
-    ordem de imputação padrão. A segunda liquida o juro travado somado ao do próprio período, a correção travada
-    recorrigida somada à do próprio período, e abate o restante do principal.
+    Same operation as "test_will_create_jm_ipca_2", with two prepayments in the same period: one of 50,000 on 07/20,
+    which does not amortize interest and locks its period's 23,825.55 along with the adjustment; and one of 150,000
+    on 08/03, under the standard imputation order. The second settles the locked interest added to that of its own
+    period, the re-adjusted locked adjustment added to that of its own period, and reduces the remaining principal.
 
-    O pagamento regular de 07/08 fica só com os quatro dias que lhe pertencem. É o assert que pega a dupla cobrança:
-    sem o abatimento de "regs.interest.locked" na antecipação que o recolheu, o pagamento regular seguinte, que
-    libera o registrador por inteiro, cobraria os 23.825,55 de novo.
+    The regular payment of 08/07 is left with only the four days that belong to it. It is the assert that catches the
+    double charge: without the deduction of "regs.interest.locked" in the prepayment that collected it, the next
+    regular payment, which releases the register in full, would charge the 23,825.55 again.
 
-    Os valores fixados aqui saem do próprio motor, conferidos pelas conservações: a soma das amortizações fecha o
-    principal, e nenhum pagamento cobra além do juro e da correção do seu período.
+    The values pinned here come from the engine itself, checked by the conservation laws: the sum of the amortizations
+    closes to the principal, and no payment charges beyond its period's interest and adjustment.
     '''
 
     kwa = _kwa_cri_ipa()
@@ -2607,35 +2607,35 @@ def test_will_collect_locked_interest_and_adjustment_on_a_later_prepayment():
     sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_american_payments(**kwa)]
     travada, coletora, regular = sched[1], sched[2], sched[3]
 
-    # A primeira antecipação vai inteira para o principal, e trava juro e correção.
+    # The first prepayment goes entirely to principal, and locks interest and adjustment.
     assert [travada.gain, travada.pla, travada.amort, travada.raw] == [decimal.Decimal(y) for y in ('23825.55', '0.00', '50000.00', '50000.00')]
 
-    # A segunda liquida o juro travado mais o do próprio período – o que sobra do valor bruto, tirados a correção e
-    # o principal, são exatamente os juros das duas antecipações.
+    # The second settles the locked interest plus that of its own period – what remains of the gross value, after the
+    # adjustment and the principal are taken out, is exactly the interest of the two prepayments.
     #
     assert coletora.raw - coletora.pla - coletora.amort == travada.gain + coletora.gain
     assert [coletora.gain, coletora.pla, coletora.raw] == [decimal.Decimal(y) for y in ('25568.69', '8321.41', '150000.00')]
 
-    # E o pagamento regular seguinte cobra apenas o próprio período: sem dupla cobrança do juro travado.
+    # And the next regular payment charges only its own period: no double charge of the locked interest.
     assert regular.raw - regular.pla == regular.gain
     assert [regular.gain, regular.pla, regular.amort] == [decimal.Decimal(y) for y in ('7143.97', '1208.49', '0.00')]
 
-    # Dali em diante, um Juros Mensais comum: cada parcela cobra o juro do seu mês, e nada mais.
+    # From then on, an ordinary American Amortization: each installment charges its month's interest, and nothing more.
     assert sched[4].raw == sched[4].gain == decimal.Decimal('55582.65')
 
     assert sum(x.amort for x in sched) == kwa['principal']
 
 def test_will_settle_debt_with_max_value_prepayment_after_deferral():
     '''
-    Uma antecipação de valor máximo quita a dívida inteira, mesmo com correção diferida no saldo.
+    A max-value prepayment settles the entire debt, even with deferred adjustment in the balance.
 
-    Mesma operação e mesma antecipação de "test_will_accrue_interest_over_deferred_price_level_adjustment": os
-    52.000 de 03/08 cobrem os juros do período e só parte da correção, deixando 5.985,83 diferidos no saldo. Dois
-    dias depois, uma antecipação de valor máximo pede a quitação.
+    Same operation and same prepayment as "test_will_accrue_interest_over_deferred_price_level_adjustment": the
+    52,000 of 08/03 covers the period's interest and only part of the adjustment, leaving 5,985.83 deferred in the
+    balance. Two days later, a max-value prepayment requests full settlement.
 
-    O teto da quitação é o saldo em vigor – principal corrigido pelo fator composto com o diferido, mais o juro
-    corrido, menos o crédito do que já se pagou de correção. Medir o teto sem o diferido deixaria os 5.985,83
-    recorrigidos para trás, e a dívida nunca fecharia.
+    The settlement ceiling is the balance in force – principal adjusted by the factor composed with the deferred part,
+    plus the accrued interest, minus the credit for the adjustment already paid. Measuring the ceiling without the
+    deferred part would leave the re-adjusted 5,985.83 behind, and the debt would never close.
     '''
 
     kwa = _kwa_cri_ipa()
@@ -2647,18 +2647,18 @@ def test_will_settle_debt_with_max_value_prepayment_after_deferral():
 
     sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_american_payments(**kwa)]
 
-    # A quitação zera o saldo e leva todo o principal que restava.
+    # The settlement zeroes the balance and takes all the principal that remained.
     assert sched[-1].date == kwa['insertions'][1].date
     assert sched[-1].bal == _0
     assert sched[-1].amort == kwa['principal']
 
-    # E leva junto o juro dos dois dias e a correção diferida recorrigida, mais a do próprio período.
+    # And it takes along the two days' interest and the re-adjusted deferred adjustment, plus that of its own period.
     assert [sched[-1].gain, sched[-1].pla] == [decimal.Decimal(y) for y in ('3660.90', '6605.58')]
 
     assert sum(x.amort for x in sched) == kwa['principal']
 # }}}
 
-# 🎭 Juros Mensais vandalizadas. {{{
+# 🎭 Vandalized American Amortizations. {{{
 @pytest.mark.parametrize('term', [1, 3, 6, 12, 60])
 def test_will_create_american_zanzy_1(term):
     lst = list(_get_american_payments(_0, _0, datetime.date.min, term))
@@ -2713,13 +2713,13 @@ def test_will_create_american_zanzy_1(term):
 
 # FR Price. {{{
 #
-# Esse teste gera trezentos e sessenta pagamentos. Não vou testar todos aqui, vou testar apenas trinta: os dez
-# iniciais, os dez centrais, e os dez finais. O teste não verifica I.R. e valor líquido, já que a planilha não tem esse
-# dado.
+# This test generates three hundred and sixty payments. I won't test all of them here, only thirty: the first ten,
+# the middle ten, and the last ten. The test does not check income tax and net value, since the spreadsheet does not
+# have that data.
 #
 def test_will_create_price_1():
     '''
-    Operação pré-fixada modalidade Price.
+    Fixed-rate operation, Price mode.
 
     Ref File: https://docs.google.com/spreadsheets/d/1yG3rmODqbvyqDLCFU4VLFTrJwFAnacKE9NlnwtCrN-k
     Tab.....: Sheet1
@@ -2733,7 +2733,7 @@ def test_will_create_price_1():
     kwa['zero_date'] = datetime.date(2022, 11, 28)
     kwa['term'] = 30 * 12
 
-    # Juros, amortização, saldo.
+    # Interest, amortization, balance.
     tab[1] = '486.76', '102.62', '99897.38'
     tab[2] = '486.26', '103.11', '99794.27'
     tab[3] = '485.75', '103.62', '99690.65'
@@ -2779,7 +2779,7 @@ def test_will_create_price_1():
 
 def test_will_create_price_2():
     '''
-    Operação pré-fixada modalidade Price.
+    Fixed-rate operation, Price mode.
 
     Ref File: https://docs.google.com/spreadsheets/d/1yG3rmODqbvyqDLCFU4VLFTrJwFAnacKE9NlnwtCrN-k
     Tab.....: Credlar Chopin
@@ -2793,7 +2793,7 @@ def test_will_create_price_2():
     kwa['zero_date'] = datetime.date(2022, 4, 4)
     kwa['term'] = 24
 
-    # Juros, imposto, valor líquido, amortização, saldo.
+    # Interest, tax, net value, amortization, balance.
     tab[1] = '7023.41', '1580.27', '22322.28', '16879.14', '464120.86'
     tab[2] = '6776.95', '1524.81', '22377.74', '17125.61', '446995.25'
     tab[3] = '6526.88', '1468.55', '22434', '17375.67', '429619.58'
@@ -2829,7 +2829,7 @@ def test_will_create_price_2():
 
 def test_will_create_price_3():
     '''
-    Operação pré-fixada modalidade Price.
+    Fixed-rate operation, Price mode.
 
     Ref File: https://docs.google.com/spreadsheets/d/1yG3rmODqbvyqDLCFU4VLFTrJwFAnacKE9NlnwtCrN-k
     Tab.....: Residencial Arnaldo Patrus 2
@@ -2843,7 +2843,7 @@ def test_will_create_price_3():
     kwa['zero_date'] = datetime.date(2022, 4, 3)
     kwa['term'] = 24
 
-    # Juros, imposto, valor líquido, amortização, saldo.
+    # Interest, tax, net value, amortization, balance.
     tab[1] = '2513.81', '565.61', '8354.43', '6406.23', '174593.77'
     tab[2] = '2424.83', '545.59', '8374.45', '6495.21', '168098.56'
     tab[3] = '2334.63', '525.29', '8394.75', '6585.41', '161513.15'
@@ -2879,7 +2879,7 @@ def test_will_create_price_3():
 
 def test_will_create_price_4():
     '''
-    Operação pré-fixada modalidade Price, com antecipação total.
+    Fixed-rate operation, Price mode, with full prepayment.
 
     Ref File: https://docs.google.com/spreadsheets/d/1yG3rmODqbvyqDLCFU4VLFTrJwFAnacKE9NlnwtCrN-k
     Tab.....: Residencial da Mata
@@ -2894,7 +2894,7 @@ def test_will_create_price_4():
     kwa['term'] = 18
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 10, 6), value=decimal.Decimal('14010.76'))]
 
-    # Juros, imposto, valor líquido, amortização, saldo.
+    # Interest, tax, net value, amortization, balance.
     tab[1] = '1347.22', '303.12', '6820.25', '5776.15', '109223.85'
     tab[2] = '1279.55', '287.9', '6835.47', '5843.82', '103380.03'
     tab[3] = '1211.09', '272.49', '6850.88', '5912.28', '97467.76'
@@ -2915,13 +2915,13 @@ def test_will_create_price_4():
     for i, x in enumerate(_get_price_payments(**kwa), 1):
         assert x.no == i
 
-        # Fluxo Price ordinário.
+        # Ordinary Price flow.
         if x.no <= 16:
             assert x.date == kwa['zero_date'] + _MONTH * i
             assert x.raw == decimal.Decimal('7123.37')  # PMT.
             assert [x.gain, x.tax, x.net, x.amort, x.bal] == [decimal.Decimal(y) for y in tab[i]]
 
-        # Antecipação total.
+        # Full prepayment.
         else:
             assert x.date == kwa['insertions'][0].date
             assert x.amort == decimal.Decimal('14000.24')
@@ -2935,7 +2935,7 @@ def test_will_create_price_4():
 
 def test_will_create_price_5():
     '''
-    Operação pré-fixada modalidade Price, com antecipação parcial.
+    Fixed-rate operation, Price mode, with partial prepayment.
 
     Ref File: https://docs.google.com/spreadsheets/d/1yG3rmODqbvyqDLCFU4VLFTrJwFAnacKE9NlnwtCrN-k
     Tab.....: Provi
@@ -2950,13 +2950,13 @@ def test_will_create_price_5():
     kwa['term'] = 24
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 6, 21), value=decimal.Decimal('55668.16'))]
 
-    # Valo bruto, juros, imposto, valor líquido, amortização, saldo.
+    # Raw value, interest, tax, net value, amortization, balance.
     tab[1] = '49693.46', '14601.69', '3285.38', '46408.08', '35091.77', '964908.23',
     tab[2] = '49693.46', '14089.29', '3170.09', '46523.37', '35604.17', '929304.05',
     tab[3] = '49693.46', '13569.41', '3053.12', '46640.34', '36124.05', '893180.00',
     tab[4] = '49693.46', '13041.93', '2934.44', '46759.02', '36651.53', '856528.47',
     tab[5] = '49693.46', '12506.76', '2814.02', '46879.44', '37186.70', '819341.77',
-    tab[6] = '55668.16', '396.00', '89.10', '55579.06', '55272.16', '764069.62',  # Antecipação parcial.
+    tab[6] = '55668.16', '396.00', '89.10', '55579.06', '55272.16', '764069.62',  # Partial prepayment.
     tab[7] = '45966.68', '10782.20', '2156.44', '43810.24', '35184.47', '728885.14',
     tab[8] = '46341.18', '10642.95', '2128.59', '44212.59', '35698.23', '693186.92',
     tab[9] = '46341.18', '10121.70', '2024.34', '44316.84', '36219.48', '656967.44',
@@ -2980,11 +2980,11 @@ def test_will_create_price_5():
     for i, x in enumerate(_get_price_payments(**kwa), 1):
         assert x.no == i
 
-        # Antecipação parcial.
+        # Partial prepayment.
         if x.no == 6:
             assert x.date == kwa['insertions'][0].date
 
-        # Fluxo ordinário.
+        # Ordinary flow.
         else:
             assert x.date == kwa['zero_date'] + _MONTH * (i if i < 6 else i - 1)
 
@@ -2994,7 +2994,7 @@ def test_will_create_price_5():
 
 def test_will_create_price_6():
     '''
-    Operação pré-fixada modalidade Price.
+    Fixed-rate operation, Price mode.
 
     Ref File: https://docs.google.com/spreadsheets/d/1yG3rmODqbvyqDLCFU4VLFTrJwFAnacKE9NlnwtCrN-k
     Tab.....: Varanda da Vila 3
@@ -3009,7 +3009,7 @@ def test_will_create_price_6():
     kwa['anniversary_date'] = datetime.date(2022, 12, 5)
     kwa['term'] = 30
 
-    # Juros, imposto, valor líquido, amortização, saldo.
+    # Interest, tax, net value, amortization, balance.
     tab[1] = '27553.25', '6199.48', '63575.11', '42221.34', '1550278.66'
     tab[2] = '23733.95', '5340.14', '61261.53', '42867.73', '1507410.93'
     tab[3] = '23077.66', '5192.47', '61409.2', '43524.01', '1463886.92'
@@ -3056,7 +3056,7 @@ def test_will_create_price_6():
     assert i == kwa['term']
 # }}}
 
-# 🗽 Livre. {{{
+# 🗽 Custom. {{{
 @pytest.mark.parametrize('sac_pct', [
     decimal.Decimal('0.0333333333'),  # Totals 0.999999999 when multiplied by thirty, which is exactly 1e-9 from one.
     decimal.Decimal('0.0333333333333'),  # Totals 0.999999999999 when multiplied by thirty, 1e-12 from one.
@@ -3095,9 +3095,9 @@ def test_will_create_custom_1(sac_pct):
 
 def test_will_create_custom_2():
     '''
-    Operação pós-fixada CDI, modalidade Livre.
+    Post-fixed CDI operation, Custom mode.
 
-    Carteira Pride - Tranche I - Parcelas Amortizadas - 36 meses.
+    Pride Portfolio - Tranche I - Amortized Installments - 36 months.
 
     Ref File: https://docs.google.com/spreadsheets/d/1z0PhJcLK-noG-rH-t24NcdPQJZJ1-B0P0b0o4muv3rY
     Tab.....: 01
@@ -3110,13 +3110,13 @@ def test_will_create_custom_2():
     kwa['vir'] = fincore.VariableIndex(code='CDI')
     kwa['amortizations'] = tab1 = []
 
-    # Monta a tabela de amortizações.
+    # Build the amortization table.
     tab1.append(fincore.Amortization(date=datetime.date(2022, 5, 12), amortizes_interest=False))
 
     for i in range(1, 37):
         tab1.append(fincore.Amortization(date=tab1[0].date + _MONTH * i, amortization_ratio=decimal.Decimal('0.02777777777778')))
 
-    # Juros, valor bruto, imposto, valor líquido, saldo devedor.
+    # Interest, gross value, tax, net value, outstanding balance.
     tab2 = {}
 
     tab2[1] = '79936.07', '222213.85', '17985.62', '204228.23', '4979722.22'
@@ -3160,9 +3160,9 @@ def test_will_create_custom_2():
 
 def test_will_create_custom_3a():
     '''
-    Operação pré-fixada modalidade Livre c/ carência de 6 meses.
+    Fixed-rate operation, Custom mode with a 6-month grace period.
 
-    Crédito - Estudantes de Medicina
+    Credit - Medical Students
 
     Ref File: https://docs.google.com/spreadsheets/d/1S1FbR3HZLavkybf2uvXvHbL0ftUVPbmcsynNqiXZkZo
     Tab.....: Crédito - Estudantes de Medicina
@@ -3174,7 +3174,7 @@ def test_will_create_custom_3a():
     kwa['apy'] = decimal.Decimal('21.5')
     kwa['amortizations'] = tab1 = []
 
-    # Monta a tabela de amortizações.
+    # Build the amortization table.
     tab1.append(fincore.Amortization(date=datetime.date(2022, 8, 8), amortizes_interest=False))
     tab1.append(fincore.Amortization(date=datetime.date(2022, 9, 8), amortizes_interest=False))
     tab1.append(fincore.Amortization(date=datetime.date(2022, 10, 8), amortizes_interest=False))
@@ -3213,7 +3213,7 @@ def test_will_create_custom_3a():
     tab1.append(fincore.Amortization(date=datetime.date(2025, 7, 8), amortization_ratio=decimal.Decimal('0.041091407'), amortizes_interest=True))
     tab1.append(fincore.Amortization(date=datetime.date(2025, 8, 8), amortization_ratio=decimal.Decimal('0.0417637065'), amortizes_interest=True))
 
-    # Pagamentos – amortização, juros, valor bruto, imposto, valor líquido, saldo devedor.
+    # Payments – amortization, interest, gross value, tax, net value, outstanding balance.
     tab2 = {}
 
     tab2[1] = 0, '8507.76', 0, 0, 0, '528507.76'
@@ -3263,9 +3263,9 @@ def test_will_create_custom_3a():
 
 def test_will_create_custom_3b():
     '''
-    Operação pós-fixada CDI, modalidade Livre c/ carência de 3 meses.
+    Post-fixed CDI operation, Custom mode with a 3-month grace period.
 
-    Hipotética 1 - CDI + Carência de 3 meses
+    Hypothetical 1 - CDI + 3-month grace period
 
     Ref File: https://docs.google.com/spreadsheets/d/1UcgpmsZRCs3xyobSj6GIVWTSazRAz834fiuXqyOSVFM
     Tab.....: Hipotética 1 - CDI + Carência de 3 meses
@@ -3278,7 +3278,7 @@ def test_will_create_custom_3b():
     kwa['vir'] = fincore.VariableIndex(code='CDI')
     kwa['amortizations'] = tab1 = []
 
-    # Monta a tabela de amortizações.
+    # Build the amortization table.
     tab1.append(fincore.Amortization(date=datetime.date(2022, 1, 1), amortizes_interest=False))
     tab1.append(fincore.Amortization(date=datetime.date(2022, 2, 1), amortizes_interest=False))
     tab1.append(fincore.Amortization(date=datetime.date(2022, 3, 1), amortizes_interest=False))
@@ -3287,7 +3287,7 @@ def test_will_create_custom_3b():
     tab1.append(fincore.Amortization(date=datetime.date(2022, 6, 1), amortization_ratio=decimal.Decimal('0.3333333333'), amortizes_interest=True))
     tab1.append(fincore.Amortization(date=datetime.date(2022, 7, 1), amortization_ratio=decimal.Decimal('0.3333333334'), amortizes_interest=True))
 
-    # Pagamentos – amortização, juros, valor bruto, imposto, valor líquido, saldo devedor.
+    # Payments – amortization, interest, gross value, tax, net value, outstanding balance.
     tab2 = {}
 
     tab2[1] = 0, '1222.59', 0, 0, 0, '101222.59'
@@ -3307,7 +3307,7 @@ def test_will_create_custom_3b():
 
 def test_will_create_custom_4():
     '''
-    Operação pré-fixada modalidade Livre c/ correção monetária por IPCA.
+    Fixed-rate operation, Custom mode with IPCA price-level adjustment.
 
     ASAD Energia.
 
@@ -3322,7 +3322,7 @@ def test_will_create_custom_4():
     kwa['vir'] = fincore.VariableIndex('IPCA')
     kwa['amortizations'] = []
 
-    # Monta a tabela de amortizações.
+    # Build the amortization table.
     tab1 = []
 
     tab1.append((datetime.date(2022, 9, 5), decimal.Decimal('0.0134830659'), 12))
@@ -3394,7 +3394,7 @@ def test_will_create_custom_4():
 
         kwa['amortizations'].append(fincore.Amortization(date=date, amortization_ratio=pct, price_level_adjustment=pla))
 
-    # Pagamentos – correção, amortização, juros, valor bruto, imposto, valor líquido, saldo devedor.
+    # Payments – adjustment, amortization, interest, gross value, tax, net value, outstanding balance.
     tab2 = {}
 
     tab2[1] = 0, '1893.91', '1156.25', '3050.16', '260.16', '2790.00', '143106.09'
@@ -3474,7 +3474,7 @@ def test_will_create_custom_4():
 
 def test_will_create_custom_5a():
     '''
-    Operação modalidade Livre com aniversário e carência trimestral.
+    Custom mode operation with an anniversary and a quarterly grace period.
 
     Ref File: https://docs.google.com/spreadsheets/d/1S1FbR3HZLavkybf2uvXvHbL0ftUVPbmcsynNqiXZkZo
     Tab.....: Hipotética 01 - Trimestral c/ Aniversário
@@ -3486,7 +3486,7 @@ def test_will_create_custom_5a():
     kwa['apy'] = decimal.Decimal('50')
     kwa['amortizations'] = tab1 = []
 
-    # Monta a tabela de amortizações.
+    # Build the amortization table.
     tab1.append(fincore.Amortization(date=datetime.date(2020, 2, 20), amortizes_interest=False))
     tab1.append(fincore.Amortization(date=datetime.date(2020, 3, 15), amortizes_interest=False))
     tab1.append(fincore.Amortization(date=datetime.date(2020, 4, 15), amortizes_interest=False))
@@ -3501,7 +3501,7 @@ def test_will_create_custom_5a():
     tab1.append(fincore.Amortization(date=datetime.date(2021, 1, 15), amortizes_interest=False))
     tab1.append(fincore.Amortization(date=datetime.date(2021, 2, 15), amortization_ratio=decimal.Decimal('0.25')))
 
-    # Amortização, juros, valor bruto, imposto, valor líquido, saldo devedor.
+    # Amortization, interest, gross value, tax, net value, outstanding balance.
     tab2 = {}
 
     tab2[1] = 0, '19878.14', 0, 0, 0, '769878.14'
@@ -3526,7 +3526,7 @@ def test_will_create_custom_5a():
 
 def test_will_create_custom_5b():
     '''
-    Operação modalidade Livre CDI com aniversário e carência de 3 meses.
+    Custom mode CDI operation with an anniversary and a 3-month grace period.
 
     Ref File: https://docs.google.com/spreadsheets/d/1UcgpmsZRCs3xyobSj6GIVWTSazRAz834fiuXqyOSVFM
     Tab.....: Hipotética 3 - CDI + Aniv. e carência
@@ -3539,7 +3539,7 @@ def test_will_create_custom_5b():
     kwa['vir'] = fincore.VariableIndex(code='CDI')
     kwa['amortizations'] = tab1 = []
 
-    # Monta a tabela de amortizações.
+    # Build the amortization table.
     tab1.append(fincore.Amortization(date=datetime.date(2022, 1, 1), amortizes_interest=False))
     tab1.append(fincore.Amortization(date=datetime.date(2022, 2, 15), amortizes_interest=False))
     tab1.append(fincore.Amortization(date=datetime.date(2022, 3, 15), amortizes_interest=False))
@@ -3548,7 +3548,7 @@ def test_will_create_custom_5b():
     tab1.append(fincore.Amortization(date=datetime.date(2022, 6, 15), amortization_ratio=decimal.Decimal('0.3333333333'), amortizes_interest=True))
     tab1.append(fincore.Amortization(date=datetime.date(2022, 7, 15), amortization_ratio=decimal.Decimal('0.3333333334'), amortizes_interest=True))
 
-    # Pagamentos – amortização, juros, valor bruto, imposto, valor líquido, saldo devedor.
+    # Payments – amortization, interest, gross value, tax, net value, outstanding balance.
     tab2 = {}
 
     tab2[1] = 0, '1854.15', 0, 0, 0, '101854.15'
@@ -3568,9 +3568,9 @@ def test_will_create_custom_5b():
 
 def test_will_create_custom_6a():
     '''
-    Operação pós-fixada IPCA, modalidade Livre.
+    Post-fixed IPCA operation, Custom mode.
 
-    Unique Tower - Proteção Contra Inflação
+    Unique Tower - Inflation Protection
 
     Ref File: https://docs.google.com/spreadsheets/d/1mxhXoqP-f_SUQS-f_e4F79jqiBMuHJdZ0H3Gof67pGA
     Tab.....: Unique Tower - PCI
@@ -3583,7 +3583,7 @@ def test_will_create_custom_6a():
     kwa['vir'] = fincore.VariableIndex(code='IPCA')
     kwa['amortizations'] = tab1 = []
 
-    # Amortizações.
+    # Amortizations.
     tab1.append(fincore.Amortization(date=datetime.date(2022, 7, 8), amortizes_interest=False))
 
     for i in range(1, 31):
@@ -3591,7 +3591,7 @@ def test_will_create_custom_6a():
 
         tab1.append(fincore.Amortization(date=tab1[0].date + _MONTH * i, amortization_ratio=decimal.Decimal('0.033333333333333335'), price_level_adjustment=pla))
 
-    # Pagamentos – correção, juros, valor bruto, imposto, valor líquido, saldo devedor.
+    # Payments – adjustment, interest, gross value, tax, net value, outstanding balance.
     tab2 = {}
 
     tab2[1] = '245.78', '9676.82', '46605.94', '2232.59', '44373.35', '1070944.24'
@@ -3635,14 +3635,14 @@ def test_will_create_custom_6a():
 
     assert i == len(tab1) - 1 == len(tab2)
 
-# Esse teste é parametrizado para demonstrar que o argumento "calc_date" não
-# afeta a tabela de pagamentos caso a data informada seja igual ou maior que
-# data de quitação do empréstimo. Observe que o parâmetro "runaway" também não
-# tem efeito algum nesses casos. A biblioteca nunca gera pagamentos após a data
-# de quitação, mesmo que o cronograma regular ultrapasse essa data, o que
-# acontece em uma antecipação total.
+# This test is parameterized to demonstrate that the "calc_date" argument does
+# not affect the payments table when the given date is equal to or later than
+# the loan settlement date. Note that the "runaway" parameter also has no
+# effect in those cases. The library never generates payments after the
+# settlement date, even if the regular schedule goes beyond that date, which
+# happens in a full prepayment.
 #
-# No caso abaixo, o empréstimo sofre antecipação total no dia 6 de janeiro de
+# In the case below, the loan undergoes a full prepayment on January 6,
 # 2022.
 #
 @pytest.mark.parametrize('calc_date', [
@@ -3654,9 +3654,9 @@ def test_will_create_custom_6a():
 ])
 def test_will_create_custom_6b(calc_date):
     '''
-    Operação pós-fixada IPCA, modalidade Livre c/ antecipação total.
+    Post-fixed IPCA operation, Custom mode with a full prepayment.
 
-    Unique Tower - Proteção Contra Inflação
+    Unique Tower - Inflation Protection
 
     Ref File: https://docs.google.com/spreadsheets/d/1mxhXoqP-f_SUQS-f_e4F79jqiBMuHJdZ0H3Gof67pGA
     Tab.....: Unique Tower - PCI c/ AT
@@ -3671,7 +3671,7 @@ def test_will_create_custom_6b(calc_date):
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2023, 1, 6), value=decimal.Decimal('939851.51'))]
     kwa['calc_date'] = calc_date
 
-    # Amortizações.
+    # Amortizations.
     tab1.append(fincore.Amortization(date=datetime.date(2022, 7, 8), amortizes_interest=False))
 
     for i in range(1, 31):
@@ -3679,7 +3679,7 @@ def test_will_create_custom_6b(calc_date):
 
         tab1.append(fincore.Amortization(date=tab1[0].date + _MONTH * i, amortization_ratio=decimal.Decimal('0.033333333333333335'), price_level_adjustment=pla))
 
-    # Pagamentos – correção, amortização, juros, valor bruto, imposto, valor líquido, saldo devedor.
+    # Payments – adjustment, amortization, interest, gross value, tax, net value, outstanding balance.
     tab2 = {}
 
     tab2[1] = '245.78', '36683.33', '9676.82', '46605.94', '2232.59', '44373.35', '1070944.24'
@@ -3706,9 +3706,9 @@ def test_will_create_custom_6b(calc_date):
 
 def test_will_create_custom_7():
     '''
-    Operação Resolvvi, primeiro e segundo pagamentos.
+    Resolvvi operation, first and second payments.
 
-    Modalidade Livre com antecipação durante o período de carência.
+    Custom mode with prepayment during the grace period.
 
     Ref File: https://docs.google.com/spreadsheets/d/1S1FbR3HZLavkybf2uvXvHbL0ftUVPbmcsynNqiXZkZo
     Tab.....: Resolvvi - Pré-Fixada - Parcelas Amortizadas
@@ -3724,7 +3724,7 @@ def test_will_create_custom_7():
     kwa['insertions'].append(fincore.Amortization.Bare(date=datetime.date(2023, 7, 28), value=decimal.Decimal('34454.09')))
     kwa['insertions'].append(fincore.Amortization.Bare(date=datetime.date(2023, 8, 21), value=decimal.Decimal('90252.22')))
 
-    # Monta a tabela de amortizações.
+    # Build the amortization table.
     tab1.append(fincore.Amortization(date=datetime.date(2023, 6, 19), amortizes_interest=False))
 
     for i in range(29):
@@ -3732,7 +3732,7 @@ def test_will_create_custom_7():
 
     tab1.append(fincore.Amortization(date=datetime.date(2025, 12, 21), amortization_ratio=_1))
 
-    # Amortização, juros, valor bruto, imposto, valor líquido, saldo devedor.
+    # Amortization, interest, gross value, tax, net value, outstanding balance.
     tab2 = {}
 
     tab2[1] = 0, '11386.71', 0, 0, 0, '671386.71'
@@ -3772,16 +3772,16 @@ def test_will_create_custom_7():
         assert x.no == i
 
         if i == 1:
-            assert x.date == tab1[1].date + _MONTH * (i - 1)  # Cronograma regular.
+            assert x.date == tab1[1].date + _MONTH * (i - 1)  # Regular schedule.
 
         elif i == 2:
-            assert x.date == kwa['insertions'][0].date  # Antecipação.
+            assert x.date == kwa['insertions'][0].date  # Prepayment.
 
         elif i == 3:
-            assert x.date == kwa['insertions'][1].date  # Antecipação.
+            assert x.date == kwa['insertions'][1].date  # Prepayment.
 
         else:
-            assert x.date == tab1[1].date + _MONTH * (i - 3)  # Cronograma regular.
+            assert x.date == tab1[1].date + _MONTH * (i - 3)  # Regular schedule.
 
         assert [x.amort, x.gain, x.raw, x.tax, x.net, x.bal] == [decimal.Decimal(y) for y in tab2[i]]
 
@@ -3789,7 +3789,7 @@ def test_will_create_custom_7():
 
 def test_will_create_custom_8a():
     '''
-    Operação hipotética, modalidade Livre, com antecipação durante o período de carência.
+    Hypothetical operation, Custom mode, with prepayment during the grace period.
 
     Ref File: https://docs.google.com/spreadsheets/d/1S1FbR3HZLavkybf2uvXvHbL0ftUVPbmcsynNqiXZkZo
     Tab.....: Hipotética 02 - Antecipação
@@ -3802,7 +3802,7 @@ def test_will_create_custom_8a():
     kwa['amortizations'] = tab1 = []
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 2, 10), value=decimal.Decimal('45000'))]
 
-    # Monta a tabela de amortizações.
+    # Build the amortization table.
     tab1.append(fincore.Amortization(date=datetime.date(2022, 1, 1), amortizes_interest=False))
     tab1.append(fincore.Amortization(date=datetime.date(2022, 2, 1), amortizes_interest=False))
     tab1.append(fincore.Amortization(date=datetime.date(2022, 3, 1), amortizes_interest=False))
@@ -3817,7 +3817,7 @@ def test_will_create_custom_8a():
     tab1.append(fincore.Amortization(date=datetime.date(2022, 12, 1), amortizes_interest=False))
     tab1.append(fincore.Amortization(date=datetime.date(2023, 1, 1), amortization_ratio=_1))
 
-    # Amortização, juros, valor bruto, imposto, valor líquido, saldo devedor.
+    # Amortization, interest, gross value, tax, net value, outstanding balance.
     tab2 = {}
 
     tab2[1] = 0, '25774.56', 0, 0, 0, '775774.56'
@@ -3852,7 +3852,7 @@ def test_will_create_custom_8a():
 
 def test_will_create_custom_8b():
     '''
-    Operação pós-fixada CDI hipotética, modalidade Livre, com antecipação dutrante o período de carência.
+    Hypothetical post-fixed CDI operation, Custom mode, with prepayment during the grace period.
 
     Hipotética 2 - CDI + Antecipação em carência
 
@@ -3868,7 +3868,7 @@ def test_will_create_custom_8b():
     kwa['amortizations'] = tab1 = []
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 2, 15), value=decimal.Decimal('10000'))]
 
-    # Monta a tabela de amortizações.
+    # Build the amortization table.
     tab1.append(fincore.Amortization(date=datetime.date(2022, 1, 1), amortizes_interest=False))
     tab1.append(fincore.Amortization(date=datetime.date(2022, 2, 1), amortizes_interest=False))
     tab1.append(fincore.Amortization(date=datetime.date(2022, 3, 1), amortizes_interest=False))
@@ -3877,7 +3877,7 @@ def test_will_create_custom_8b():
     tab1.append(fincore.Amortization(date=datetime.date(2022, 6, 1), amortizes_interest=False))
     tab1.append(fincore.Amortization(date=datetime.date(2022, 7, 1), amortization_ratio=_1, amortizes_interest=True))
 
-    # Pagamentos – amortização, juros, valor bruto, imposto, valor líquido, saldo devedor.
+    # Payments – amortization, interest, gross value, tax, net value, outstanding balance.
     tab2 = {}
 
     tab2[1] = 0, '1222.59', 0, 0, 0, '101222.59'
@@ -3892,7 +3892,7 @@ def test_will_create_custom_8b():
         assert x.no == i
 
         if i == 2:
-            assert x.date == kwa['insertions'][0].date  # Antecipação.
+            assert x.date == kwa['insertions'][0].date  # Prepayment.
 
         else:
             assert x.date == tab1[0].date + _MONTH * (1 if i == 1 else i - 1)
@@ -3903,7 +3903,7 @@ def test_will_create_custom_8b():
 
 def test_will_create_custom_9a():
     '''
-    Operação hipotética, modalidade Livre, com antecipação durante o período de carência.
+    Hypothetical operation, Custom mode, with prepayment during the grace period.
 
     Ref File: https://docs.google.com/spreadsheets/d/1S1FbR3HZLavkybf2uvXvHbL0ftUVPbmcsynNqiXZkZo
     Tab.....: Hipotética 03 - Antecipação Total
@@ -3916,7 +3916,7 @@ def test_will_create_custom_9a():
     kwa['amortizations'] = tab1 = []
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 2, 10), value=decimal.Decimal('784245.91'))]
 
-    # Monta a tabela de amortizações.
+    # Build the amortization table.
     tab1.append(fincore.Amortization(date=datetime.date(2022, 1, 1), amortizes_interest=False))
     tab1.append(fincore.Amortization(date=datetime.date(2022, 2, 1), amortizes_interest=False))
     tab1.append(fincore.Amortization(date=datetime.date(2022, 3, 1), amortizes_interest=False))
@@ -3931,7 +3931,7 @@ def test_will_create_custom_9a():
     tab1.append(fincore.Amortization(date=datetime.date(2022, 12, 1), amortizes_interest=False))
     tab1.append(fincore.Amortization(date=datetime.date(2023, 1, 1), amortization_ratio=_1))
 
-    # Amortização, juros, valor bruto, imposto, valor líquido, saldo devedor.
+    # Amortization, interest, gross value, tax, net value, outstanding balance.
     tab2 = {}
 
     tab2[1] = 0, '25774.56', 0, 0, 0, '775774.56'
@@ -3947,7 +3947,7 @@ def test_will_create_custom_9a():
 
 def test_will_create_custom_9b():
     '''
-    Operação pós-fixada CDI hipotética, modalidade Livre, com antecipação dutrante o período de carência.
+    Hypothetical post-fixed CDI operation, Custom mode, with prepayment during the grace period.
 
     Hipotética 4 - CDI + Antecipação total em carência
 
@@ -3963,7 +3963,7 @@ def test_will_create_custom_9b():
     kwa['amortizations'] = tab1 = []
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 2, 15), value=decimal.Decimal('101854.15'))]
 
-    # Monta a tabela de amortizações.
+    # Build the amortization table.
     tab1.append(fincore.Amortization(date=datetime.date(2022, 1, 1), amortizes_interest=False))
     tab1.append(fincore.Amortization(date=datetime.date(2022, 2, 1), amortizes_interest=False))
     tab1.append(fincore.Amortization(date=datetime.date(2022, 3, 1), amortizes_interest=False))
@@ -3972,7 +3972,7 @@ def test_will_create_custom_9b():
     tab1.append(fincore.Amortization(date=datetime.date(2022, 6, 1), amortizes_interest=False))
     tab1.append(fincore.Amortization(date=datetime.date(2022, 7, 1), amortization_ratio=_1, amortizes_interest=True))
 
-    # Pagamentos – amortização, juros, valor bruto, imposto, valor líquido, saldo devedor.
+    # Payments – amortization, interest, gross value, tax, net value, outstanding balance.
     tab2 = {}
 
     tab2[1] = 0, '1222.59', 0, 0, 0, '101222.59'
@@ -3988,7 +3988,7 @@ def test_will_create_custom_9b():
 
 def test_will_create_custom_10():
     '''
-    Operação hipotética, modalidade Livre, incorporação de juros e amortização de principal.
+    Hypothetical operation, Custom mode, with interest capitalization and principal amortization.
 
     Ref File: https://docs.google.com/spreadsheets/d/1S1FbR3HZLavkybf2uvXvHbL0ftUVPbmcsynNqiXZkZo
     Tab.....: Hipotética 04 - Incorp. & Amort.
@@ -4001,7 +4001,7 @@ def test_will_create_custom_10():
     kwa['apy'] = decimal.Decimal('50')
     kwa['amortizations'] = tab1 = []
 
-    # Monta a tabela de amortizações.
+    # Build the amortization table.
     tab1.append(fincore.Amortization(date=datetime.date(2022, 1, 1), amortizes_interest=False))
     tab1.append(fincore.Amortization(date=datetime.date(2022, 2, 1), amortizes_interest=False, amortization_ratio=pct))
     tab1.append(fincore.Amortization(date=datetime.date(2022, 3, 1), amortizes_interest=False, amortization_ratio=pct))
@@ -4016,7 +4016,7 @@ def test_will_create_custom_10():
     tab1.append(fincore.Amortization(date=datetime.date(2022, 12, 1), amortizes_interest=False, amortization_ratio=pct))
     tab1.append(fincore.Amortization(date=datetime.date(2023, 1, 1), amortization_ratio=pct))
 
-    # Amortização, juros, valor bruto, imposto, valor líquido, saldo devedor.
+    # Amortization, interest, gross value, tax, net value, outstanding balance.
     tab2 = {}
 
     tab2[1] = '62500.00', '25774.56', '62500.00', '0.00', '62500.00', '713274.56',
@@ -4041,12 +4041,12 @@ def test_will_create_custom_10():
     assert i == len(tab1) - 1 == len(tab2)
 # }}}
 
-# Modos de visualização de juros. {{{
+# Interest visualization modes. {{{
 def test_will_return_net_output_correctly_1():
     '''
-    Testa a saída do motor quando não há pagamento de imposto de renda.
+    Tests the engine output when there is no income tax payment.
 
-    Baseado na operação hipotética abaixo, pré-fixada e modalidade Bullet.
+    Based on the hypothetical operation below, fixed-rate and Bullet mode.
 
     Ref File: https://docs.google.com/spreadsheets/d/1ijJLZYP8BnuENPrTLFlfdqbiSx8Gs7wtO7T85cgkLgM
     Tab.....: Hipotética 01
@@ -4073,15 +4073,15 @@ def test_will_return_net_output_correctly_1():
     assert i == 1
 # }}}
 
-# Modos de visualização de juros. {{{
+# Interest visualization modes. {{{
 def test_will_return_gain_output_correctly_1():
     '''
-    Testa a saída de juros do motor no modo "current".
+    Tests the engine interest output in "current" mode.
 
-    Teste baseado no cronograma de pagamentos da Resolvvi - Pré-Fixada - Parcelas Amortizadas - 30 meses.
+    Test based on the payment schedule of Resolvvi - Pré-Fixada - Parcelas Amortizadas - 30 meses.
 
     ╒══════╤════════════╤═══════════╤════════════╤══════════╤════════════╤══════════╤════════════╤════════════╕
-    │   Nº │    Data    │     Juros │       Amt. │   Amt. % │      Bruto │     I.R. │    Líquido │      Saldo │
+    │   No │    Date    │  Interest │       Amt. │   Amt. % │      Gross │      Tax │        Net │    Balance │
     ╞══════╪════════════╪═══════════╪════════════╪══════════╪════════════╪══════════╪════════════╪════════════╡
     │    1 │ 21/07/2023 │ 11.386,71 │       0,00 │        0 │       0,00 │     0,00 │       0,00 │ 671.386,71 │
     │    2 │ 28/07/2023 │  2.516,91 │  20.550,47 │  3.11371 │  34.454,09 │ 3.128,31 │  31.325,78 │ 639.449,53 │
@@ -4101,7 +4101,7 @@ def test_will_return_gain_output_correctly_1():
     kwa['amortizations'] = tab1 = []
     kwa['insertions'] = tab2 = []
 
-    # Monta a tabela de amortizações.
+    # Build the amortization table.
     tab1.append(fincore.Amortization(date=datetime.date(2023, 6, 19), amortizes_interest=False))
 
     for i in range(1, 31):
@@ -4113,13 +4113,13 @@ def test_will_return_gain_output_correctly_1():
         else:
             tab1.append(fincore.Amortization(date=dda + _MONTH * (i - 1), amortization_ratio=_1))
 
-    # Monta tabela de inserções.
+    # Builds the insertions table.
     tab2.append(fincore.Amortization.Bare(datetime.date(2023, 7, 28), value=decimal.Decimal('34454.09')))
     tab2.append(fincore.Amortization.Bare(datetime.date(2023, 8, 21), value=decimal.Decimal('90252.22')))
     tab2.append(fincore.Amortization.Bare(datetime.date(2023, 9, 21), value=decimal.Decimal('242523.90')))
     tab2.append(fincore.Amortization.Bare(datetime.date(2023, 10, 23), value=decimal.Decimal('330014.70')))
 
-    # Data, juros, valor amortizado, valor bruto, imposto, valor líquido, saldo devedor.
+    # Date, interest, amortized value, gross value, tax, net value, outstanding balance.
     tab3 = {}
 
     tab3[1] = '2023-07-21', '11386.71', '0.00', '0.00', '0.00', '0.00', '671386.71'
@@ -4138,12 +4138,12 @@ def test_will_return_gain_output_correctly_1():
 
 def test_will_return_gain_output_correctly_2():
     '''
-    Testa a saída de juros do motor no modo "deferred".
+    Tests the engine interest output in "deferred" mode.
 
-    Teste baseado no cronograma de pagamentos da Resolvvi - Pré-Fixada - Parcelas Amortizadas - 30 meses.
+    Test based on the payment schedule of Resolvvi - Pré-Fixada - Parcelas Amortizadas - 30 meses.
 
     ╒══════╤════════════╤═══════════╤════════════╤══════════╤════════════╤══════════╤════════════╤════════════╕
-    │   Nº │    Data    │     Juros │       Amt. │   Amt. % │      Bruto │     I.R. │    Líquido │      Saldo │
+    │   No │    Date    │  Interest │       Amt. │   Amt. % │      Gross │      Tax │        Net │    Balance │
     ╞══════╪════════════╪═══════════╪════════════╪══════════╪════════════╪══════════╪════════════╪════════════╡
     │    1 │ 21/07/2023 │ 11.386,71 │       0,00 │        0 │       0,00 │     0,00 │       0,00 │ 671.386,71 │
     │    2 │ 28/07/2023 │ 13.903,62 │  20.550,47 │  3.11371 │  34.454,09 │ 3.128,31 │  31.325,78 │ 639.449,53 │
@@ -4164,7 +4164,7 @@ def test_will_return_gain_output_correctly_2():
     kwa['amortizations'] = tab1 = []
     kwa['insertions'] = tab2 = []
 
-    # Monta a tabela de amortizações.
+    # Build the amortization table.
     tab1.append(fincore.Amortization(date=datetime.date(2023, 6, 19), amortizes_interest=False))
 
     for i in range(1, 31):
@@ -4176,13 +4176,13 @@ def test_will_return_gain_output_correctly_2():
         else:
             tab1.append(fincore.Amortization(date=dda + _MONTH * (i - 1), amortization_ratio=_1))
 
-    # Monta tabela de inserções.
+    # Builds the insertions table.
     tab2.append(fincore.Amortization.Bare(datetime.date(2023, 7, 28), value=decimal.Decimal('34454.09')))
     tab2.append(fincore.Amortization.Bare(datetime.date(2023, 8, 21), value=decimal.Decimal('90252.22')))
     tab2.append(fincore.Amortization.Bare(datetime.date(2023, 9, 21), value=decimal.Decimal('242523.90')))
     tab2.append(fincore.Amortization.Bare(datetime.date(2023, 10, 23), value=decimal.Decimal('330014.70')))
 
-    # Data, juros, valor amortizado, valor bruto, imposto, valor líquido, saldo devedor.
+    # Date, interest, amortized value, gross value, tax, net value, outstanding balance.
     tab3 = {}
 
     tab3[1] = '2023-07-21', '11386.71', '0.00', '0.00', '0.00', '0.00', '671386.71'
@@ -4201,12 +4201,12 @@ def test_will_return_gain_output_correctly_2():
 
 def test_will_return_gain_output_correctly_3():
     '''
-    Testa a saída de juros do motor no modo "settled".
+    Tests the engine interest output in "settled" mode.
 
-    Teste baseado no cronograma de pagamentos da Resolvvi - Pré-Fixada - Parcelas Amortizadas - 30 meses.
+    Test based on the payment schedule of Resolvvi - Pré-Fixada - Parcelas Amortizadas - 30 meses.
 
     ╒══════╤════════════╤═══════════╤════════════╤══════════╤════════════╤══════════╤════════════╤════════════╕
-    │   Nº │    Data    │     Juros │       Amt. │   Amt. % │      Bruto │     I.R. │    Líquido │      Saldo │
+    │   No │    Date    │  Interest │       Amt. │   Amt. % │      Gross │      Tax │        Net │    Balance │
     ╞══════╪════════════╪═══════════╪════════════╪══════════╪════════════╪══════════╪════════════╪════════════╡
     │    1 │ 21/07/2023 │      0,00 │       0,00 │        0 │       0,00 │     0,00 │       0,00 │ 671.386,71 │
     │    2 │ 28/07/2023 │ 13.903,62 │  20.550,47 │  3.11371 │  34.454,09 │ 3.128,31 │  31.325,78 │ 639.449,53 │
@@ -4227,7 +4227,7 @@ def test_will_return_gain_output_correctly_3():
     kwa['amortizations'] = tab1 = []
     kwa['insertions'] = tab2 = []
 
-    # Monta a tabela de amortizações.
+    # Build the amortization table.
     tab1.append(fincore.Amortization(date=datetime.date(2023, 6, 19), amortizes_interest=False))
 
     for i in range(1, 31):
@@ -4239,13 +4239,13 @@ def test_will_return_gain_output_correctly_3():
         else:
             tab1.append(fincore.Amortization(date=dda + _MONTH * (i - 1), amortization_ratio=_1))
 
-    # Monta tabela de inserções.
+    # Builds the insertions table.
     tab2.append(fincore.Amortization.Bare(datetime.date(2023, 7, 28), value=decimal.Decimal('34454.09')))
     tab2.append(fincore.Amortization.Bare(datetime.date(2023, 8, 21), value=decimal.Decimal('90252.22')))
     tab2.append(fincore.Amortization.Bare(datetime.date(2023, 9, 21), value=decimal.Decimal('242523.90')))
     tab2.append(fincore.Amortization.Bare(datetime.date(2023, 10, 23), value=decimal.Decimal('330014.70')))
 
-    # Data, juros, valor amortizado, valor bruto, imposto, valor líquido, saldo devedor.
+    # Date, interest, amortized value, gross value, tax, net value, outstanding balance.
     tab3 = {}
 
     tab3[1] = '2023-07-21', '0.00', '0.00', '0.00', '0.00', '0.00', '671386.71'
@@ -4263,12 +4263,12 @@ def test_will_return_gain_output_correctly_3():
         assert [x.gain, x.amort, x.raw, x.tax, x.net, x.bal] == [decimal.Decimal(y) for y in tab3[i][1:]]
 # }}}
 
-# Enigmas. {{{
+# Riddles. {{{
 #
-# Para operações Juros mensais e Price, atribuir uma data de aniversário equivalente à data esperada do pagamento da
-# primeira prestação revelava um comportamento pouco intuitivo do Fincore.
+# For American Amortization and Price operations, assigning an anniversary date equal to the expected payment date of
+# the first installment revealed a rather unintuitive behavior in Fincore.
 #
-# Você poderia esperar que os dois trechos de código abaixo produziriam o mesmo resultado. Trecho um.
+# You might expect the two code snippets below to produce the same result. Snippet one.
 #
 #   >>> kwa = {}
 #
@@ -4279,7 +4279,7 @@ def test_will_return_gain_output_correctly_3():
 #
 #   >>> sched1 = _get_american_payments(**kwa)
 #
-# Trecho dois.
+# Snippet two.
 #
 #   >>> kwa = {}
 #
@@ -4287,20 +4287,20 @@ def test_will_return_gain_output_correctly_3():
 #   >>> kwa['apy'] = decimal.Decimal(10)
 #   >>> kwa['zero_date'] = datetime.date(2023, 3, 31)
 #   >>> kwa['term'] = 3
-#   >>> kwa['anniversary_date'] = datetime.date(2023, 4, 30)  # Linha extra.
+#   >>> kwa['anniversary_date'] = datetime.date(2023, 4, 30)  # Extra line.
 #
 #   >>> sched2 = _get_american_payments(**kwa)
 #
-# Observe que o aniversário do trecho dois é exatamente a data do primeiro pagamento do trecho um. Teoricamente, e
-# intuitivamente, os dois cronogramas devem ser iguais. Na prática, isso não acontecia. O primeiro cronograma gerava as
-# três datas abaixo.
+# Notice that the anniversary in snippet two is exactly the date of the first payment in snippet one. Theoretically, and
+# intuitively, the two schedules should be equal. In practice, that was not the case. The first schedule generated the
+# three dates below.
 #
 #   >>> [x.date for x in sched1]
 #   [datetime.date(2023, 4, 30),
 #    datetime.date(2023, 5, 31),
 #    datetime.date(2023, 6, 30)]
 #
-# O segundo gerava outras três datas.
+# The second generated three other dates.
 #
 #   >>> [x.date for x in sched2]
 #   [datetime.date(2023, 4, 30),
@@ -4310,12 +4310,12 @@ def test_will_return_gain_output_correctly_3():
 @pytest.mark.enigmatic
 def test_will_redundantly_set_aniversary_date_without_collateral_effect_1():
     '''
-    Testa atribuição de data de aniversário redundante.
+    Tests assignment of a redundant anniversary date.
 
-    O Fincore trata o empréstimo como regular, sem data de aniversário. Caso contrário, todas os pagamentos cairiam no
-    dia trinta, exceto os de fevereiro, afetando o os valores do cronograma de pagamentos.
+    Fincore treats the loan as regular, without an anniversary date. Otherwise, all payments would fall on the
+    thirtieth, except those in February, affecting the values of the payment schedule.
 
-    Juros mensais e Price.
+    American Amortization and Price.
     '''
 
     kwa1 = {}
@@ -4342,10 +4342,10 @@ def test_will_redundantly_set_aniversary_date_without_collateral_effect_1():
 @pytest.mark.enigmatic
 def test_will_redundantly_set_aniversary_date_without_collateral_effect_2():
     '''
-    Testa atribuição de data de aniversário redundante. O Fincore trata o empréstimo como regular, sem data de
-    aniversário.
+    Tests assignment of a redundant anniversary date. Fincore treats the loan as regular, without an anniversary
+    date.
 
-    Juros mensais e Price.
+    American Amortization and Price.
     '''
 
     kwa1 = {}
@@ -4370,22 +4370,22 @@ def test_will_redundantly_set_aniversary_date_without_collateral_effect_2():
         assert x == y  # Then.
 
 @pytest.mark.enigmatic
-@pytest.mark.parametrize('modalidade', ['Bullet', 'Price', 'Livre', 'Juros mensais'])
-def test_will_have_rounding_artifacts_1(modalidade):
+@pytest.mark.parametrize('mode', ['Bullet', 'Price', 'Custom', 'American'])
+def test_will_have_rounding_artifacts_1(mode):
     '''
-    Primeiro teste de artefato de arredondamento.
+    First rounding artifact test.
 
-    Testa que a soma dos valores brutos pagos para M pagamentos de N partes de um empréstimo E não corresponde ao valor
-    bruto pago M para pagamentos de E.
+    Tests that the sum of the raw amounts paid for M payments of N parts of a loan E does not match the raw
+    amount paid for M payments of E.
 
-    Nesse caso de teste o empréstimo foi divido em 211 partes e, para nenhuma das modalidades Bullet, Price, Livre, e
-    Juros mensais, a soma dos valores brutos dos pagamentos dos cronogramas casa com o valor bruto da soma dos
-    pagamentos de E.
+    In this test case the loan was split into 211 parts and, for none of the Bullet, Price, Custom, and
+    American Amortization modes does the sum of the raw payment amounts of the schedules match the raw amount of the sum of the
+    payments of E.
     '''
 
     buf = types.SimpleNamespace(parts=[], raw_1=_0, raw_2=_0)
 
-    # Given. Partes do empréstimo.
+    # Given. Loan parts.
     buf.parts.extend([decimal.Decimal('500')] * 34)
     buf.parts.extend([decimal.Decimal('1000')] * 21)
     buf.parts.extend([decimal.Decimal('1500')] * 15)
@@ -4406,7 +4406,7 @@ def test_will_have_rounding_artifacts_1(modalidade):
     buf.parts.extend([decimal.Decimal('9000')] * 9)
     buf.parts.extend([decimal.Decimal('9500')] * 5)
 
-    if modalidade == 'Bullet':
+    if mode == 'Bullet':
         kwa = {}
 
         kwa['principal'] = sum(buf.parts)
@@ -4414,21 +4414,21 @@ def test_will_have_rounding_artifacts_1(modalidade):
         kwa['term'] = 12
         kwa['zero_date'] = datetime.date(2022, 3, 9)
 
-        # Soma do valor bruto dos M pagamentos de E.
+        # Sum of the raw amount of the M payments of E.
         for x in _get_bullet_payments(**kwa):  # When.
             buf.raw_1 += x.raw
 
-        # Soma os pagamentos das partes de E.
+        # Sums the payments of the parts of E.
         for val in buf.parts:
             kwa['principal'] = val
 
             for x in _get_bullet_payments(**kwa):
                 buf.raw_2 += x.raw
 
-        # Then. As somas não casam.
+        # Then. The sums do not match.
         assert buf.raw_2 - buf.raw_1 == decimal.Decimal('0.09')
 
-    elif modalidade == 'Juros mensais':
+    elif mode == 'American':
         kwa = {}
 
         kwa['principal'] = sum(buf.parts)
@@ -4436,21 +4436,21 @@ def test_will_have_rounding_artifacts_1(modalidade):
         kwa['term'] = 12
         kwa['zero_date'] = datetime.date(2022, 3, 9)
 
-        # Soma do valor bruto dos M pagamentos de E.
+        # Sum of the raw amount of the M payments of E.
         for x in _get_american_payments(**kwa):  # When.
             buf.raw_1 += x.raw
 
-        # Soma os pagamentos das partes de E.
+        # Sums the payments of the parts of E.
         for val in buf.parts:
             kwa['principal'] = val
 
             for x in _get_american_payments(**kwa):
                 buf.raw_2 += x.raw
 
-        # Then. As somas não casam.
+        # Then. The sums do not match.
         assert buf.raw_1 - buf.raw_2 == decimal.Decimal('0.36')
 
-    elif modalidade == 'Price':
+    elif mode == 'Price':
         kwa = {}
 
         kwa['principal'] = sum(buf.parts)
@@ -4458,18 +4458,18 @@ def test_will_have_rounding_artifacts_1(modalidade):
         kwa['term'] = 12
         kwa['zero_date'] = datetime.date(2022, 3, 9)
 
-        # Soma do valor bruto dos M pagamentos de E.
+        # Sum of the raw amount of the M payments of E.
         for x in _get_price_payments(**kwa):  # When.
             buf.raw_1 += x.raw
 
-        # Soma os pagamentos das partes de E.
+        # Sums the payments of the parts of E.
         for val in buf.parts:
             kwa['principal'] = val
 
             for x in _get_price_payments(**kwa):
                 buf.raw_2 += x.raw
 
-        # Then. As somas não casam.
+        # Then. The sums do not match.
         assert buf.raw_1 - buf.raw_2 == decimal.Decimal('5.16')
 
     else:
@@ -4484,31 +4484,31 @@ def test_will_have_rounding_artifacts_1(modalidade):
         for i in range(1, 13):
             kwa['amortizations'].append(fincore.Amortization(date=kwa['amortizations'][0].date + _MONTH * i, amortization_ratio=decimal.Decimal('0.0833333333')))
 
-        # Soma do valor bruto dos M pagamentos de E.
+        # Sum of the raw amount of the M payments of E.
         for x in _get_custom_payments(**kwa):  # When.
             buf.raw_1 += x.raw
 
-        # Soma os pagamentos das partes de E.
+        # Sums the payments of the parts of E.
         for val in buf.parts:
             kwa['principal'] = val
 
             for x in _get_custom_payments(**kwa):
                 buf.raw_2 += x.raw
 
-        # Then. As somas não casam.
+        # Then. The sums do not match.
         assert buf.raw_1 - buf.raw_2 == decimal.Decimal('0.09')
 
-# FIXME: reproduzir esse caso de teste para Bullet, Juros mensais e Price.
+# FIXME: reproduce this test case for Bullet, American Amortization, and Price.
 @pytest.mark.enigmatic
 def test_will_have_rounding_artifacts_2():
     '''
-    Segundo teste de artefato de arredondamento.
+    Second rounding artifact test.
 
-    Constata presença de artefato de arredondamento em duas situações que intuitivamente deveriam produzir valores
-    iguais.
+    Verifies the presence of a rounding artifact in two situations that intuitively should produce equal
+    values.
 
-      • Situação um: gera-se um cronograma C1 com data de cálculo antes da data prevista para o pagamento final, e
-        cálculo da posição nessa data, somando saldo devedor com valor bruto.
+      • Situation one: a schedule C1 is generated with a calculation date before the expected date of the final payment, and
+        the position is calculated on that date, adding the outstanding balance to the raw amount.
 
         • Payment.no = 7
         • Payment.date = datetime.date(2022, 10, 9)
@@ -4519,8 +4519,8 @@ def test_will_have_rounding_artifacts_2():
         • Payment.amort = decimal.Decimal('74208.33')
         • Payment.bal = decimal.Decimal('371041.67')
 
-      • Situação dois: gera-se um cronograma C2, idêntico ao C1, mas insere-se um adiantamento total na própria data de
-        cálculo.
+      • Situation two: a schedule C2 is generated, identical to C1, but a full prepayment is inserted on the calculation
+        date itself.
 
         • Payment.no = 7
         • Payment.date = datetime.date(2022, 10, 1)
@@ -4531,13 +4531,13 @@ def test_will_have_rounding_artifacts_2():
         • Payment.amort = decimal.Decimal('445250')
         • Payment.bal = decimal.Decimal()
 
-    Observe que na situação um, apesar da data de cálculo ser 01/10/2022, a data do pagamento sai em 09/10/2022. Isso é
-    uma deficiência do Fincore (FIXME).
+    Notice that in situation one, although the calculation date is 2022-10-01, the payment date comes out as 2022-10-09. This is
+    a Fincore deficiency (FIXME).
 
-    A soma do saldo devedor com valor bruto na situação um não casa com o valor bruto pago na situação dois. Haverá
-    diferença de um centavo.
+    The sum of the outstanding balance and the raw amount in situation one does not match the raw amount paid in situation two. There will be
+    a one cent difference.
 
-    Modalidade Livre.
+    Custom mode.
     '''
 
     d00 = datetime.date(2022, 3, 9)
@@ -4562,19 +4562,19 @@ def test_will_have_rounding_artifacts_2():
 @pytest.mark.enigmatic
 def test_wont_internally_round_calculations():
     '''
-    Testa que internamente o Fincore não faz arredondamentos.
+    Tests that Fincore does not round internally.
 
-    Esse comportamento é incidental. O Fincore mimetiza o comportamento de planilhas de cálculo elaboradas com
-    programas como Google Sheets, Excel, Numbers, OpenOffice etc. Nas planilhas, não é usual usar funções de
-    arredondamento em cálculos intermediários. Em vez disso, usa-se formatação visual nas células e colunas.
+    This behavior is incidental. Fincore mimics the behavior of spreadsheets built with
+    programs such as Google Sheets, Excel, Numbers, OpenOffice etc. In spreadsheets, it is not usual to use rounding
+    functions in intermediate calculations. Instead, visual formatting is applied to cells and columns.
 
-    Esse teste tem uma sub-rotina que faz os arredondamentos sempre que precisa armazenar um valor monetário em uma
-    variável automática local. Essa rotina é "instalada" no Fincore para demonstrar que os resultados produzidos pela
-    biblioteca irão divergir daqueles que ela normalmente gera.
+    This test has a subroutine that rounds whenever it needs to store a monetary value in a local
+    automatic variable. This routine is "installed" into Fincore to demonstrate that the results produced by the
+    library will diverge from those it normally generates.
 
-    Esse teste lida com modalidade Price, indexador pré-fixado. Isso faz com que a sub-rotina abaixo fique extremamente
-    simples, por não ter que lidar com a complexidade dos cálculos pós-fixados. Tais complicações são irrelevantes para
-    o efeito de demonstrar variações de arredondamento.
+    This test deals with Price mode, fixed-rate index. That makes the subroutine below extremely
+    simple, since it does not have to deal with the complexity of post-fixed calculations. Such complications are irrelevant for
+    the purpose of demonstrating rounding variations.
     '''
 
     def get_payments_table(principal, apy, amortizations, **_):
@@ -4625,16 +4625,16 @@ def test_wont_internally_round_calculations():
 
     kwa = {}
 
-    # Given: parâmetros do cronograma Price.
+    # Given: Price schedule parameters.
     kwa['principal'] = decimal.Decimal('890500')
     kwa['apy'] = decimal.Decimal('18.5')
     kwa['term'] = 12
     kwa['zero_date'] = datetime.date(2022, 3, 9)
 
-    # When: gera o cronograma via vanilla Fincore.
+    # When: generates the schedule via vanilla Fincore.
     lst1 = list(_get_price_payments(**kwa))
 
-    # When: gera um cronograma usando o Fincore com a sub-rotina adulterada.
+    # When: generates a schedule using Fincore with the tampered subroutine.
     with unittest.mock.patch.object(fincore, 'get_payments_table', get_payments_table):
         lst2 = list(_get_price_payments(**kwa))
 
@@ -4643,7 +4643,7 @@ def test_wont_internally_round_calculations():
         assert pmt1.no == pmt2.no
         assert pmt1.date == pmt2.date
 
-        # Valida diferenças nos cálculos dos pagamentos dois, oito e nove.
+        # Validates differences in the calculations of payments two, eight, and nine.
         if pmt1.no == 2:
             assert pmt1.tax == pmt2.tax
             assert pmt1.net == pmt2.net
@@ -4676,12 +4676,12 @@ def test_wont_internally_round_calculations():
             assert pmt1.bal == pmt2.bal
             assert pmt1.raw == pmt2.raw
 
-@pytest.mark.parametrize('indexador', ['PRE', 'CDI', 'IPCA', pytest.param('Poupança', id='SAVS')])
-def test_will_redundantly_set_calc_date_bullet(indexador):
+@pytest.mark.parametrize('index', ['PRE', 'CDI', 'IPCA', pytest.param('Poupança', id='SAVS')])
+def test_will_redundantly_set_calc_date_bullet(index):
     '''
-    Testa o uso redundante da data de cálculo em operação Bullet.
+    Tests redundant use of the calculation date in a Bullet operation.
 
-    A data de cálculo casa com a do pagamento da parcela Bullet. Os valores têm que ser iguais.
+    The calculation date matches the payment date of the Bullet installment. The values must be equal.
     '''
 
     calc = fincore.CalcDate(value=datetime.date(2024, 7, 13), runaway=False)
@@ -4693,13 +4693,13 @@ def test_will_redundantly_set_calc_date_bullet(indexador):
     opts['anniversary_date'] = datetime.date(2024, 7, 13)
     opts['term'] = 15
 
-    if indexador == 'CDI':
+    if index == 'CDI':
         opts['vir'] = fincore.VariableIndex(code='CDI', percentage=200)
 
-    elif indexador == 'Poupança':
+    elif index == 'Poupança':
         opts['vir'] = fincore.VariableIndex(code='Poupança', percentage=500)
 
-    elif indexador == 'IPCA':
+    elif index == 'IPCA':
         opts['vir'] = fincore.VariableIndex(code='IPCA')
 
     for i, (x, y) in enumerate(zip(_get_bullet_payments(**opts), _get_bullet_payments(**opts, calc_date=calc)), 1):
@@ -4714,13 +4714,13 @@ def test_will_redundantly_set_calc_date_bullet(indexador):
 
     assert i == 1
 
-# Juros mensais com indexador Poupança não é oficialmente suportada.
-@pytest.mark.parametrize('indexador', ['PRE', 'CDI', 'IPCA'])
-def test_will_redundantly_set_calc_date_american_1(indexador):
+# American Amortization with the Poupança index is not officially supported.
+@pytest.mark.parametrize('index', ['PRE', 'CDI', 'IPCA'])
+def test_will_redundantly_set_calc_date_american_1(index):
     '''
-    Testa o uso redundante da data de cálculo em operação Juros Mensais.
+    Tests redundant use of the calculation date in an American Amortization operation.
 
-    A data de cálculo casa com a do pagamento da última parcela. Todas as parcelas têm que ter valores iguais.
+    The calculation date matches the payment date of the last installment. All installments must have equal values.
     '''
 
     calc = fincore.CalcDate(value=datetime.date(2021, 10, 20), runaway=False)
@@ -4731,13 +4731,13 @@ def test_will_redundantly_set_calc_date_american_1(indexador):
     opts['zero_date'] = datetime.date(2020, 4, 20)
     opts['term'] = 18
 
-    if indexador == 'CDI':
+    if index == 'CDI':
         opts['vir'] = fincore.VariableIndex(code='CDI', percentage=50)
 
-    elif indexador == 'Poupança':
+    elif index == 'Poupança':
         opts['vir'] = fincore.VariableIndex(code='Poupança', percentage=30)
 
-    elif indexador == 'IPCA':
+    elif index == 'IPCA':
         opts['vir'] = fincore.VariableIndex(code='IPCA')
 
     for i, (x, y) in enumerate(zip(_get_american_payments(**opts), _get_american_payments(**opts, calc_date=calc)), 1):
@@ -4752,14 +4752,14 @@ def test_will_redundantly_set_calc_date_american_1(indexador):
 
     assert i == 18
 
-# Juros mensais com indexador Poupança não é oficialmente suportada.
-@pytest.mark.parametrize('indexador', ['PRE', 'CDI', 'IPCA'])
-def test_will_redundantly_set_calc_date_american_2(indexador):
+# American Amortization with the Poupança index is not officially supported.
+@pytest.mark.parametrize('index', ['PRE', 'CDI', 'IPCA'])
+def test_will_redundantly_set_calc_date_american_2(index):
     '''
-    Testa o uso redundante da data de cálculo em operação Juros Mensais.
+    Tests redundant use of the calculation date in an American Amortization operation.
 
-    A data de cálculo casa com a do pagamento da sexta parcela. Todas as parcelas de ambos os cronogramas até a seis
-    têm que ter valores iguais.
+    The calculation date matches the payment date of the sixth installment. All installments of both schedules up to the sixth
+    must have equal values.
     '''
 
     calc = fincore.CalcDate(value=datetime.date(2020, 10, 20), runaway=False)
@@ -4770,13 +4770,13 @@ def test_will_redundantly_set_calc_date_american_2(indexador):
     opts['zero_date'] = datetime.date(2020, 4, 20)
     opts['term'] = 18
 
-    if indexador == 'CDI':
+    if index == 'CDI':
         opts['vir'] = fincore.VariableIndex(code='CDI', percentage=50)
 
-    elif indexador == 'Poupança':
+    elif index == 'Poupança':
         opts['vir'] = fincore.VariableIndex(code='Poupança', percentage=30)
 
-    elif indexador == 'IPCA':
+    elif index == 'IPCA':
         opts['vir'] = fincore.VariableIndex(code='IPCA')
 
     for i, (x, y) in enumerate(zip(_get_american_payments(**opts), _get_american_payments(**opts, calc_date=calc)), 1):
@@ -4793,9 +4793,9 @@ def test_will_redundantly_set_calc_date_american_2(indexador):
 
 def test_will_redundantly_set_calc_date_price_1():
     '''
-    Testa o uso redundante da data de cálculo em operação Price.
+    Tests redundant use of the calculation date in a Price operation.
 
-    A data de cálculo casa com a do pagamento da última parcela. Todas as parcelas têm que ter valores iguais.
+    The calculation date matches the payment date of the last installment. All installments must have equal values.
     '''
 
     calc = fincore.CalcDate(value=datetime.date(2018, 12, 30), runaway=False)
@@ -4820,10 +4820,10 @@ def test_will_redundantly_set_calc_date_price_1():
 
 def test_will_redundantly_set_calc_date_price_2():
     '''
-    Testa o uso redundante da data de cálculo em operação Price.
+    Tests redundant use of the calculation date in a Price operation.
 
-    A data de cálculo casa com a do pagamento da quinta parcela. Todas as parcelas até a cinco têm que ter valores
-    iguais.
+    The calculation date matches the payment date of the fifth installment. All installments up to the fifth must have equal
+    values.
     '''
 
     calc = fincore.CalcDate(value=datetime.date(2018, 11, 30), runaway=False)
@@ -4846,13 +4846,13 @@ def test_will_redundantly_set_calc_date_price_2():
 
     assert i == 5
 
-# Livre com indexador Poupança não é oficialmente suportada.
-@pytest.mark.parametrize('indexador', ['PRE', 'CDI', 'IPCA'])
-def test_will_redundantly_set_calc_date_custom_1(indexador):
+# Custom with the Poupança index is not officially supported.
+@pytest.mark.parametrize('index', ['PRE', 'CDI', 'IPCA'])
+def test_will_redundantly_set_calc_date_custom_1(index):
     '''
-    Testa o uso redundante da data de cálculo em operação Livre.
+    Tests redundant use of the calculation date in a Custom operation.
 
-    A data de cálculo casa com a da última parcela. Todas as parcelas têm que ter valores iguais.
+    The calculation date matches that of the last installment. All installments must have equal values.
     '''
 
     calc = fincore.CalcDate(value=datetime.date(2025, 2, 8), runaway=False)
@@ -4861,16 +4861,16 @@ def test_will_redundantly_set_calc_date_custom_1(indexador):
     opts['principal'] = decimal.Decimal('7729890')
     opts['apy'] = decimal.Decimal('5')
 
-    if indexador == 'CDI':
+    if index == 'CDI':
         opts['vir'] = fincore.VariableIndex(code='CDI', percentage=250)
 
-    elif indexador == 'Poupança':
+    elif index == 'Poupança':
         opts['vir'] = fincore.VariableIndex(code='Poupança', percentage=350)
 
-    elif indexador == 'IPCA':
+    elif index == 'IPCA':
         opts['vir'] = fincore.VariableIndex(code='IPCA')
 
-    # Monta a tabela de amortizações.
+    # Build the amortization table.
     opts['amortizations'] = tab = []
 
     tab.append(fincore.Amortization(date=datetime.date(2022, 7, 8), amortizes_interest=False))
@@ -4890,14 +4890,14 @@ def test_will_redundantly_set_calc_date_custom_1(indexador):
 
     assert j == 30
 
-# Livre com indexador Poupança não é oficialmente suportada.
-@pytest.mark.parametrize('indexador', ['PRE', 'CDI', 'IPCA'])
-def test_will_redundantly_set_calc_date_custom_2(indexador):
+# Custom with the Poupança index is not officially supported.
+@pytest.mark.parametrize('index', ['PRE', 'CDI', 'IPCA'])
+def test_will_redundantly_set_calc_date_custom_2(index):
     '''
-    Testa o uso redundante da data de cálculo em operação Livre c/ amortização extraordinária.
+    Tests redundant use of the calculation date in a Custom operation w/ extraordinary amortization.
 
-    A data de cálculo casa com a da parcela extraordinária, que amortiza 100% do valor do empréstimo. Todas as parcelas
-    até o cálculo têm que ter valores iguais.
+    The calculation date matches that of the extraordinary installment, which amortizes 100% of the loan amount. All installments
+    up to the calculation must have equal values.
     '''
 
     calc = fincore.CalcDate(value=datetime.date(2022, 12, 31), runaway=False)
@@ -4906,16 +4906,16 @@ def test_will_redundantly_set_calc_date_custom_2(indexador):
     opts['principal'] = decimal.Decimal('7729890')
     opts['apy'] = decimal.Decimal('5')
 
-    if indexador == 'CDI':
+    if index == 'CDI':
         opts['vir'] = fincore.VariableIndex(code='CDI', percentage=250)
 
-    elif indexador == 'Poupança':
+    elif index == 'Poupança':
         opts['vir'] = fincore.VariableIndex(code='Poupança', percentage=350)
 
-    elif indexador == 'IPCA':
+    elif index == 'IPCA':
         opts['vir'] = fincore.VariableIndex(code='IPCA')
 
-    # Monta a tabela de amortizações.
+    # Build the amortization table.
     opts['amortizations'] = tab = []
 
     tab.append(fincore.Amortization(date=datetime.date(2022, 7, 8), amortizes_interest=False))
@@ -4923,7 +4923,7 @@ def test_will_redundantly_set_calc_date_custom_2(indexador):
     for i in range(1, 31):
         tab.append(fincore.Amortization(date=tab[0].date + _MONTH * i, amortization_ratio=decimal.Decimal('0.033333333333333335')))
 
-    # Insere uma entrada extraordinária.
+    # Inserts an extraordinary entry.
     opts['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 12, 31), value=decimal.Decimal(100_000))]
 
     for j, (x, y) in enumerate(zip(_get_custom_payments(**opts), _get_custom_payments(**opts, calc_date=calc)), 1):
@@ -4939,7 +4939,7 @@ def test_will_redundantly_set_calc_date_custom_2(indexador):
     assert j == 6
 # }}}
 
-# Auxiliares (impostos, atraso etc). {{{
+# Helpers (taxes, arrears, etc). {{{
 def test_wont_calculate_revenue_tax():
     v1, v2 = _NOW, _NOW - datetime.timedelta(seconds=1)
 
@@ -4969,7 +4969,7 @@ def test_will_calculate_iof(term, iof):
 
 def test_will_get_delinquency_charges_1():
     '''
-    Teste o retorno da função para um investimento pré-fixado.
+    Test the function's return value for a fixed-rate investment.
 
     Ref File: https://docs.google.com/spreadsheets/d/1VcUJZn9YHTkjE2fvP4rafWIfyTcADFteFlBg4ljtLco
     Tab.....: PRE
@@ -4989,7 +4989,7 @@ def test_will_get_delinquency_charges_1():
 
 def test_will_get_delinquency_charges_2():
     '''
-    Teste o retorno da função para um investimento com indexador CDI.
+    Test the function's return value for an investment with a CDI index.
 
     Ref File: https://docs.google.com/spreadsheets/d/1VcUJZn9YHTkjE2fvP4rafWIfyTcADFteFlBg4ljtLco
     Tab.....: CDI
@@ -5110,7 +5110,7 @@ def test_wont_create_late_payment():
 
 def test_will_create_late_payment_pre_360_1():
     '''
-    Operação na base 360.
+    Operation on the 360 basis.
 
     Ref File: https://docs.google.com/spreadsheets/d/1vNSRo6KO6KIV8ncNKYg_QeYn-vBsHw7PG0qHrGsrL7k
     Tab.....: 360
@@ -5151,7 +5151,7 @@ def test_will_create_late_payment_pre_360_1():
 
 def test_will_create_late_payment_pre_30_360_1():
     '''
-    Operação na base 30/360.
+    Operation on the 30/360 basis.
 
     Ref File: https://docs.google.com/spreadsheets/d/1vNSRo6KO6KIV8ncNKYg_QeYn-vBsHw7PG0qHrGsrL7k
     Tab.....: 30/360 - 1
@@ -5192,7 +5192,7 @@ def test_will_create_late_payment_pre_30_360_1():
 
 def test_will_create_late_payment_pre_30_360_2():
     '''
-    Operação na base 30/360.
+    Operation on the 30/360 basis.
 
     Ref File: https://docs.google.com/spreadsheets/d/1vNSRo6KO6KIV8ncNKYg_QeYn-vBsHw7PG0qHrGsrL7k
     Tab.....: 30/360 - 2
@@ -5233,7 +5233,7 @@ def test_will_create_late_payment_pre_30_360_2():
 
 def test_will_create_late_payment_pre_30_360_3():
     '''
-    Operação na base 30/360.
+    Operation on the 30/360 basis.
 
     Ref File: https://docs.google.com/spreadsheets/d/1vNSRo6KO6KIV8ncNKYg_QeYn-vBsHw7PG0qHrGsrL7k
     Tab.....: 30/360 - 3
@@ -5274,9 +5274,9 @@ def test_will_create_late_payment_pre_30_360_3():
 
 def test_will_create_late_payment_ipca():
     '''
-    Operação na base 30/360.
+    Operation on the 30/360 basis.
 
-    Testa se o valor mínimo da correção será zero, quando o fator é negativo.
+    Tests that the minimum value of the adjustment will be zero when the factor is negative.
     '''
 
     pmt = fincore.LatePriceAdjustedPayment()
@@ -5325,9 +5325,9 @@ def test_will_create_late_payment_ipca():
         assert out.bal == pmt.bal
 # }}}
 
-# Retornos diários. {{{
+# Daily returns. {{{
 def test_wont_create_sched_daily_returns_1():
-    '''Fincore deve falhar ao criar um empréstimo com principal maior que zero e menor que R$ 0,01.'''
+    '''Fincore should fail to create a loan with a principal greater than zero and less than R$ 0.01.'''
 
     ent0 = fincore.Amortization(date=datetime.date(2018, 1, 1))
     ent1 = fincore.Amortization(date=datetime.date(2018, 5, 1), amortizes_interest=True)
@@ -5336,13 +5336,13 @@ def test_wont_create_sched_daily_returns_1():
         next(fincore.get_daily_returns(_CENTI / 2, _0, [ent0, ent1]))
 
 def test_wont_create_sched_daily_returns_2():
-    '''Fincore deve falhar ao criar um empréstimo sem um cronograma de amortizações.'''
+    '''Fincore should fail to create a loan without an amortization schedule.'''
 
     with pytest.raises(ValueError, match='at least two amortizations are required: the start of the schedule, and its end'):
         next(fincore.get_daily_returns(_1, _0, []))
 
 def test_wont_create_sched_daily_returns_3():
-    '''Fincore deve falhar ao criar um empréstimo sem indexador e com base 252.'''
+    '''Fincore should fail to create a loan without an index and with the 252 capitalisation basis.'''
 
     ent0 = fincore.Amortization(date=datetime.date(2018, 1, 1))
     ent1 = fincore.Amortization(date=datetime.date(2018, 5, 1), amortizes_interest=True)
@@ -5351,7 +5351,7 @@ def test_wont_create_sched_daily_returns_3():
         next(fincore.get_daily_returns(_1, _0, [ent0, ent1], capitalisation='252'))
 
 def test_wont_create_sched_daily_returns_4():
-    '''Fincore deve falhar ao criar um empréstimo com indexador CDI e base diferente de 252.'''
+    '''Fincore should fail to create a loan with a CDI index and a capitalisation basis other than 252.'''
 
     ent0 = fincore.Amortization(date=datetime.date(2018, 1, 1))
     ent1 = fincore.Amortization(date=datetime.date(2018, 5, 1), amortizes_interest=True)
@@ -5360,7 +5360,7 @@ def test_wont_create_sched_daily_returns_4():
         next(fincore.get_daily_returns(_1, _0, [ent0, ent1], vir=fincore.VariableIndex('CDI'), capitalisation='360'))
 
 def test_wont_create_sched_daily_returns_5():
-    '''Fincore deve falhar ao criar um empréstimo sem indexador IPCA/IGPM e com PLA na amortização.'''
+    '''Fincore should fail to create a loan without an IPCA/IGPM index but with a PLA on the amortization.'''
 
     ent0 = fincore.Amortization(date=datetime.date(2018, 1, 1))
     ent1 = fincore.Amortization(date=datetime.date(2018, 5, 1), amortizes_interest=True)
@@ -5371,7 +5371,7 @@ def test_wont_create_sched_daily_returns_5():
         next(fincore.get_daily_returns(_1, _0, [ent0, ent1], vir=fincore.VariableIndex('CDI'), capitalisation='252'))
 
 def test_wont_create_sched_daily_returns_6():
-    '''Fincore deve falhar ao criar um empréstimo cujo percentual de amortização acumulado ultrapassa 1.0.'''
+    '''Fincore should fail to create a loan whose accumulated amortization percentage exceeds 1.0.'''
 
     ent0 = fincore.Amortization(date=datetime.date(2018, 1, 1))
     ent1 = fincore.Amortization(date=datetime.date(2018, 5, 1), amortization_ratio=_1 + _1, amortizes_interest=True)
@@ -5380,7 +5380,7 @@ def test_wont_create_sched_daily_returns_6():
         next(fincore.get_daily_returns(_1, _0, [ent0, ent1]))
 
 def test_wont_create_sched_daily_returns_7():
-    '''Fincore deve falhar ao criar um empréstimo cujo percentual de amortização acumulado seja menor que 1.0.'''
+    '''Fincore should fail to create a loan whose accumulated amortization percentage is less than 1.0.'''
 
     ent0 = fincore.Amortization(date=datetime.date(2018, 1, 1))
     ent1 = fincore.Amortization(date=datetime.date(2018, 5, 1), amortizes_interest=True)
@@ -5389,7 +5389,7 @@ def test_wont_create_sched_daily_returns_7():
         next(fincore.get_daily_returns(_1, _0, [ent0, ent1]))
 
 def test_wont_create_sched_daily_returns_8():
-    '''Fincore deve falhar ao criar um empréstimo com antecipação maior do que o saldo devedor.'''
+    '''Fincore should fail to create a loan with a prepayment greater than the outstanding balance.'''
 
     kwa = {}
 
@@ -5406,7 +5406,7 @@ def test_wont_create_sched_daily_returns_8():
 
 def test_will_create_loan_daily_returns_bullet_1():
     '''
-    Operação pré-fixada modalidade Bullet.
+    Fixed-rate operation, Bullet mode.
 
     Ref File: https://docs.google.com/spreadsheets/d/1vzW6Kz_NvLRHj8WZv2dSSGSvHauwhM7eCS5YfQ_ohng
     Tab.....: Bullet - PRE
@@ -5419,20 +5419,20 @@ def test_will_create_loan_daily_returns_bullet_1():
     kwa['zero_date'] = datetime.date(2022, 1, 1)
     kwa['term'] = 12
 
-    # Calcula os retornos diários.
+    # Compute the daily returns.
     for entry in _get_bullet_daily_returns(**kwa):
-        # Valida fator de juros.
+        # Validate the interest factor.
         assert decimal.Decimal.quantize(entry.sf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00038830')
 
-        # Valida valor do rendimento.
+        # Validate the return value.
         assert entry.value == _ROUND_CENTI((entry.sf - _1) * bal)
 
         bal += entry.value
 
 def test_will_create_loan_daily_returns_bullet_2():
     '''
-    Operação pré-fixada modalidade Bullet, com data de aniversário, verificando se o pagamento ocorre em um dia corrido
-    ou não.
+    Fixed-rate operation, Bullet mode, with an anniversary date, checking whether the payment occurs on a calendar
+    day or not.
 
     Ref File: https://docs.google.com/spreadsheets/d/1vzW6Kz_NvLRHj8WZv2dSSGSvHauwhM7eCS5YfQ_ohng
     Tab.....: Bullet - PRE
@@ -5447,24 +5447,24 @@ def test_will_create_loan_daily_returns_bullet_2():
     kwa['term'] = 1
     kwa['is_bizz_day_cb'] = lambda x: x.weekday() < 5
 
-    # Calcula os retornos diários.
+    # Compute the daily returns.
     for entry in _get_bullet_daily_returns(**kwa):
-        # Valida fator de juros.
+        # Validate the interest factor.
         assert decimal.Decimal.quantize(entry.sf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00038830')
 
         if entry.date < kwa['anniversary_date']:
-            # Valida valor do rendimento.
+            # Validate the return value.
             assert entry.value == _ROUND_CENTI((entry.sf - _1) * bal)
 
             bal += entry.value
 
         else:
-            # Valida valor do rendimento.
+            # Validate the return value.
             assert entry.value == _0
 
 def test_will_create_loan_daily_returns_bullet_3():
     '''
-    Operação Poupança, modalidade Bullet.
+    Poupança operation, Bullet mode.
 
     Ref File: https://docs.google.com/spreadsheets/d/1vzW6Kz_NvLRHj8WZv2dSSGSvHauwhM7eCS5YfQ_ohng
     Tab.....: Bullet - Poupança
@@ -5478,29 +5478,29 @@ def test_will_create_loan_daily_returns_bullet_3():
     kwa['term'] = 12
     kwa['vir'] = fincore.VariableIndex(code='Poupança')
 
-    # Calcula os retornos diários.
+    # Compute the daily returns.
     for entry in _get_bullet_daily_returns(**kwa):
         if entry.date < datetime.date(2022, 2, 1):
-            # Valida fatores de juros.
+            # Validate the interest factors.
             assert decimal.Decimal.quantize(entry.vf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00018041')
             assert decimal.Decimal.quantize(entry.sf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00038830')
 
         elif entry.date < datetime.date(2022, 3, 1):
-            # Valida fatores de juros.
+            # Validate the interest factors.
             assert decimal.Decimal.quantize(entry.vf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00017814')
             assert decimal.Decimal.quantize(entry.sf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00038830')
 
         else:
-            break  # FIXME: validar demais períodos.
+            break  # FIXME: validate the remaining periods.
 
-        # Valida valor do rendimento.
+        # Validate the return value.
         assert entry.value == _ROUND_CENTI((entry.sf * entry.vf - _1) * bal)
 
         bal += entry.value
 
 def test_will_create_loan_daily_returns_bullet_4():
     '''
-    Operação pré-fixada modalidade Bullet, na base 365 (legada).
+    Fixed-rate operation, Bullet mode, on the 365 basis (legacy).
 
     Ref File: https://docs.google.com/spreadsheets/d/1vzW6Kz_NvLRHj8WZv2dSSGSvHauwhM7eCS5YfQ_ohng
     Tab.....: Bullet - PRE
@@ -5514,19 +5514,19 @@ def test_will_create_loan_daily_returns_bullet_4():
     kwa['term'] = 12
     kwa['capitalisation'] = '365'
 
-    # Calcula os retornos diários.
+    # Compute the daily returns.
     for entry in _get_bullet_daily_returns(**kwa):
-        # Valida fator de juros.
+        # Validate the interest factor.
         assert decimal.Decimal.quantize(entry.sf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00038298')
 
-        # Valida valor do rendimento.
+        # Validate the return value.
         assert math.isclose(entry.value, (entry.sf - _1) * bal, abs_tol=_CENTI)
 
         bal += entry.value
 
 def test_will_create_loan_daily_returns_price():
     '''
-    Operação pré-fixada modalidade Price, com data de aniversário, duas antecipações parciais e uma antecipação total.
+    Fixed-rate operation, Price mode, with an anniversary date, two partial prepayments, and one full prepayment.
 
     Ref File: https://docs.google.com/spreadsheets/d/1vzW6Kz_NvLRHj8WZv2dSSGSvHauwhM7eCS5YfQ_ohng
     Tab.....: Price - AP & AT
@@ -5545,15 +5545,15 @@ def test_will_create_loan_daily_returns_price():
     kwa['insertions'].append(fincore.Amortization.Bare(date=datetime.date(2022, 1, 20), value=decimal.Decimal('10338.77')))
     kwa['insertions'].append(fincore.Amortization.Bare(date=datetime.date(2022, 2, 20), value=decimal.Decimal('73755.96')))
 
-    # Calcula os pagamentos.
+    # Compute the payments.
     payments = list(_get_price_payments(calc_date=fincore.CalcDate(datetime.date(2022, 2, 20)), **kwa))
 
     kwa['is_bizz_day_cb'] = lambda x: x.weekday() < 5
 
-    # Calcula os retornos diários.
+    # Compute the daily returns.
     for entry in _get_price_daily_returns(**kwa):
         if entry.period == 1:
-            # Valida fator de juros.
+            # Validate the interest factor.
             assert decimal.Decimal.quantize(entry.sf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00037577')
 
             for pmt in payments:
@@ -5561,7 +5561,7 @@ def test_will_create_loan_daily_returns_price():
                     bal -= pmt.raw
 
         elif entry.period == 2:
-            # Valida fator de juros.
+            # Validate the interest factor.
             assert decimal.Decimal.quantize(entry.sf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00041604')
 
             for pmt in payments:
@@ -5569,16 +5569,16 @@ def test_will_create_loan_daily_returns_price():
                     bal -= pmt.raw
 
         else:
-            break  # FIXME: validar demais períodos.
+            break  # FIXME: validate the remaining periods.
 
-        # Valida valor do rendimento.
+        # Validate the return value.
         assert entry.value == _ROUND_CENTI((entry.sf - _1) * bal)
 
         bal += entry.value
 
 def test_will_create_loan_daily_returns_custom_1():
     '''
-    Operação pré-fixada modalidade Livre.
+    Fixed-rate operation, Custom mode.
 
     Ref File: https://docs.google.com/spreadsheets/d/1vzW6Kz_NvLRHj8WZv2dSSGSvHauwhM7eCS5YfQ_ohng
     Tab.....: Livre - PRE
@@ -5599,12 +5599,12 @@ def test_will_create_loan_daily_returns_custom_1():
 
         tab.append(fincore.Amortization(date, amortization_ratio=pct, amortizes_interest=True))
 
-    # Calcula os pagamentos.
+    # Compute the payments.
     pays = _get_custom_payments(calc_date=fincore.CalcDate(datetime.date(2022, 2, 28)), **kwa)
 
-    # Calcula os retornos diários.
+    # Compute the daily returns.
     for entry in _get_custom_daily_returns(**kwa):
-        # Valida fator de juros.
+        # Validate the interest factor.
         if entry.period == 1:
             assert decimal.Decimal.quantize(entry.sf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00037577')
 
@@ -5615,16 +5615,16 @@ def test_will_create_loan_daily_returns_custom_1():
                 bal -= pay.raw
 
         else:
-            break  # FIXME: validar demais períodos.
+            break  # FIXME: validate the remaining periods.
 
-        # Valida valor do rendimento.
+        # Validate the return value.
         assert entry.value == _ROUND_CENTI((entry.sf - _1) * bal)
 
         bal += entry.value
 
 def test_will_create_loan_daily_returns_custom_2():
     '''
-    Operação CDI, modalidade Livre.
+    CDI operation, Custom mode.
 
     Ref File: https://docs.google.com/spreadsheets/d/1vzW6Kz_NvLRHj8WZv2dSSGSvHauwhM7eCS5YfQ_ohng
     Tab.....: Livre - CDI
@@ -5646,7 +5646,7 @@ def test_will_create_loan_daily_returns_custom_2():
         tab.append(fincore.Amortization(date, amortization_ratio=pct, amortizes_interest=True))
 
     for entry in _get_custom_daily_returns(**kwa):
-        # Valida fator de juros.
+        # Validate the interest factor.
         if entry.date.weekday() >= 5:
             assert entry.vf == _1
             assert entry.sf == _1
@@ -5656,16 +5656,16 @@ def test_will_create_loan_daily_returns_custom_2():
             assert decimal.Decimal.quantize(entry.sf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00019363')
 
         else:
-            break  # FIXME: validar demais períodos.
+            break  # FIXME: validate the remaining periods.
 
-        # Valida valor do rendimento.
+        # Validate the return value.
         assert entry.value == _ROUND_CENTI((entry.sf * entry.vf - _1) * bal)
 
         bal += entry.value
 
 def test_will_create_loan_daily_returns_custom_3():
     '''
-    Operação Resolvvi - Pré-Fixada - Parcelas Amortizadas - 30 meses, ID "XeGMPU4QNJK0Utfk1FeN0".
+    Operation Resolvvi - Pré-Fixada - Parcelas Amortizadas - 30 meses, ID "XeGMPU4QNJK0Utfk1FeN0".
 
     Ref File: https://docs.google.com/spreadsheets/d/1vzW6Kz_NvLRHj8WZv2dSSGSvHauwhM7eCS5YfQ_ohng
     Tab.....: RESOLVVI 1 - PRE 30M
@@ -5693,7 +5693,7 @@ def test_will_create_loan_daily_returns_custom_3():
     kwa['insertions'].append(fincore.Amortization.Bare(date=datetime.date(2023, 9, 21), value=decimal.Decimal('242523.90')))
     kwa['insertions'].append(fincore.Amortization.Bare(date=datetime.date(2023, 10, 23), value=decimal.Decimal('330014.70')))
 
-    # Data, período, número, fator, saldo inicial, rendimento
+    # Date, period, number, factor, initial balance, return
     tst[1] = datetime.date(2023, 6, 19), 1, 1, '1.00053469', '660000.00', '352.89'
     tst[2] = datetime.date(2023, 6, 20), 1, 2, '1.00053469', '660352.89', '353.08'
     tst[3] = datetime.date(2023, 6, 21), 1, 3, '1.00053469', '660705.98', '353.27'
@@ -5826,17 +5826,17 @@ def test_will_create_loan_daily_returns_custom_3():
         assert entry.period == tst[i][1]
         assert entry.no == tst[i][2]
 
-        # Fator fixo, saldo, valor do rendimento.
+        # Fixed factor, balance, return value.
         assert math.isclose(entry.sf, decimal.Decimal(tst[i][3]), rel_tol=1e-8)
         assert bal == decimal.Decimal(tst[i][4])
         assert entry.value == decimal.Decimal(tst[i][5])
 
-        # Memoriza o saldo para a próxima iteração.
+        # Remember the balance for the next iteration.
         bal = entry.bal
 
 def test_will_create_loan_daily_returns_custom_4():
     '''
-    Operação Resolvvi 4 - Pré-Fixada - Parcelas Amortizadas - 30 meses, ID "yNdS80j75OzXrqBH62WrF".
+    Operation Resolvvi 4 - Pré-Fixada - Parcelas Amortizadas - 30 meses, ID "yNdS80j75OzXrqBH62WrF".
 
     Ref File: https://docs.google.com/spreadsheets/d/1vzW6Kz_NvLRHj8WZv2dSSGSvHauwhM7eCS5YfQ_ohng
     Tab.....: RESOLVVI 4 - PRE 30M
@@ -5866,7 +5866,7 @@ def test_will_create_loan_daily_returns_custom_4():
     kwa['insertions'].append(fincore.Amortization.Bare(date=datetime.date(2024, 5, 28), value=decimal.Decimal('388507.00')))
     kwa['insertions'].append(fincore.Amortization.Bare(date=datetime.date(2024, 6, 28), value=decimal.Decimal('168930.68')))
 
-    # Data, período, número, fator, saldo inicial, rendimento
+    # Date, period, number, factor, initial balance, return
     tst[1] = datetime.date(2023, 9, 29), 1, 1, '1.00055252', '988000.00', '545.89'
     tst[2] = datetime.date(2023, 9, 30), 1, 2, '1.00055252', '988545.89', '546.19'
     tst[3] = datetime.date(2023, 10, 1), 1, 3, '1.00055252', '989092.07', '546.49'
@@ -6147,30 +6147,30 @@ def test_will_create_loan_daily_returns_custom_4():
         assert entry.period == tst[i][1]
         assert entry.no == tst[i][2]
 
-        # Fator fixo, saldo, valor do rendimento.
+        # Fixed factor, balance, return value.
         assert math.isclose(entry.sf, decimal.Decimal(tst[i][3]), rel_tol=1e-8)
         assert bal == decimal.Decimal(tst[i][4])
         assert entry.value == decimal.Decimal(tst[i][5])
 
-        # Memoriza o saldo para a próxima iteração.
+        # Remember the balance for the next iteration.
         bal = entry.bal
 
 @pytest.mark.skip(reason='Not implemented yet.')
 def test_will_create_loan_daily_returns_custom_5():
     '''
-    Operação LIVRE CDI 2.
+    Custom CDI 2 operation.
 
-    Múltiplos pagamentos em fins de semana.
+    Multiple payments on weekends.
 
     Ref File: https://docs.google.com/spreadsheets/d/1vzW6Kz_NvLRHj8WZv2dSSGSvHauwhM7eCS5YfQ_ohng
     Tab.....: LIVRE - CDI 2
     '''
 
-    pass  # FIXME: implementar. Já está em planilha de testes.
+    pass  # FIXME: implement. Already in the test spreadsheet.
 
 def test_will_create_loan_daily_returns_custom_6():
     '''
-    Operação ASAD Energia.
+    ASAD Energia operation.
 
     Ref File: https://docs.google.com/spreadsheets/d/1vzW6Kz_NvLRHj8WZv2dSSGSvHauwhM7eCS5YfQ_ohng
     Tab.....: ASAD Energia
@@ -6476,9 +6476,9 @@ def test_will_create_loan_daily_returns_custom_6():
 
 def test_will_create_loan_daily_returns_american_1():
     '''
-    Operação CRI - Max Tulum (Isento de IR).
+    Operation CRI - Max Tulum (Isento de IR).
 
-    Juros mensais IPCA.
+    American Amortization, IPCA.
 
     Ref File: https://docs.google.com/spreadsheets/d/1vzW6Kz_NvLRHj8WZv2dSSGSvHauwhM7eCS5YfQ_ohng
     Tab.....: Max Tulum
@@ -6494,7 +6494,7 @@ def test_will_create_loan_daily_returns_american_1():
     kwa['anniversary_date'] = datetime.date(2024, 12, 7)
     kwa['vir'] = fincore.VariableIndex('IPCA', backend=_RicherIpcaBackend())
 
-    # Período 1 – data, fator de spread, fator de correção, correção, juros, saldo.
+    # Period 1 – date, spread factor, correction factor, correction, interest, balance.
     tst[1] = 1, 1, datetime.date(2024, 10, 30), '1.00027670', '1.00018016', '1981.73', '3044.23', '11005025.96'
     tst[2] = 1, 2, datetime.date(2024, 10, 31), '1.00027670', '1.00018016', '1982.09', '3046.17', '11010054.22'
     tst[3] = 1, 3, datetime.date(2024, 11, 1), '1.00027670', '1.00018016', '1982.45', '3048.11', '11015084.78'
@@ -6534,7 +6534,7 @@ def test_will_create_loan_daily_returns_american_1():
     tst[37] = 1, 37, datetime.date(2024, 12, 5), '1.00027670', '1.00018016', '1994.63', '3114.67', '11187498.17'
     tst[38] = 1, 38, datetime.date(2024, 12, 6), '1.00027670', '1.00018016', '1994.98', '3116.65', '11192609.80'
 
-    # Período 2 – data, fator de spread, fator de correção, correção, juros, saldo.
+    # Period 2 – date, spread factor, correction factor, correction, interest, balance.
     tst[39] = 2, 1, datetime.date(2024, 12, 7), '1.00027670', '1.000125570', '1381.27', '3044.06', '11004425.33'
     tst[40] = 2, 2, datetime.date(2024, 12, 8), '1.00027670', '1.000125570', '1381.44', '3045.67', '11008852.44'
     tst[41] = 2, 3, datetime.date(2024, 12, 9), '1.00027670', '1.000125570', '1381.61', '3047.28', '11013281.33'
@@ -6572,45 +6572,45 @@ def test_will_create_loan_daily_returns_american_1():
         assert entry.date == tst[i][2]
         assert entry.no == tst[i][1]
 
-        # Fator fixo, valor do rendimento.
+        # Fixed factor, return value.
         assert math.isclose(entry.sf, decimal.Decimal(tst[i][3]), rel_tol=1e-8)
         assert entry.value == decimal.Decimal(tst[i][6])
 
-        # Fator de correção, valor da correção
+        # Correction factor, correction value
         assert math.isclose(t.cast(fincore.PriceAdjustedDailyReturn, entry).cf, decimal.Decimal(tst[i][4]), rel_tol=1e-8)
         assert t.cast(fincore.PriceAdjustedDailyReturn, entry).pla == decimal.Decimal(tst[i][5])
 
-        # Saldo.
+        # Balance.
         assert entry.bal == decimal.Decimal(tst[i][7])
 
 @pytest.mark.skip(reason='Not implemented yet.')
 def test_will_create_loan_daily_returns_american_2():
     '''
-    Operação Palazzo Saldanha - Juros mensais - 9 meses.
+    Palazzo Saldanha operation - American Amortization - 9 months.
 
-    Três antecipações, duas parciais e uma total.
+    Three prepayments, two partial and one full.
 
     Ref File: https://docs.google.com/spreadsheets/d/1vzW6Kz_NvLRHj8WZv2dSSGSvHauwhM7eCS5YfQ_ohng
     Tab.....: Palazzo Saldanha
     '''
 
-    pass  # FIXME: implementar. Já está em planilha de testes.
+    pass  # FIXME: implement. Already in the test spreadsheet.
 
 def test_will_defer_price_level_adjustment_on_daily_returns():
     '''
-    Correção devida e não liquidada permanece no saldo diário, e rende.
+    Correction due and unsettled remains in the daily balance, and accrues.
 
-    Espelho diário de "test_will_accrue_interest_over_deferred_price_level_adjustment": a antecipação de 52.000 em
-    03/08 cobre os juros do período e só parte da correção. A ordem de imputação – juros, correção, principal – não
-    deixa a antecipação chegar ao principal, então "op" fica intacto nos 6.000.000,00; o motor antigo abatia
-    principal aqui, deflacionando o valor pelo fator de correção.
+    Daily mirror of "test_will_accrue_interest_over_deferred_price_level_adjustment": the 52,000 prepayment on
+    08/03 covers the period's interest and only part of the correction. The imputation order – interest, correction, principal – does not
+    let the prepayment reach the principal, so "op" stays intact at 6,000,000.00; the old engine used to amortize
+    principal here, deflating the value by the correction factor.
 
-    No fim do dia da antecipação, a correção embutida no saldo ("opla") guarda os diferidos, recorrigidos. O
-    pagamento regular de 07/08 os recolhe: "opla" zera, e o saldo do fim do dia volta ao principal nominal mais o
-    rendimento do próprio dia.
+    At the end of the prepayment day, the correction embedded in the balance ("opla") holds the deferred amounts, re-adjusted. The
+    regular payment on 08/07 collects them: "opla" zeroes out, and the end-of-day balance returns to the nominal principal plus the
+    day's own return.
 
-    Os valores fixados saem do próprio motor. A tabela de pagamentos não fecha com eles no centavo – os dois motores
-    divergem por construção na acumulação intra-período do IPCA – mas as conservações são as mesmas.
+    The pinned values come from the engine itself. The payments table does not match them to the cent – the two engines
+    diverge by construction in the intra-period accumulation of the IPCA – but the conservations are the same.
     '''
 
     kwa = _kwa_cri_ipa()
@@ -6619,30 +6619,30 @@ def test_will_defer_price_level_adjustment_on_daily_returns():
 
     drs = {x.date: t.cast(fincore.PriceAdjustedDailyReturn, x) for x in _get_american_daily_returns(**kwa)}
 
-    # Véspera: a correção do período, de 8.360,43, está embutida no saldo.
+    # The day before: the period's correction, 8,360.43, is embedded in the balance.
     assert drs[datetime.date(2026, 8, 2)].opla == decimal.Decimal('8360.43')
 
-    # Dia da antecipação: nada de principal amortizado, juros zerados, e o diferido segue no saldo.
+    # Prepayment day: no principal amortized, interest zeroed out, and the deferred amount stays in the balance.
     assert drs[datetime.date(2026, 8, 3)].op == decimal.Decimal('6000000.00')
     assert drs[datetime.date(2026, 8, 3)].oi == _0
     assert drs[datetime.date(2026, 8, 3)].opla == decimal.Decimal('6605.58')
     assert drs[datetime.date(2026, 8, 3)].bal == decimal.Decimal('6008435.75')
 
-    # Pagamento regular seguinte: recolhe o diferido, e o saldo volta ao nominal mais o rendimento do dia.
+    # Next regular payment: collects the deferred amount, and the balance returns to the nominal plus the day's return.
     assert drs[datetime.date(2026, 8, 7)].opla == _0
     assert drs[datetime.date(2026, 8, 7)].bal - drs[datetime.date(2026, 8, 7)].value == decimal.Decimal('6000000.00')
 
 def test_will_lock_interest_and_adjustment_on_daily_returns():
     '''
-    Antecipação que não amortiza juros trava juro e correção no saldo diário; uma antecipação posterior os recolhe.
+    A prepayment that does not amortize interest locks interest and correction in the daily balance; a later prepayment collects them.
 
-    Espelho diário de "test_will_collect_locked_interest_and_adjustment_on_a_later_prepayment". A antecipação de
-    50.000 em 20/07 vai inteira ao principal – "op" cai exatamente pelo seu valor – e deixa os 23.825,55 de juros do
-    período devidos ("oi"), junto com a correção, no saldo. A de 03/08 recolhe tudo: "oi" zera, e o que sobra abate
-    o principal nominal.
+    Daily mirror of "test_will_collect_locked_interest_and_adjustment_on_a_later_prepayment". The prepayment of
+    50,000 on 07/20 goes entirely to the principal – "op" drops by exactly its value – and leaves the 23,825.55 of the
+    period's interest due ("oi"), along with the correction, in the balance. The one on 08/03 collects everything: "oi" zeroes out, and what is left pays down
+    the nominal principal.
 
-    O regular de 07/08 fica só com o rendimento do próprio período: o saldo do fim do dia é o nominal mais o
-    rendimento do dia, sem dupla cobrança do que a antecipação já liquidou.
+    The regular payment on 08/07 keeps only its own period's return: the end-of-day balance is the nominal plus the
+    day's return, without double-charging what the prepayment already settled.
     '''
 
     kwa = _kwa_cri_ipa()
@@ -6654,27 +6654,27 @@ def test_will_lock_interest_and_adjustment_on_daily_returns():
 
     drs = {x.date: t.cast(fincore.PriceAdjustedDailyReturn, x) for x in _get_american_daily_returns(**kwa)}
 
-    # A travada: o valor sai inteiro do principal, e o juro do período fica devido, no saldo.
+    # The locking one: the value comes entirely out of the principal, and the period's interest stays due, in the balance.
     assert drs[datetime.date(2026, 7, 20)].op == decimal.Decimal('5950000.00')
     assert drs[datetime.date(2026, 7, 20)].oi == decimal.Decimal('23825.55')
     assert drs[datetime.date(2026, 7, 20)].bal == decimal.Decimal('5980287.59')
 
-    # A coletora: liquida o juro travado e a correção, e abate o restante do principal nominal.
+    # The collecting one: settles the locked interest and the correction, and applies the remainder against the nominal principal.
     assert drs[datetime.date(2026, 8, 3)].op == decimal.Decimal('5858333.70')
     assert drs[datetime.date(2026, 8, 3)].oi == _0
     assert drs[datetime.date(2026, 8, 3)].bal == decimal.Decimal('5860420.92')
 
-    # O regular seguinte cobra apenas o próprio período.
+    # The next regular payment charges only its own period.
     assert drs[datetime.date(2026, 8, 7)].opla == _0
     assert drs[datetime.date(2026, 8, 7)].bal - drs[datetime.date(2026, 8, 7)].value == decimal.Decimal('5858333.70')
 # }}}
 
-# Cronograma de pagamentos mensal x retornos diários. {{{
+# Monthly payments schedule vs. daily returns. {{{
 def test_will_match_payments_table_and_daily_returns_1():
     '''
-    Operação "Mais Park Pampulha 2", Livre - 18 meses - CDI, ID "lWwhog1nlyrIpBSDx5dD_".
+    Operation "Mais Park Pampulha 2", Custom - 18 months - CDI, ID "lWwhog1nlyrIpBSDx5dD_".
 
-    Compara os valores finais do cronograma de pagamentos mensal e da rotina de retornos diários.
+    Compares the final values of the monthly payment schedule and the daily returns routine.
     '''
 
     kwa = {}
@@ -6699,9 +6699,9 @@ def test_will_match_payments_table_and_daily_returns_1():
 
 def test_will_match_payments_table_and_daily_returns_2():
     '''
-    Operação "YUCA SPE V", Juros mensais - 30 meses - IPCA, ID "cmQFTXLsEB6Bg7Zlae1pV".
+    Operation "YUCA SPE V", American Amortization - 30 months - IPCA, ID "cmQFTXLsEB6Bg7Zlae1pV".
 
-    Compara os valores finais do cronograma de pagamentos mensal e da rotina de retornos diários.
+    Compares the final values of the monthly payment schedule and the daily returns routine.
     '''
 
     kwa = {}
@@ -6720,10 +6720,10 @@ def test_will_match_payments_table_and_daily_returns_2():
 
 def test_will_match_payments_table_and_daily_returns_3():
     '''
-    Baseado na operação "YUCA SPE V", Juros mensais - 30 meses - IPCA, ID "cmQFTXLsEB6Bg7Zlae1pV", com inserção de uma
-    antecipação total fictícia.
+    Based on the "YUCA SPE V" operation, American Amortization - 30 months - IPCA, ID "cmQFTXLsEB6Bg7Zlae1pV", with the insertion of a
+    fictitious full prepayment.
 
-    Compara os valores finais do cronograma de pagamentos mensal e da rotina de retornos diários.
+    Compares the final values of the monthly payment schedule and the daily returns routine.
     '''
 
     kwa = {}
@@ -6743,9 +6743,9 @@ def test_will_match_payments_table_and_daily_returns_3():
 
 def test_will_match_payments_table_and_daily_returns_4():
     '''
-    Operação "CRI - Max Tulum 2 (Isento de IR)", Juros mensais - 38 meses - IPCA, ID "SFITBR__Qo2dDrU5GfAGj".
+    Operation "CRI - Max Tulum 2 (Isento de IR)", American Amortization - 38 months - IPCA, ID "SFITBR__Qo2dDrU5GfAGj".
 
-    Compara os valores iniciais do cronograma de pagamentos mensal e da rotina de retornos diários.
+    Compares the initial values of the monthly payment schedule and the daily returns routine.
     '''
 
     kwa = {}
@@ -6765,15 +6765,15 @@ def test_will_match_payments_table_and_daily_returns_4():
 
 def test_will_match_payments_table_and_daily_returns_5():
     '''
-    Juros mensais prefixado com uma antecipação que não amortiza juros, seguida do regular que recolhe o travado.
+    Fixed-rate American Amortization with a prepayment that does not amortize interest, followed by the regular payment that collects the locked amount.
 
-    Sem correção monetária os dois motores caminham juntos, então a comparação vale em toda data de pagamento, e não
-    só na última: o saldo do fim do dia, descontado o rendimento do próprio dia, é o saldo do cronograma mensal, ao
-    centavo. Sem a trava no motor diário, a antecipação de 20/07 liquidaria os juros do período, o principal em
-    aberto divergiria dali em diante, e a comparação quebraria de 07/08 até a última parcela.
+    Without monetary correction the two engines move together, so the comparison holds on every payment date, not
+    just the last one: the end-of-day balance, minus the day's own return, is the monthly schedule's balance, to the
+    cent. Without the lock in the daily engine, the 07/20 prepayment would settle the period's interest, the outstanding
+    principal would diverge from then on, and the comparison would break from 08/07 through the last installment.
 
-    Os meses são alinhados de propósito, para que este teste meça só a trava. O caso de "first_dct_rule" fixa com
-    aniversário tem teste próprio, o "test_will_apply_first_dct_rule_to_the_first_period_only_on_daily_returns".
+    The months are aligned on purpose, so this test measures only the lock. The case of a fixed "first_dct_rule" with
+    an anniversary has its own test, "test_will_apply_first_dct_rule_to_the_first_period_only_on_daily_returns".
     '''
 
     kwa = {}
@@ -6787,27 +6787,27 @@ def test_will_match_payments_table_and_daily_returns_5():
     sched = list(_get_american_payments(**kwa))
     drs = {x.date: x for x in _get_american_daily_returns(**kwa)}
 
-    # O motor diário não emite o dia do pagamento final: o saldo da véspera é o que ele paga.
+    # The daily engine does not emit the final payment day: the previous day's balance is what it pays.
     for pmt in sched[:-1]:
         assert drs[pmt.date].bal - drs[pmt.date].value == pmt.bal
 
     assert sched[-1].raw == list(drs.values())[-1].bal
 
-    # E o principal nominal diário acompanha: a antecipação saiu inteira do principal.
+    # And the daily nominal principal follows along: the prepayment came entirely out of the principal.
     assert drs[datetime.date(2026, 7, 20)].op == decimal.Decimal('950000.00')
 
 def test_will_keep_daily_returns_running_while_interest_stays_locked():
     '''
-    Antecipação prefixada que leva todo o principal em aberto, sem amortizar juros.
+    Fixed-rate prepayment that takes the entire outstanding principal, without amortizing interest.
 
-    A lib permite de propósito – o teto do modo é o principal em aberto, e tomá-lo por inteiro não quita a dívida:
-    os juros do trecho ficam devidos, e o pagamento regular seguinte os recolhe.
+    The lib allows this on purpose – the mode's cap is the outstanding principal, and taking all of it does not settle the debt:
+    the interest for the stretch stays due, and the next regular payment collects it.
 
-    O motor diário encerra a série quando o principal em aberto zera. O travado de correção mora dentro do
-    "get_principal_outstanding" e segura a série sozinho, mas só quando há indexador; num prefixado ele é zero, e
-    quem sobra é o juro travado. Sem o termo de juro travado na condição de parada, a série morreria em 19/07, na
-    véspera da antecipação, enquanto o cronograma segue até 07/08 cobrando 3.990,08. Em produção isso congela a
-    posição diária do investidor, e depois entra no extrato um pagamento que a série nunca acumulou.
+    The daily engine ends the series when the outstanding principal reaches zero. The locked correction lives inside
+    "get_principal_outstanding" and holds the series open by itself, but only when there is an index; on a fixed-rate loan it is zero, and
+    what remains is the locked interest. Without the locked-interest term in the stop condition, the series would die on 07/19, the
+    day before the prepayment, while the schedule goes on until 08/07 charging 3,990.08. In production this freezes the
+    investor's daily position, and later a payment the series never accrued shows up on the statement.
     '''
 
     kwa = {}
@@ -6822,32 +6822,32 @@ def test_will_keep_daily_returns_running_while_interest_stays_locked():
     sched = list(_get_american_payments(**kwa))
     drs = list(_get_american_daily_returns(**kwa))
 
-    # A antecipação leva o principal a zero, e ainda assim deixa juros em aberto.
+    # The prepayment takes the principal to zero, and still leaves interest outstanding.
     assert next(x for x in drs if x.date == dbl).op == _0
     assert next(x for x in drs if x.date == dbl).oi > _0
 
-    # O cronograma tem um pagamento depois dela, que não amortiza nada: é o que recolhe o juro travado.
+    # The schedule has one payment after it, which amortizes nothing: it is the one that collects the locked interest.
     assert (nxt := next(x for x in sched if x.date > dbl)).amort == _0
     assert nxt.raw > _0
 
-    # E a série diária vai até a véspera desse pagamento, em vez de parar na antecipação.
+    # And the daily series runs until the day before that payment, instead of stopping at the prepayment.
     assert drs[-1].date > dbl
     assert drs[-1].date == sched[-1].date - datetime.timedelta(days=1)
 
 def test_will_apply_first_dct_rule_to_the_first_period_only_on_daily_returns():
     '''
-    Uma "first_dct_rule" fixa alcança só o primeiro período, também no motor diário.
+    A fixed "first_dct_rule" reaches only the first period, in the daily engine too.
 
-    O cronograma mensal sempre fez assim – ver a guarda "num > 1" da fase FZA. O motor diário aplicava a regra a
-    todos os períodos: um mês de DCT 30 rendia na base de 31, e cada mês cheio acumulava só 360/372 do juro devido.
-    A cobrança não errava, porque vem do cronograma mensal; o que desviava era a posição diária, por volta de 3,2%
-    do juro do mês na véspera de cada pagamento. As vinte operações CRI IPCA com regra 31 em produção caem neste
-    caso.
+    The monthly schedule has always done it this way – see the "num > 1" guard in the FZA phase. The daily engine applied the rule to
+    every period: a DCT 30 month accrued on a base of 31, and each full month accumulated only 360/372 of the interest due.
+    The charge was never wrong, because it comes from the monthly schedule; what drifted was the daily position, by around 3.2%
+    of the month's interest on the day before each payment. The twenty CRI IPCA operations with rule 31 in production fall into this
+    case.
 
-    Duas verificações. No prefixado com aniversário, o rendimento total da série diária tem que fechar com o
-    pagamento final do cronograma. E no IPCA da operação "CRI IPA Club Residencial", cujo primeiro período tem DCT
-    31 também pelo cálculo automático, a série com regra 31 tem que coincidir dia a dia com a série em AUTO – antes
-    do conserto elas divergiam a partir do segundo período.
+    Two checks. On the fixed-rate case with an anniversary, the daily series' total return has to match the
+    schedule's final payment. And on the IPCA case of the "CRI IPA Club Residencial" operation, whose first period has DCT
+    31 under the automatic calculation as well, the series with rule 31 has to match the AUTO series day by day – before
+    the fix they diverged from the second period on.
     '''
 
     kwa = {}
@@ -6867,22 +6867,22 @@ def test_will_apply_first_dct_rule_to_the_first_period_only_on_daily_returns():
     kwb = _kwa_cri_ipa()
     kwc = _kwa_cri_ipa()
 
-    del kwc['first_dct_rule']  # Volta ao AUTO, que calcula DCT 31 para o primeiro período desta operação.
+    del kwc['first_dct_rule']  # Back to AUTO, which computes DCT 31 for this operation's first period.
 
     for x, y in zip(_get_american_daily_returns(**kwb), _get_american_daily_returns(**kwc), strict=True):
         assert (x.date, x.value, x.bal) == (y.date, y.value, y.bal)
 
 def test_will_match_payments_table_and_daily_returns_6():
     '''
-    Operação "Bossa Nova CCB 7", Bullet - 120 meses - IPCA.
+    Operation "Bossa Nova CCB 7", Bullet - 120 months - IPCA.
 
-    Um Bullet tem só duas amortizações, e é o que aciona o ramo "len(lst) == 2" do "normalize_ipca_indexes": a
-    correção de cada mês é diluída nos dias do próprio mês. No vencimento a diluição recompõe os fatores mensais
-    inteiros, e o saldo final da série diária fecha ao centavo com o pagamento único do cronograma – com e sem
-    spread. No meio do caminho os dois motores divergem de propósito: o cronograma projeta a correção do período
-    inteiro pró-rata, a série diária só acumula os índices já decorridos.
+    A Bullet has only two amortizations, and that is what triggers the "len(lst) == 2" branch of "normalize_ipca_indexes": each
+    month's correction is diluted over the days of that same month. At maturity the dilution reassembles the whole monthly
+    factors, and the daily series' final balance matches the schedule's single payment to the cent – with and without
+    a spread. Along the way the two engines diverge on purpose: the schedule projects the whole period's correction
+    pro rata, while the daily series only accumulates the indexes already elapsed.
 
-    Paga os dois FIXMEs históricos do "normalize_ipca_indexes".
+    Pays off the two historical FIXMEs of "normalize_ipca_indexes".
     '''
 
     kwa = {}
@@ -6896,9 +6896,9 @@ def test_will_match_payments_table_and_daily_returns_6():
     pmt = next(_get_bullet_payments(**kwa))
     drt = next(_tail(1, _get_bullet_daily_returns(**kwa)))
 
-    assert pmt.raw == drt.bal == decimal.Decimal('193510.84')  # Conferido em "test_will_create_bullet_ipca_1a".
+    assert pmt.raw == drt.bal == decimal.Decimal('193510.84')  # Verified in "test_will_create_bullet_ipca_1a".
 
-    # Com spread, para exercitar juro e correção juntos.
+    # With a spread, to exercise interest and correction together.
     kwa['apy'] = decimal.Decimal('8')
 
     pmt = next(_get_bullet_payments(**kwa))
@@ -6908,15 +6908,15 @@ def test_will_match_payments_table_and_daily_returns_6():
 
 def test_will_match_payments_table_and_daily_returns_7():
     '''
-    Antecipação parcial que alcança o juro diferido por uma carência, sobre a estrutura da operação "Mirante da
-    Mata - Parcelas Amortizadas - 36 meses": seis meses de carência total a partir de 26/02/2024, e trinta parcelas
-    amortizantes dali em diante. Simulada a juro prefixado – a operação real é CDI + 6,5%, mas o ponto do FIXME
-    histórico é o diferimento, não o indexador.
+    A partial prepayment that reaches the interest deferred by a grace period, over the structure of the "Mirante da
+    Mata - Parcelas Amortizadas - 36 meses" operation: six months of full grace period starting 02/26/2024, and thirty amortizing
+    installments from then on. Simulated at a fixed rate – the real operation is CDI + 6.5%, but the point of the historical
+    FIXME is the deferral, not the index.
 
-    Em 10/11/2024 os juros do período em curso são 12.723,63. A antecipação de 100.000 os liquida, avança sobre o
-    juro diferido pela carência, e não toca o principal – a ordem de imputação põe os juros na frente. E os dois
-    motores atravessam o evento juntos: em toda data de pagamento o saldo diário do fim do dia, menos o rendimento
-    do próprio dia, é o saldo do cronograma, com a tolerância de um centavo que a docstring da rotina documenta.
+    On 11/10/2024 the current period's interest is 12,723.63. The 100,000 prepayment settles it, advances onto the
+    interest deferred by the grace period, and does not touch the principal – the imputation order puts interest first. And the two
+    engines cross the event together: on every payment date the end-of-day daily balance, minus the return of the
+    day itself, is the schedule's balance, within the one-cent tolerance the routine's docstring documents.
     '''
 
     kwa = {}
@@ -6938,12 +6938,12 @@ def test_will_match_payments_table_and_daily_returns_7():
     drs = {x.date: x for x in fincore.get_daily_returns(**kwa)}
     adv = next(x for x in sched if x.date == datetime.date(2024, 11, 10))
 
-    # A antecipação liquida os juros do período e avança sobre o diferido, sem tocar o principal.
+    # The prepayment settles the interest of the period, and advances over the deferred, without touching the principal.
     assert adv.gain == decimal.Decimal('12723.63')
     assert adv.amort == _0
     assert adv.raw == decimal.Decimal('100000.00')
 
-    # Os motores atravessam juntos o evento, a carência e as parcelas.
+    # The engines traverse the event, the grace period, and the installments together.
     for pmt in sched[:-1]:
         assert abs(drs[pmt.date].bal - drs[pmt.date].value - pmt.bal) <= _CENTI
 
