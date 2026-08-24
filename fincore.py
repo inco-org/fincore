@@ -5,6 +5,18 @@
 #
 # Unauthorized copying of this file, via any medium, is strictly prohibited. Proprietary and confidential.
 #
+# [FINCORE V5]
+#
+# The english nomenclature release. Also shrinks the library to its core. Released on August 24, 2026.
+#
+# The whole codebase — library, CLI, test battery, and specification notebook — now uses english market nomenclature.
+# The American Amortization mode replaces "Juros mensais". The "Livre" mode is gone: custom schedules remain fully
+# supported through the core routines, which are now the entire public surface of the library. The schedule
+# stereotyping factories ("build_bullet", "build_jm", "build_price", "build", and the "get_*_daily_returns" wrappers)
+# moved into the CLI as private helpers. The amortization date uniqueness check moved into the core. The CLI interface
+# is english: "generate_payments", "generate_daily_returns", "help", and "calculate_za_factors". The one deliberate
+# Portuguese literal left in the public API is the "Poupança" variable index code, possibly persisted by consumers.
+#
 # [FINCORE V4]
 #
 # Represents a complete rewrite of the daily returns calculation. Released on October 20, 2024.
