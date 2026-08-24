@@ -129,6 +129,328 @@ class _UnpaddedIpcaBackend(_RicherIpcaBackend):
             if begin <= month <= end:
                 yield fincore.MonthlyIndex(date=month, value=value)
 
+# Test-local stereotypes. {{{
+#
+# Local replicas of the schedule stereotyping once provided by the library factories ("build_bullet", "build_jm",
+# "build_price", "build", and the "get_*_daily_returns" wrappers). The core test battery exercises the public API,
+# "fincore.get_payments_table" and "fincore.get_daily_returns", through these helpers. The CLI has its own private
+# copy of this logic, tested separately in "test_fincore_cli.py".
+#
+def _preprocess_bullet(zero_date, term, insertions=[], anniversary_date=None, capitalisation='360', vir=None, calc_date=None, verbose=True):
+    sched = []
+
+    # 1. Validate.
+    if term <= 0:
+        raise ValueError('"term" must be a greater than, or equal to, one')
+
+    if anniversary_date and anniversary_date <= zero_date:
+        raise ValueError(f'the "anniversary_date", {anniversary_date}, must be greater than "zero_date", {zero_date}')
+
+    for i, x in enumerate(insertions):
+        if x.value <= 0:
+            raise ValueError(f'invalid value for insertion entry #{i} – should be positive')
+
+        elif x.date <= zero_date:
+            raise ValueError(f'"insertions[{i}].date", {x.date}, must succeed "zero_date", {zero_date}')
+
+        elif not anniversary_date and x.date > (due := zero_date + _MONTH * term):
+            raise ValueError(f'"insertions[{i}].date", {x.date}, succeeds the regular payment date, {due}')
+
+        elif anniversary_date and x.date > anniversary_date:
+            raise ValueError(f'"insertions[{i}].date", {x.date}, succeeds "anniversary_date", {anniversary_date}')
+
+    if capitalisation == '365' and verbose:
+        fincore._LOG.warning('capitalising 365 days per year exists solely for legacy Bullet support – prefer 360 days')
+
+    # 2.1. Create the amortizations. Regular flow, without insertions. Fast.
+    if not insertions and not vir:
+        sched.append(fincore.Amortization(date=zero_date, amortizes_interest=False))
+        sched.append(fincore.Amortization(date=anniversary_date or zero_date + _MONTH * term, amortization_ratio=_1))
+
+    # 2.2. Create the amortizations. Regular flow with National Index of Consumer Prices, without insertions. Fast.
+    elif not insertions and vir and vir.code == 'IPCA':
+        dif = min(fincore._delta_months(calc_date.value, zero_date), term) if calc_date else term
+        pla = fincore.PriceLevelAdjustment('IPCA', base_date=zero_date.replace(day=1), period=dif)
+
+        sched.append(fincore.Amortization(date=zero_date, amortizes_interest=False))
+        sched.append(fincore.Amortization(date=anniversary_date or zero_date + _MONTH * term, amortization_ratio=_1, price_level_adjustment=pla))
+
+    # 2.3. Create the amortizations. Insertions in the regular flow. Slow.
+    else:
+        lst = []
+
+        lst.append(fincore.Amortization(date=zero_date, amortizes_interest=False))
+        lst.append(fincore.Amortization(date=anniversary_date or zero_date + _MONTH * term, amortization_ratio=_1))
+
+        for skel in fincore._interleave(lst, insertions, key=lambda x: x.date):
+            sched.append(skel.item)
+
+            if skel.from_a and vir and vir.code == 'IPCA':
+                dif = fincore._delta_months(skel.item.date, zero_date)
+
+                skel.item.price_level_adjustment = fincore.PriceLevelAdjustment('IPCA')
+
+                skel.item.price_level_adjustment.base_date = zero_date.replace(day=1)
+                skel.item.price_level_adjustment.period = dif
+                skel.item.price_level_adjustment.amortizes_adjustment = skel.index_a == len(lst) - 1
+
+    return sched
+
+def _preprocess_american(zero_date, term, insertions=[], anniversary_date=None, vir=None, amortizes_correction=True):
+    lst = []
+
+    # 1. Validate.
+    if term <= 0:
+        raise ValueError('"term" must be a greater than, or equal to, one')
+
+    if anniversary_date and anniversary_date <= zero_date:
+        raise ValueError(f'the "anniversary_date", {anniversary_date}, must be greater than "zero_date", {zero_date}')
+
+    if vir and vir.code == 'Poupança':
+        raise NotImplementedError('"Poupança" is currently unsupported')
+
+    for i, x in enumerate(insertions):
+        if x.date <= zero_date:
+            raise ValueError(f'"insertions[{i}].date", {x.date}, must succeed "zero_date", {zero_date}')
+
+        elif not anniversary_date and x.date > (due := zero_date + _MONTH * term):
+            raise ValueError(f'"insertions[{i}].date", {x.date}, succeeds the last regular payment date, {due}')
+
+        elif anniversary_date and x.date > (due := anniversary_date + _MONTH * (term - 1)):
+            raise ValueError(f'"insertions[{i}].date", {x.date}, succeeds the last regular payment date, {due}')
+
+    # 2. Create the amortizations.
+    if anniversary_date and anniversary_date == zero_date + _MONTH:
+        anniversary_date = None
+
+    lst.append(fincore.Amortization(date=zero_date, amortizes_interest=False))
+
+    for i in range(1, term + 1):
+        due = anniversary_date + _MONTH * (i - 1) if anniversary_date else zero_date + _MONTH * i
+        ent = fincore.Amortization(date=due, amortization_ratio=_0 if i != term else _1)
+
+        # American Amortization systems have, by default, a shift configuration of M-2 months, and a period of a
+        # single index, for each payment.
+        if vir and vir.code == 'IPCA' and amortizes_correction:
+            ent.price_level_adjustment = fincore.PriceLevelAdjustment('IPCA')
+
+            ent.price_level_adjustment.shift = 'M-2'
+            ent.price_level_adjustment.base_date = due.replace(day=1)
+            ent.price_level_adjustment.period = 1
+            ent.price_level_adjustment.amortizes_adjustment = True
+
+        # When "amortizes_correction" is false, the base date is constant, the period grows with each iteration, and
+        # the monetary correction is settled on the last payment only.
+        elif vir and vir.code == 'IPCA':
+            ent.price_level_adjustment = fincore.PriceLevelAdjustment('IPCA')
+
+            ent.price_level_adjustment.shift = 'M-2'
+            ent.price_level_adjustment.base_date = anniversary_date.replace(day=1) if anniversary_date else zero_date.replace(day=1) + _MONTH
+            ent.price_level_adjustment.period = i
+            ent.price_level_adjustment.amortizes_adjustment = i == term
+
+        lst.append(ent)
+
+    # Insertions in the regular flow. Slow.
+    if insertions:
+        return list(x.item for x in fincore._interleave(lst, insertions, key=lambda x: x.date))
+
+    return lst
+
+def _preprocess_price(principal, apy, zero_date, term, insertions=[], anniversary_date=None):
+    lst = []
+
+    # 1. Validate.
+    if term <= 0:
+        raise ValueError('"term" must be a greater than, or equal to, one')
+
+    if anniversary_date and anniversary_date <= zero_date:
+        raise ValueError(f'the "anniversary_date", {anniversary_date}, must be greater than "zero_date", {zero_date}')
+
+    for i, x in enumerate(insertions):
+        if x.date <= zero_date:
+            raise ValueError(f'"insertions[{i}].date", {x.date}, must succeed "zero_date", {zero_date}')
+
+        elif not anniversary_date and x.date > (due := zero_date + _MONTH * term):
+            raise ValueError(f'"insertions[{i}].date", {x.date}, succeeds the last regular payment date, {due}')
+
+        elif anniversary_date and x.date > (due := anniversary_date + _MONTH * (term - 1)):
+            raise ValueError(f'"insertions[{i}].date", {x.date}, succeeds the last regular payment date, {due}')
+
+    # 2. Create the amortizations.
+    if anniversary_date and anniversary_date == zero_date + _MONTH:
+        anniversary_date = None
+
+    lst.append(fincore.Amortization(date=zero_date, amortizes_interest=False))
+
+    for i, pct in enumerate(fincore.amortize_fixed(principal, apy, term), 1):
+        due = anniversary_date + _MONTH * (i - 1) if anniversary_date else zero_date + _MONTH * i
+
+        lst.append(fincore.Amortization(date=due, amortization_ratio=pct))
+
+    # Insertions in the regular flow. Slow.
+    if insertions:
+        return list(x.item for x in fincore._interleave(lst, insertions, key=lambda x: x.date))
+
+    return lst
+
+def _preprocess_custom(amortizations, insertions=[]):
+    if insertions:  # Extraordinary flow, with insertions.
+        return list(x.item for x in fincore._interleave(amortizations, insertions, key=lambda x: x.date))
+
+    return amortizations  # Regular flow, without insertions.
+
+def _get_bullet_payments(
+    principal, apy, zero_date, term, *,
+    insertions=[], anniversary_date=None, vir=None, capitalisation='360',
+    tax_exempt=False, first_dct_rule='AUTO', calc_date=None, gain_output='current', verbose=True
+):
+    kwa = {}
+
+    kwa['principal'] = principal
+    kwa['apy'] = apy
+    kwa['amortizations'] = _preprocess_bullet(zero_date, term, insertions, anniversary_date, capitalisation, vir, calc_date, verbose)
+
+    kwa['vir'] = vir
+    kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else capitalisation
+
+    kwa['calc_date'] = calc_date
+    kwa['tax_exempt'] = tax_exempt
+    kwa['first_dct_rule'] = first_dct_rule
+    kwa['gain_output'] = gain_output
+
+    yield from fincore.get_payments_table(**kwa)
+
+def _get_american_payments(
+    principal, apy, zero_date, term, *,
+    insertions=[], anniversary_date=None, vir=None,
+    tax_exempt=False, amortizes_correction=True, first_dct_rule='AUTO', calc_date=None, gain_output='current'
+):
+    kwa = {}
+
+    kwa['principal'] = principal
+    kwa['apy'] = apy
+    kwa['amortizations'] = _preprocess_american(zero_date, term, insertions, anniversary_date, vir, amortizes_correction=amortizes_correction)
+
+    kwa['vir'] = vir
+    kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else '30/360'
+
+    kwa['calc_date'] = calc_date
+    kwa['tax_exempt'] = tax_exempt
+    kwa['first_dct_rule'] = first_dct_rule
+    kwa['gain_output'] = gain_output
+
+    yield from fincore.get_payments_table(**kwa)
+
+def _get_price_payments(
+    principal, apy, zero_date, term, *,
+    insertions=[], anniversary_date=None,
+    tax_exempt=False, first_dct_rule='AUTO', calc_date=None, gain_output='current'
+):
+    kwa = {}
+
+    kwa['principal'] = principal
+    kwa['apy'] = apy
+    kwa['amortizations'] = _preprocess_price(principal, apy, zero_date, term, insertions, anniversary_date)
+
+    kwa['capitalisation'] = '30/360'
+
+    kwa['calc_date'] = calc_date
+    kwa['tax_exempt'] = tax_exempt
+    kwa['first_dct_rule'] = first_dct_rule
+    kwa['gain_output'] = gain_output
+
+    yield from fincore.get_payments_table(**kwa)
+
+def _get_custom_payments(
+    principal, apy, amortizations, *,
+    insertions=[], vir=None,
+    tax_exempt=False, first_dct_rule='AUTO', calc_date=None, gain_output='current'
+):
+    kwa = {}
+
+    kwa['principal'] = principal
+    kwa['apy'] = apy
+    kwa['amortizations'] = _preprocess_custom(amortizations, insertions)
+
+    kwa['vir'] = vir
+    kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else '30/360'
+
+    kwa['calc_date'] = calc_date
+    kwa['tax_exempt'] = tax_exempt
+    kwa['first_dct_rule'] = first_dct_rule
+    kwa['gain_output'] = gain_output
+
+    yield from fincore.get_payments_table(**kwa)
+
+def _get_bullet_daily_returns(
+    principal, apy, zero_date, term, *,
+    insertions=[], anniversary_date=None, vir=None, capitalisation='360',
+    first_dct_rule='AUTO', is_bizz_day_cb=lambda _: True, verbose=True
+):
+    kwa = {}
+
+    kwa['principal'] = principal
+    kwa['apy'] = apy
+    kwa['amortizations'] = _preprocess_bullet(zero_date, term, insertions, anniversary_date, capitalisation, vir, calc_date=None, verbose=verbose)
+    kwa['vir'] = vir
+    kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else capitalisation
+    kwa['first_dct_rule'] = first_dct_rule
+    kwa['is_bizz_day_cb'] = is_bizz_day_cb
+
+    yield from fincore.get_daily_returns(**kwa)
+
+def _get_american_daily_returns(
+    principal, apy, zero_date, term, *,
+    insertions=[], anniversary_date=None, vir=None, amortizes_correction=True,
+    first_dct_rule='AUTO', is_bizz_day_cb=lambda _: True
+):
+    kwa = {}
+
+    kwa['principal'] = principal
+    kwa['apy'] = apy
+    kwa['amortizations'] = _preprocess_american(zero_date, term, insertions, anniversary_date, vir, amortizes_correction=amortizes_correction)
+    kwa['vir'] = vir
+    kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else '30/360'
+    kwa['first_dct_rule'] = first_dct_rule
+    kwa['is_bizz_day_cb'] = is_bizz_day_cb
+
+    yield from fincore.get_daily_returns(**kwa)
+
+def _get_price_daily_returns(
+    principal, apy, zero_date, term, *,
+    insertions=[], anniversary_date=None,
+    first_dct_rule='AUTO', is_bizz_day_cb=lambda _: True
+):
+    kwa = {}
+
+    kwa['principal'] = principal
+    kwa['apy'] = apy
+    kwa['amortizations'] = _preprocess_price(principal, apy, zero_date, term, insertions, anniversary_date)
+    kwa['capitalisation'] = '30/360'
+    kwa['first_dct_rule'] = first_dct_rule
+    kwa['is_bizz_day_cb'] = is_bizz_day_cb
+
+    yield from fincore.get_daily_returns(**kwa)
+
+def _get_custom_daily_returns(
+    principal, apy, amortizations, *,
+    insertions=[], vir=None,
+    first_dct_rule='AUTO', is_bizz_day_cb=lambda _: True
+):
+    kwa = {}
+
+    kwa['principal'] = principal
+    kwa['apy'] = apy
+    kwa['vir'] = vir
+    kwa['amortizations'] = _preprocess_custom(amortizations, insertions)
+    kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else '30/360'
+    kwa['first_dct_rule'] = first_dct_rule
+    kwa['is_bizz_day_cb'] = is_bizz_day_cb
+
+    yield from fincore.get_daily_returns(**kwa)
+# }}}
+
 # 🚩 Parametrizações inválidas. {{{
 def test_wont_create_sched_1():
     with pytest.raises(TypeError, match=r"build_bullet\(\) missing 4 required positional arguments: 'principal', 'apy', 'zero_date', and 'term'"):
@@ -593,7 +915,7 @@ def test_will_create_bullet_pre360_1():
     kwa['zero_date'] = datetime.date(2022, 1, 1)
     kwa['term'] = 12
 
-    for i, x in enumerate(fincore.build_bullet(**kwa), 1):
+    for i, x in enumerate(_get_bullet_payments(**kwa), 1):
         assert x.no == 1
         assert x.date == datetime.date(2023, 1, 1)
         assert x.amort == decimal.Decimal('120000')
@@ -621,7 +943,7 @@ def test_will_create_bullet_pre360_2():
     kwa['anniversary_date'] = datetime.date(2029, 1, 10)
     kwa['term'] = 48
 
-    for i, x in enumerate(fincore.build_bullet(**kwa), 1):
+    for i, x in enumerate(_get_bullet_payments(**kwa), 1):
         assert x.no == 1
         assert x.date == kwa['anniversary_date']
         assert x.amort == decimal.Decimal('1000')
@@ -648,7 +970,7 @@ def test_will_create_bullet_pre360_3():
     kwa['term'] = 48
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2027, 1, 25), value=decimal.Decimal('127077.1'))]
 
-    for i, x in enumerate(fincore.build_bullet(**kwa), 1):
+    for i, x in enumerate(_get_bullet_payments(**kwa), 1):
         assert x.no == i
 
         if i == 1:
@@ -686,7 +1008,7 @@ def test_will_create_bullet_pre360_4():
     kwa['term'] = 48
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2027, 1, 25), value=decimal.Decimal('189577.1'))]
 
-    for i, x in enumerate(fincore.build_bullet(**kwa), 1):
+    for i, x in enumerate(_get_bullet_payments(**kwa), 1):
         assert x.no == i
         assert x.date == kwa['insertions'][0].date
         assert x.raw == decimal.Decimal('189577.1')
@@ -714,7 +1036,7 @@ def test_will_create_bullet_pre365_1(caplog):
     kwa['term'] = 9
     kwa['capitalisation'] = '365'
 
-    for i, x in enumerate(fincore.build_bullet(**kwa), 1):
+    for i, x in enumerate(_get_bullet_payments(**kwa), 1):
         assert x.no == 1
         assert x.date == datetime.date(2022, 4, 23)
         assert x.amort == decimal.Decimal('10000')
@@ -746,7 +1068,7 @@ def test_will_create_bullet_pre365_2(caplog):
     kwa['term'] = 12
     kwa['capitalisation'] = '365'
 
-    for i, x in enumerate(fincore.build_bullet(**kwa), 1):
+    for i, x in enumerate(_get_bullet_payments(**kwa), 1):
         assert x.no == 1
         assert x.date == datetime.date(2023, 3, 9)
         assert x.amort == decimal.Decimal('100000')
@@ -780,7 +1102,7 @@ def test_will_create_bullet_cdi_1():
     kwa['term'] = 3
     kwa['vir'] = fincore.VariableIndex(code='CDI')
 
-    for i, x in enumerate(fincore.build_bullet(**kwa), 1):
+    for i, x in enumerate(_get_bullet_payments(**kwa), 1):
         assert x.no == 1
         assert x.date == datetime.date(2022, 11, 22)
         assert x.amort == decimal.Decimal('500000')
@@ -810,7 +1132,7 @@ def test_will_create_bullet_cdi_2():
     kwa['term'] = 27
     kwa['vir'] = fincore.VariableIndex(code='CDI')
 
-    for i, x in enumerate(fincore.build_bullet(**kwa), 1):
+    for i, x in enumerate(_get_bullet_payments(**kwa), 1):
         assert x.no == 1
         assert x.date == datetime.date(2025, 1, 31)
         assert x.amort == decimal.Decimal('200000')
@@ -875,7 +1197,7 @@ def test_will_create_bullet_cdi_3():
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2023, 6, 28), value=decimal.Decimal('650323.76'))]
 
     # Test 1. When & then.
-    for i, x in enumerate(fincore.build_bullet(**kwa), 1):
+    for i, x in enumerate(_get_bullet_payments(**kwa), 1):
         if x.no == 1:
             assert x.no == 1
             assert x.date == datetime.date(2023, 6, 28)
@@ -950,7 +1272,7 @@ def test_will_create_bullet_cdi_4():
     kwa['term'] = 18
     kwa['vir'] = fincore.VariableIndex(code='CDI')
 
-    for i, x in enumerate(fincore.build_bullet(**kwa), 1):
+    for i, x in enumerate(_get_bullet_payments(**kwa), 1):
         assert x.no == 1
         assert x.date == kwa['anniversary_date']
         assert x.amort == decimal.Decimal('500000.00')
@@ -979,7 +1301,7 @@ def test_will_create_bullet_cdi_5():
     kwa['vir'] = fincore.VariableIndex(code='CDI')
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 12, 28), value=decimal.Decimal('597446.91'))]
 
-    for i, x in enumerate(fincore.build_bullet(**kwa), 1):
+    for i, x in enumerate(_get_bullet_payments(**kwa), 1):
         assert x.no == 1
         assert x.date == kwa['insertions'][0].date
         assert x.amort == decimal.Decimal('500000.00')
@@ -1009,7 +1331,7 @@ def test_will_create_bullet_ipca_1a():
     kwa['term'] = 120
     kwa['vir'] = fincore.VariableIndex('IPCA')
 
-    for i, x in enumerate(fincore.build_bullet(**kwa), 1):
+    for i, x in enumerate(_get_bullet_payments(**kwa), 1):
         x = t.cast(fincore.PriceAdjustedPayment, x)
 
         assert x.no == 1
@@ -1043,7 +1365,7 @@ def test_will_create_bullet_ipca_1b():
     kwa['vir'] = fincore.VariableIndex('IPCA')
     kwa['calc_date'] = fincore.CalcDate(value=datetime.date(2022, 12, 1))
 
-    for i, x in enumerate(fincore.build_bullet(**kwa), 1):
+    for i, x in enumerate(_get_bullet_payments(**kwa), 1):
         x = t.cast(fincore.PriceAdjustedPayment, x)
 
         assert x.no == 1
@@ -1075,7 +1397,7 @@ def test_will_create_bullet_ipca_1c():
     kwa['vir'] = fincore.VariableIndex('IPCA')
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 11, 24), value=decimal.Decimal(17600))]
 
-    for i, x in enumerate(fincore.build_bullet(**kwa), 1):
+    for i, x in enumerate(_get_bullet_payments(**kwa), 1):
         x = t.cast(fincore.PriceAdjustedPayment, x)
 
         if x.no == 1:
@@ -1111,9 +1433,9 @@ def test_will_create_bullet_zanzy_1(term):
     Cinco prazos são parametrizados.
     '''
 
-    assert len(list(fincore.build_bullet(_0, _0, datetime.date.min, term))) == 0
+    assert len(list(_get_bullet_payments(_0, _0, datetime.date.min, term))) == 0
 
-    for i, x in enumerate(fincore.build_bullet(_1, _0, datetime.date.min, term), 1):
+    for i, x in enumerate(_get_bullet_payments(_1, _0, datetime.date.min, term), 1):
         assert x.no == 1
         assert x.date == datetime.date(term // 12 + 1, term % 12 + 1, 1)
         assert x.amort == _1
@@ -1125,14 +1447,14 @@ def test_will_create_bullet_zanzy_1(term):
 
     assert i == 1
 
-    for i, x in enumerate(fincore.build_bullet(_0, _1, datetime.date.min, term), 1):
+    for i, x in enumerate(_get_bullet_payments(_0, _1, datetime.date.min, term), 1):
         assert x.no == 1
         assert x.date == datetime.date(term // 12 + 1, term % 12 + 1, 1)
         assert x.raw == x.tax == x.net == x.gain == x.amort == x.bal == _0
 
     assert i == 1
 
-    for i, x in enumerate(fincore.build_bullet(_1, _1, datetime.date.min, term), 1):
+    for i, x in enumerate(_get_bullet_payments(_1, _1, datetime.date.min, term), 1):
         if term == 1 or term == 3:
             assert x.no == 1
             assert x.date == datetime.date(term // 12 + 1, term % 12 + 1, 1)
@@ -1189,7 +1511,7 @@ def test_will_create_bullet_zanzy_2():
     kwa['term'] = 9
     kwa['capitalisation'] = '365'
 
-    for i, x in enumerate(fincore.build_bullet(**kwa), 1):
+    for i, x in enumerate(_get_bullet_payments(**kwa), 1):
         assert x.no == 1
         assert x.date == datetime.date(2022, 4, 23)
         assert x.amort == decimal.Decimal('10000')
@@ -1202,14 +1524,14 @@ def test_will_create_bullet_zanzy_2():
     assert i == 1
 
 def test_will_warn_about_bullet_365(caplog):
-    next(fincore.build_bullet(_1, _0, datetime.date(2018, 1, 1), 10, capitalisation='365'))
+    next(_get_bullet_payments(_1, _0, datetime.date(2018, 1, 1), 10, capitalisation='365'))
 
     assert caplog.record_tuples == [('fincore', logging.WARNING, 'capitalising 365 days per year exists solely for legacy Bullet support – prefer 360 days')]
 # }}}
 
 # US Juros Mensais. {{{
 #
-def test_will_create_jm_pre_1():
+def test_will_create_american_pre_1():
     '''
     Operação pré-fixada modalidade Juros Mensais.
 
@@ -1224,7 +1546,7 @@ def test_will_create_jm_pre_1():
     kwa['zero_date'] = datetime.date(2021, 7, 23)
     kwa['term'] = 9
 
-    for i, x in enumerate(fincore.build_jm(**kwa), 1):
+    for i, x in enumerate(_get_american_payments(**kwa), 1):
         assert x.no == i
         assert x.date == kwa['zero_date'] + _MONTH * i
 
@@ -1252,7 +1574,7 @@ def test_will_create_jm_pre_1():
 
     assert i == kwa['term']
 
-def test_will_create_jm_pre_2():
+def test_will_create_american_pre_2():
     '''
     Ref File: https://docs.google.com/spreadsheets/d/1qNIfAuvELTXepy6i8yyeNJVwUSLxiFRSDtWDzAk8T2k
     Tab.....: Villa VIC Pisa
@@ -1265,7 +1587,7 @@ def test_will_create_jm_pre_2():
     kwa['zero_date'] = datetime.date(2022, 3, 9)
     kwa['term'] = 12
 
-    for i, x in enumerate(fincore.build_jm(**kwa), 1):
+    for i, x in enumerate(_get_american_payments(**kwa), 1):
         assert x.no == i
         assert x.date == kwa['zero_date'] + _MONTH * i
 
@@ -1293,7 +1615,7 @@ def test_will_create_jm_pre_2():
 
     assert i == kwa['term']
 
-def test_will_create_jm_pre_3():
+def test_will_create_american_pre_3():
     '''
     Ref File: https://docs.google.com/spreadsheets/d/1qNIfAuvELTXepy6i8yyeNJVwUSLxiFRSDtWDzAk8T2k
     Tab.....: Hipotética 01 - Aniversário
@@ -1307,7 +1629,7 @@ def test_will_create_jm_pre_3():
     kwa['anniversary_date'] = datetime.date(2022, 3, 23)
     kwa['term'] = 36
 
-    for i, x in enumerate(fincore.build_jm(**kwa)):
+    for i, x in enumerate(_get_american_payments(**kwa)):
         assert x.no == i + 1
         assert x.date == kwa['anniversary_date'] + _MONTH * i
 
@@ -1356,7 +1678,7 @@ def test_will_create_jm_pre_3():
 
     assert i + 1 == kwa['term']
 
-def test_will_create_jm_pre_4():
+def test_will_create_american_pre_4():
     '''
     Ref File: https://docs.google.com/spreadsheets/d/1qNIfAuvELTXepy6i8yyeNJVwUSLxiFRSDtWDzAk8T2k
     Tab.....: Hipotética 02 - Antecipação Total
@@ -1370,7 +1692,7 @@ def test_will_create_jm_pre_4():
     kwa['term'] = 24
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2016, 1, 8), value=decimal.Decimal('1890032.55'))]
 
-    for i, x in enumerate(fincore.build_jm(**kwa), 1):
+    for i, x in enumerate(_get_american_payments(**kwa), 1):
         assert x.no == i
 
         if i <= 5:
@@ -1401,7 +1723,7 @@ def test_will_create_jm_pre_4():
 
     assert i == 12
 
-def test_will_create_jm_pre_5():
+def test_will_create_american_pre_5():
     '''
     Ref File: https://docs.google.com/spreadsheets/d/1qNIfAuvELTXepy6i8yyeNJVwUSLxiFRSDtWDzAk8T2k
     Tab.....: Hipotética 03 - Antecipação Total
@@ -1415,7 +1737,7 @@ def test_will_create_jm_pre_5():
     kwa['term'] = 24
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2016, 1, 9), value=decimal.Decimal('1891001.29'))]
 
-    for i, x in enumerate(fincore.build_jm(**kwa), 1):
+    for i, x in enumerate(_get_american_payments(**kwa), 1):
         assert x.no == i
 
         if i <= 5:
@@ -1446,7 +1768,7 @@ def test_will_create_jm_pre_5():
 
     assert i == 12
 
-def test_will_create_jm_pre_6():
+def test_will_create_american_pre_6():
     '''
     Nesse teste a data de antecipação coincide com a data de pagamento da prestação 13.
 
@@ -1462,7 +1784,7 @@ def test_will_create_jm_pre_6():
     kwa['term'] = 24
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2016, 1, 10), value=decimal.Decimal('1862153.96'))]
 
-    for i, x in enumerate(fincore.build_jm(**kwa), 1):
+    for i, x in enumerate(_get_american_payments(**kwa), 1):
         assert x.no == i
 
         if i <= 5:
@@ -1501,7 +1823,7 @@ def test_will_create_jm_pre_6():
 
     assert i == 13
 
-def test_will_create_jm_pre_7():
+def test_will_create_american_pre_7():
     '''
     Ref File: https://docs.google.com/spreadsheets/d/1qNIfAuvELTXepy6i8yyeNJVwUSLxiFRSDtWDzAk8T2k
     Tab.....: Hipotética 05 - Duas Antecipações Parciais
@@ -1518,7 +1840,7 @@ def test_will_create_jm_pre_7():
     kwa['insertions'].append(fincore.Amortization.Bare(date=datetime.date(2015, 7, 20), value=decimal.Decimal('475820.51')))
     kwa['insertions'].append(fincore.Amortization.Bare(date=datetime.date(2016, 3, 2), value=decimal.Decimal('482223.35')))
 
-    for i, x in enumerate(fincore.build_jm(**kwa), 1):
+    for i, x in enumerate(_get_american_payments(**kwa), 1):
         assert x.no == i
 
         if i <= 5:
@@ -1608,7 +1930,7 @@ def test_will_create_jm_pre_7():
 
     assert i == kwa['term'] + 2
 
-def test_will_create_jm_pre_8():
+def test_will_create_american_pre_8():
     '''
     Ref File: https://docs.google.com/spreadsheets/d/1qNIfAuvELTXepy6i8yyeNJVwUSLxiFRSDtWDzAk8T2k
     Tab.....: Hipotética 06 - Antecipações Parciais e Total
@@ -1626,7 +1948,7 @@ def test_will_create_jm_pre_8():
     kwa['insertions'].append(fincore.Amortization.Bare(date=datetime.date(2016, 3, 2), value=decimal.Decimal('482223.35')))
     kwa['insertions'].append(fincore.Amortization.Bare(date=datetime.date(2016, 10, 25), value=decimal.Decimal('938261.1')))
 
-    for i, x in enumerate(fincore.build_jm(**kwa), 1):
+    for i, x in enumerate(_get_american_payments(**kwa), 1):
         assert x.no == i
 
         if i <= 5:
@@ -1717,7 +2039,7 @@ def test_will_create_jm_pre_8():
 
     assert i == kwa['term']
 
-def test_will_create_jm_pre_9():
+def test_will_create_american_pre_9():
     '''Valida uma antecipação antes do primeiro pagamento regular.'''
 
     kwa = {}
@@ -1728,7 +2050,7 @@ def test_will_create_jm_pre_9():
     kwa['term'] = 3
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 8, 23), value=decimal.Decimal(5000))]
 
-    for i, x in enumerate(fincore.build_jm(**kwa), 1):
+    for i, x in enumerate(_get_american_payments(**kwa), 1):
         assert x.no == i
 
         if x.no == 1:
@@ -1769,7 +2091,7 @@ def test_will_create_jm_pre_9():
 
     assert i == 4
 
-def test_will_create_jm_pre_10():
+def test_will_create_american_pre_10():
     '''Valida uma antecipação antes do aniversário do empréstimo.'''
 
     kwa = {}
@@ -1781,7 +2103,7 @@ def test_will_create_jm_pre_10():
     kwa['term'] = 3
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 8, 27), value=decimal.Decimal(5000))]
 
-    for i, x in enumerate(fincore.build_jm(**kwa), 1):
+    for i, x in enumerate(_get_american_payments(**kwa), 1):
         assert x.no == i
 
         if x.no == 1:
@@ -1822,7 +2144,7 @@ def test_will_create_jm_pre_10():
 
     assert i == 4
 
-def test_will_create_jm_pre_11():
+def test_will_create_american_pre_11():
     '''Valida duas antecipações antes do aniversário do empréstimo.'''
 
     kwa = {}
@@ -1837,7 +2159,7 @@ def test_will_create_jm_pre_11():
     kwa['insertions'].append(fincore.Amortization.Bare(date=datetime.date(2022, 8, 27), value=decimal.Decimal(5000)))
     kwa['insertions'].append(fincore.Amortization.Bare(date=datetime.date(2022, 9, 22), value=decimal.Decimal(5000)))
 
-    for i, x in enumerate(fincore.build_jm(**kwa), 1):
+    for i, x in enumerate(_get_american_payments(**kwa), 1):
         assert x.no == i
 
         if x.no == 1:
@@ -1887,7 +2209,7 @@ def test_will_create_jm_pre_11():
 
     assert i == 5
 
-def test_will_create_jm_pre_12():
+def test_will_create_american_pre_12():
     '''
     Valida duas antecipações depois do aniversário e antes do segundo pagamento do empréstimo.
 
@@ -1907,7 +2229,7 @@ def test_will_create_jm_pre_12():
     kwa['insertions'].append(fincore.Amortization.Bare(date=datetime.date(2022, 10, 2), value=decimal.Decimal('404.81')))
     kwa['insertions'].append(fincore.Amortization.Bare(date=datetime.date(2022, 10, 7), value=decimal.Decimal('404.81')))
 
-    for i, x in enumerate(fincore.build_jm(**kwa), 1):
+    for i, x in enumerate(_get_american_payments(**kwa), 1):
         assert x.no == i
 
         if x.no == 1:
@@ -1957,7 +2279,7 @@ def test_will_create_jm_pre_12():
 
     assert i == 5
 
-def test_will_create_jm_pos_1():
+def test_will_create_american_pos_1():
     '''
     Ref File: https://docs.google.com/spreadsheets/d/1XqaYsV1qg4jFf2ulQAuBh8JttYryPXHAGlwxgXqfwgc
     Tab.....: Villa VIC Pisa
@@ -1986,7 +2308,7 @@ def test_will_create_jm_pos_1():
     tab[11] = '9522.23', '1904.45', '7617.78'
     tab[12] = '7438.39', '1301.72', '561636.67'
 
-    for i, x in enumerate(fincore.build_jm(**kwa), 1):
+    for i, x in enumerate(_get_american_payments(**kwa), 1):
         assert x.no == i
         assert x.date == kwa['zero_date'] + _MONTH * i
 
@@ -2007,7 +2329,7 @@ def test_will_create_jm_pos_1():
 
     assert i == kwa['term']
 
-def test_will_create_jm_pos_2():
+def test_will_create_american_pos_2():
     '''
     Ref File: https://docs.google.com/spreadsheets/d/1XqaYsV1qg4jFf2ulQAuBh8JttYryPXHAGlwxgXqfwgc
     Tab.....: Hipotética CDI c/ Aniv.
@@ -2037,7 +2359,7 @@ def test_will_create_jm_pos_2():
     tab[11] = '9522.23', '1904.45', '7617.78',
     tab[12] = '7438.39', '1301.72', '561636.67'
 
-    for i, x in enumerate(fincore.build_jm(**kwa), 1):
+    for i, x in enumerate(_get_american_payments(**kwa), 1):
         assert x.no == i
         assert x.date == kwa['anniversary_date'] + _MONTH * (i - 1)
 
@@ -2058,7 +2380,7 @@ def test_will_create_jm_pos_2():
 
     assert i == kwa['term']
 
-def test_will_create_jm_pos_3():
+def test_will_create_american_pos_3():
     '''
     Ref File: https://docs.google.com/spreadsheets/d/1XqaYsV1qg4jFf2ulQAuBh8JttYryPXHAGlwxgXqfwgc
     Tab.....: Hipotética CDI c/ AP
@@ -2089,7 +2411,7 @@ def test_will_create_jm_pos_3():
     tab[12] = '7892.87', '7892.87', '1578.57', '6314.30', '460447.93',
     tab[13] = '6165.60', '466613.53', '1078.98', '465534.55', '0.00'
 
-    for i, x in enumerate(fincore.build_jm(**kwa), 1):
+    for i, x in enumerate(_get_american_payments(**kwa), 1):
         assert x.no == i
 
         if x.no == 7:
@@ -2106,7 +2428,7 @@ def test_will_create_jm_pos_3():
 
     assert i - 1 == kwa['term']
 
-def test_will_create_jm_pos_4():
+def test_will_create_american_pos_4():
     '''
     Ref File: https://docs.google.com/spreadsheets/d/1XqaYsV1qg4jFf2ulQAuBh8JttYryPXHAGlwxgXqfwgc
     Tab.....: Hipotética CDI c/ AT
@@ -2131,7 +2453,7 @@ def test_will_create_jm_pos_4():
     tab[6] = '9104.85', '9104.85', '1820.97', '7283.88', '555500.00',
     tab[7] = '4947.93', '560447.93', '989.59', '559458.34', '0.00',  # Antecipação total.
 
-    for i, x in enumerate(fincore.build_jm(**kwa), 1):
+    for i, x in enumerate(_get_american_payments(**kwa), 1):
         assert x.no == i
         assert x.date == kwa['insertions'][0].date if x.no == 7 else kwa['zero_date'] + _MONTH * i
         assert x.gain == decimal.Decimal(tab[i][0])
@@ -2142,7 +2464,7 @@ def test_will_create_jm_pos_4():
 
     assert i == 7
 
-def test_will_create_jm_ipca_1():
+def test_will_create_american_ipca_1():
     '''
     Operação "CRI - Max Tulum 2 (Isento de IR)", Juros mensais - 38 meses - IPCA, ID "SFITBR__Qo2dDrU5GfAGj".
 
@@ -2207,7 +2529,7 @@ def test_will_create_jm_ipca_1():
     tab[21] = '60293.41', '0.00', '0.00', '7000000.00'  # Vale também para os pagamentos 22 a 37.
     tab[38] = '60293.41', '0.00', '7000000.00', '0.00'
 
-    for i, x in enumerate(fincore.build_jm(**kwa), 1):
+    for i, x in enumerate(_get_american_payments(**kwa), 1):
         x = t.cast(fincore.PriceAdjustedPayment, x)
 
         assert x.no == i
@@ -2254,12 +2576,12 @@ def test_wont_leak_price_level_adjustment_on_prepayment():
     kwa['anniversary_date'] = datetime.date(2022, 4, 5)
     kwa['vir'] = fincore.VariableIndex(code='IPCA')
 
-    regular = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+    regular = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_american_payments(**kwa)]
 
     # Os juros acumulados entre 05/04 e 20/04 superam cinco mil reais, então a antecipação não amortiza principal.
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 4, 20), value=decimal.Decimal('5000'))]
 
-    prepaid = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+    prepaid = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_american_payments(**kwa)]
 
     assert sum(x.amort for x in prepaid) == sum(x.amort for x in regular) == kwa['principal']
     assert sum(x.pla for x in prepaid) == sum(x.pla for x in regular)
@@ -2284,12 +2606,12 @@ def test_wont_leak_partially_deferred_price_level_adjustment_on_prepayment():
     kwa['anniversary_date'] = datetime.date(2022, 4, 5)
     kwa['vir'] = fincore.VariableIndex(code='IPCA')
 
-    regular = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+    regular = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_american_payments(**kwa)]
 
     # Os juros do período somam 5.261,68, e a correção devida 14.883,30. Dez mil cobrem os juros e parte da correção.
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 4, 20), value=decimal.Decimal('10000'))]
 
-    prepaid = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+    prepaid = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_american_payments(**kwa)]
     advance = next(x for x in prepaid if x.date == kwa['insertions'][0].date)
 
     assert advance.amort == _0
@@ -2319,7 +2641,7 @@ def test_wont_recharge_settled_price_level_indexes_on_prepayment():
     kwa['vir'] = fincore.VariableIndex(code='IPCA')
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 4, 20), value=decimal.Decimal('5000'))]
 
-    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_american_payments(**kwa)]
 
     # O primeiro pagamento regular liquida o índice de fevereiro de 2022, o primeiro do fluxo. A antecipação o sucede.
     assert sched[0].date == kwa['anniversary_date']
@@ -2360,7 +2682,7 @@ def test_will_amortize_only_principal_on_prepayment():
     kwa['vir'] = fincore.VariableIndex(code='IPCA')
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 4, 20), value=decimal.Decimal('50000'), amortizes_interest=False)]
 
-    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_american_payments(**kwa)]
     advance = next(x for x in sched if x.date == kwa['insertions'][0].date)
     index = sched.index(advance)
 
@@ -2403,7 +2725,7 @@ def test_wont_settle_debt_with_prepayment_that_does_not_amortize_interest():
     def build(value):
         kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 4, 20), value=value, amortizes_interest=False)]
 
-        return list(fincore.build_jm(**kwa))
+        return list(_get_american_payments(**kwa))
 
     with pytest.raises(ValueError, match='an advancement that does not amortize interest cannot settle the entire debt'):
         build(fincore.Amortization.Bare.MAX_VALUE)
@@ -2433,7 +2755,7 @@ def _kwa_cri_ipa():
 
     return kwa
 
-def test_will_create_jm_ipca_2():
+def test_will_create_american_ipca_2():
     '''
     Operação "CRI IPA Club Residencial", Juros mensais - 36 meses - IPCA, c/ antecipação parcial.
 
@@ -2460,7 +2782,7 @@ def test_will_create_jm_ipca_2():
     tab[4] = '56560.43', '0.00', '0.00', '56560.43'  # Vale até o penúltimo: a série de IPCA se esgota aqui.
     tab[37] = '56560.43', '0.00', '5960761.30', '6017321.73'
 
-    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_american_payments(**kwa)]
 
     for i, x in enumerate(sched, 1):
         assert [x.gain, x.pla, x.amort, x.raw] == [decimal.Decimal(y) for y in tab.get(i, tab[4])]
@@ -2468,7 +2790,7 @@ def test_will_create_jm_ipca_2():
     assert len(sched) == kwa['term'] + 1  # A antecipação acrescenta uma linha ao fluxo regular.
     assert sum(x.amort for x in sched) == kwa['principal']
 
-def test_will_create_jm_ipca_3():
+def test_will_create_american_ipca_3():
     '''
     Mesma operação e mesma antecipação de "test_will_create_jm_ipca_2", com "amortizes_interest" falso.
 
@@ -2500,7 +2822,7 @@ def test_will_create_jm_ipca_3():
     tab[4] = '56010.21', '0.00', '0.00', '56010.21'
     tab[37] = '56010.21', '0.00', '5902775.47', '5958785.68'
 
-    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_american_payments(**kwa)]
 
     for i, x in enumerate(sched, 1):
         assert [x.gain, x.pla, x.amort, x.raw] == [decimal.Decimal(y) for y in tab.get(i, tab[4])]
@@ -2511,7 +2833,7 @@ def test_will_create_jm_ipca_3():
     def correcao(dia):
         kwb = _kwa_cri_ipa()
         kwb['insertions'] = [fincore.Amortization.Bare(date=dia, value=decimal.Decimal('97224.53'), amortizes_interest=False)]
-        sch = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwb)]
+        sch = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_american_payments(**kwb)]
 
         return sum(x.pla for x in sch if datetime.date(2026, 7, 7) < x.date <= datetime.date(2026, 8, 7))
 
@@ -2595,7 +2917,7 @@ def test_will_create_bullet_ipca_with_nine_prepayments():
     tab[9] = '12633.45', '0.00', '0.00', '12633.45'  # De novo os juros consomem o bruto.
     tab[10] = '471102.17', '3645.44', '2033033.60', '2507781.21'  # O pagamento final, em 07/01/2028.
 
-    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_bullet(**kwa)]
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_bullet_payments(**kwa)]
 
     # Antes do laço, que indexa a tabela pela posição: se o cronograma crescer, a mensagem daqui é útil, e a de um
     # "KeyError" na linha seguinte não seria.
@@ -2622,7 +2944,7 @@ def test_will_close_bullet_ipca_with_prepayments_on_a_zero_balance():
 
     kwa['insertions'] = _ins_solve()
 
-    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_bullet(**kwa)]
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_bullet_payments(**kwa)]
 
     assert sched[-1].bal == _0
     assert sum(x.amort for x in sched) == kwa['principal']
@@ -2637,7 +2959,7 @@ def test_wont_move_bullet_ipca_without_prepayment():
     própria data zero, o acumulado nela é um, e o quociente não altera nada.
     '''
 
-    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_bullet(**_kwa_solve())]
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_bullet_payments(**_kwa_solve())]
 
     assert len(sched) == 1
     assert [sched[0].gain, sched[0].pla, sched[0].amort, sched[0].raw] == [decimal.Decimal(x) for x in ('1728409.70', '192807.06', '3850000.00', '5771216.75')]
@@ -2657,7 +2979,7 @@ def test_will_prorate_the_current_month_on_a_bullet_prepayment():
 
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2026, 3, 12), value=decimal.Decimal('400661.15'))]
 
-    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_bullet(**kwa)]
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_bullet_payments(**kwa)]
 
     assert sched[0].pla == decimal.Decimal('2316.79')
     assert sched[0].amort == _0  # Juros e correção consomem o bruto inteiro.
@@ -2681,7 +3003,7 @@ def test_wont_move_the_total_price_level_adjustment_with_a_token_prepayment():
     '''
 
     kwa = _kwa_solve()
-    ref = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_bullet(**kwa)]
+    ref = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_bullet_payments(**kwa)]
     tot = sum(x.pla for x in ref)
 
     for dia in (datetime.date(2026, 3, 7), datetime.date(2026, 3, 22), datetime.date(2026, 4, 6)):
@@ -2689,7 +3011,7 @@ def test_wont_move_the_total_price_level_adjustment_with_a_token_prepayment():
 
         kwa['insertions'] = [fincore.Amortization.Bare(date=dia, value=decimal.Decimal('0.01'))]
 
-        sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_bullet(**kwa)]
+        sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_bullet_payments(**kwa)]
 
         assert sum(x.pla for x in sched) == tot
         assert sched[-1].bal == _0
@@ -2723,7 +3045,7 @@ def test_wont_depend_on_a_backend_that_pads_the_index_series():
             kwa['vir'] = fincore.VariableIndex('IPCA', backend=backend)
             kwa['insertions'] = [fincore.Amortization.Bare(date=dia, value=decimal.Decimal('0.01'))]
 
-            sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_bullet(**kwa)]
+            sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_bullet_payments(**kwa)]
 
             out.append([sched[-1].raw, sum(x.pla for x in sched), sched[-1].bal])
 
@@ -2759,7 +3081,7 @@ def test_will_accrue_interest_over_deferred_price_level_adjustment():
     tab[3] = '7324.79', '7225.40', '0.00', '14550.19'  # Juros sobre o saldo com a correção diferida dentro.
     tab[4] = '56932.76', '0.00', '0.00', '56932.76'
 
-    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_american_payments(**kwa)]
 
     for i, x in enumerate(sched, 1):
         if i in tab:
@@ -2799,7 +3121,7 @@ def test_wont_charge_regular_payment_on_the_prepayment_date():
         fincore.Amortization.Bare(date=datetime.date(2026, 8, 7), value=decimal.Decimal('58134.57'))
     ]
 
-    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_american_payments(**kwa)]
     linhas = [x for x in sched if x.date == datetime.date(2026, 8, 7)]
 
     assert len(linhas) == 2
@@ -2824,7 +3146,7 @@ def test_wont_charge_regular_payment_on_the_prepayment_date():
 
     kwb['insertions'] = kwa['insertions'][:1]
 
-    anterior = next(x for x in fincore.build_jm(**kwb) if x.date == datetime.date(2026, 8, 7))
+    anterior = next(x for x in _get_american_payments(**kwb) if x.date == datetime.date(2026, 8, 7))
     anterior = t.cast(fincore.PriceAdjustedPayment, anterior)
 
     assert [anterior.gain, anterior.pla] == [antecipacao.gain, antecipacao.pla]
@@ -2856,7 +3178,7 @@ def test_will_collect_locked_interest_and_adjustment_on_a_later_prepayment():
         fincore.Amortization.Bare(date=datetime.date(2026, 8, 3), value=decimal.Decimal('150000'))
     ]
 
-    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_american_payments(**kwa)]
     travada, coletora, regular = sched[1], sched[2], sched[3]
 
     # A primeira antecipação vai inteira para o principal, e trava juro e correção.
@@ -2897,7 +3219,7 @@ def test_will_settle_debt_with_max_value_prepayment_after_deferral():
         fincore.Amortization.Bare(date=datetime.date(2026, 8, 5), value=fincore.Amortization.Bare.MAX_VALUE)
     ]
 
-    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_american_payments(**kwa)]
 
     # A quitação zera o saldo e leva todo o principal que restava.
     assert sched[-1].date == kwa['insertions'][1].date
@@ -2912,12 +3234,12 @@ def test_will_settle_debt_with_max_value_prepayment_after_deferral():
 
 # 🎭 Juros Mensais vandalizadas. {{{
 @pytest.mark.parametrize('term', [1, 3, 6, 12, 60])
-def test_will_create_jm_zanzy_1(term):
-    lst = list(fincore.build_jm(_0, _0, datetime.date.min, term))
+def test_will_create_american_zanzy_1(term):
+    lst = list(_get_american_payments(_0, _0, datetime.date.min, term))
 
     assert len(lst) == 0
 
-    for i, x in enumerate(fincore.build_jm(_1, _0, datetime.date.min, term), 1):
+    for i, x in enumerate(_get_american_payments(_1, _0, datetime.date.min, term), 1):
         if i < term:
             assert x.no == i
             assert x.date == datetime.date(i // 12 + 1, i % 12 + 1, 1)
@@ -2936,14 +3258,14 @@ def test_will_create_jm_zanzy_1(term):
 
     assert i == term
 
-    for i, x in enumerate(fincore.build_jm(_0, _1, datetime.date.min, term), 1):
+    for i, x in enumerate(_get_american_payments(_0, _1, datetime.date.min, term), 1):
         assert x.no == i
         assert x.date == datetime.date(i // 12 + 1, i % 12 + 1, 1)
         assert x.amort == x.gain == x.raw == x.tax == x.net == x.bal == _0
 
     assert i == term
 
-    for i, x in enumerate(fincore.build_jm(_1, _1, datetime.date.min, term), 1):
+    for i, x in enumerate(_get_american_payments(_1, _1, datetime.date.min, term), 1):
         if i < term:
             assert x.no == i
             assert x.date == datetime.date(i // 12 + 1, i % 12 + 1, 1)
@@ -3019,7 +3341,7 @@ def test_will_create_price_1():
     tab[359] = '5.7', '583.67', '586.52'
     tab[360] = '2.85', '586.52', 0
 
-    for i, x in enumerate(fincore.build_price(**kwa), 1):
+    for i, x in enumerate(_get_price_payments(**kwa), 1):
         assert x.no == i
         assert x.date == kwa['zero_date'] + _MONTH * i
         assert x.raw == decimal.Decimal('589.37')
@@ -3071,7 +3393,7 @@ def test_will_create_price_2():
     tab[23] = '683.04', '119.53', '23783.02', '23219.52', '23558.56'
     tab[24] = '343.99', '51.6', '23850.95', '23558.56', 0
 
-    for i, x in enumerate(fincore.build_price(**kwa), 1):
+    for i, x in enumerate(_get_price_payments(**kwa), 1):
         assert x.no == i
         assert x.date == kwa['zero_date'] + _MONTH * i
         assert x.raw == decimal.Decimal('23902.55')  # PMT.
@@ -3121,7 +3443,7 @@ def test_will_create_price_3():
     tab[23] = '242.7', '42.47', '8877.57', '8677.34', '8797.85'
     tab[24] = '122.19', '18.33', '8901.71', '8797.85', 0
 
-    for i, x in enumerate(fincore.build_price(**kwa), 1):
+    for i, x in enumerate(_get_price_payments(**kwa), 1):
         assert x.no == i
         assert x.date == kwa['zero_date'] + _MONTH * i
         assert x.raw == decimal.Decimal('8920.04')  # PMT.
@@ -3164,7 +3486,7 @@ def test_will_create_price_4():
     tab[15] = '324.25', '56.74', '7066.63', '6799.12', '20879.01'
     tab[16] = '244.6', '42.8', '7080.57', '6878.77', '14000.24'
 
-    for i, x in enumerate(fincore.build_price(**kwa), 1):
+    for i, x in enumerate(_get_price_payments(**kwa), 1):
         assert x.no == i
 
         # Fluxo Price ordinário.
@@ -3229,7 +3551,7 @@ def test_will_create_price_5():
     tab[24] = '46341.18', '1324.24', '231.74', '46109.44', '45016.93', '45674.26',
     tab[25] = '46341.18', '666.92', '100.04', '46241.14', '45674.26', 0
 
-    for i, x in enumerate(fincore.build_price(**kwa), 1):
+    for i, x in enumerate(_get_price_payments(**kwa), 1):
         assert x.no == i
 
         # Antecipação parcial.
@@ -3293,7 +3615,7 @@ def test_will_create_price_6():
     tab[29] = '1993.38', '299.01', '66302.66', '64608.29', '65597.41'
     tab[30] = '1004.26', '150.64', '66451.03', '65597.41', 0
 
-    for i, x in enumerate(fincore.build_price(**kwa), 1):
+    for i, x in enumerate(_get_price_payments(**kwa), 1):
         assert x.no == i
         assert x.date == kwa['anniversary_date'] + _MONTH * (i - 1)
 
@@ -3315,7 +3637,7 @@ def test_will_create_price_6():
     decimal.Decimal('0.0333333333334'),  # Totals 1.000000000002 when multiplied by thirty, 2e-12 from one.
     decimal.Decimal('0.03333333334')  # Totals 1.000000002 when multiplied by thirty, 2e-10 from one.
 ])
-def test_will_create_livre_1(sac_pct):
+def test_will_create_custom_1(sac_pct):
     '''
     Verifies that amortization percentages should add up to one, no more and no less, within 10⁻¹⁰ relative tolerance.
 
@@ -3340,12 +3662,12 @@ def test_will_create_livre_1(sac_pct):
 
         tab.append(fincore.Amortization(date, amortization_ratio=sac_pct, amortizes_interest=True, price_level_adjustment=ipca))
 
-    for _ in fincore.build(**kwa):
+    for _ in _get_custom_payments(**kwa):
         pass  # FIXME: check something here?
 
     assert i == 30
 
-def test_will_create_livre_2():
+def test_will_create_custom_2():
     '''
     Operação pós-fixada CDI, modalidade Livre.
 
@@ -3401,7 +3723,7 @@ def test_will_create_livre_2():
     tab2[28] = '18505.73', '160783.51', '2775.86', '158007.65', '1138222.22'
     tab2[29] = '15905.53', '158183.30', '2385.83', '155797.47', '995944.44'
 
-    for i, x in enumerate(fincore.build(**kwa), 1):
+    for i, x in enumerate(_get_custom_payments(**kwa), 1):
         if i < 30:
             assert x.no == i
             assert x.date == tab1[0].date + _MONTH * i
@@ -3410,7 +3732,7 @@ def test_will_create_livre_2():
 
     assert i == len(tab1) - 1
 
-def test_will_create_livre_3a():
+def test_will_create_custom_3a():
     '''
     Operação pré-fixada modalidade Livre c/ carência de 6 meses.
 
@@ -3505,7 +3827,7 @@ def test_will_create_livre_3a():
     tab2[35] = '21367.53', '704.91', '22072.44', '105.74', '21966.70', '21717.13'
     tab2[36] = '21717.13', '355.32', '22072.44', '53.30', '22019.14', 0
 
-    for i, x in enumerate(fincore.build(**kwa), 1):
+    for i, x in enumerate(_get_custom_payments(**kwa), 1):
         assert x.no == i
         assert x.date == tab1[0].date + _MONTH * i
 
@@ -3513,7 +3835,7 @@ def test_will_create_livre_3a():
 
     assert i == len(tab1) - 1 == len(tab2)
 
-def test_will_create_livre_3b():
+def test_will_create_custom_3b():
     '''
     Operação pós-fixada CDI, modalidade Livre c/ carência de 3 meses.
 
@@ -3549,7 +3871,7 @@ def test_will_create_livre_3b():
     tab2[5] = '33333.33', '1073.67', '36146.03', '632.86', '35513.17', '34202.84'
     tab2[6] = '33333.33', '515.44', '34718.29', '276.99', '34441.30', 0
 
-    for i, x in enumerate(fincore.build(**kwa), 1):
+    for i, x in enumerate(_get_custom_payments(**kwa), 1):
         assert x.no == i
         assert x.date == tab1[0].date + _MONTH * i
 
@@ -3557,7 +3879,7 @@ def test_will_create_livre_3b():
 
     assert i == len(tab1) - 1 == len(tab2)
 
-def test_will_create_livre_4():
+def test_will_create_custom_4():
     '''
     Operação pré-fixada modalidade Livre c/ correção monetária por IPCA.
 
@@ -3710,7 +4032,7 @@ def test_will_create_livre_4():
     tab2[59] = '691.04', '3002.09', '59.13', '3752.27', '112.53', '3639.74', '3722.58'
     tab2[60] = '696.55', '3026.03', '29.68', '3752.27', '108.94', '3643.33', 0
 
-    for i, x in enumerate(fincore.build(**kwa), 1):
+    for i, x in enumerate(_get_custom_payments(**kwa), 1):
         assert x.no == i
         assert x.date == kwa['amortizations'][0].date + _MONTH * i
 
@@ -3724,7 +4046,7 @@ def test_will_create_livre_4():
 
     assert i == len(kwa['amortizations']) - 1 == len(tab2)
 
-def test_will_create_livre_5a():
+def test_will_create_custom_5a():
     '''
     Operação modalidade Livre com aniversário e carência trimestral.
 
@@ -3769,14 +4091,14 @@ def test_will_create_livre_5a():
     tab2[11] = 0, '7261.79', 0, 0, 0, '218568.75'
     tab2[12] = '187500.00', '7511.35', '226080.10', '6751.52', '219328.58', 0
 
-    for i, x in enumerate(fincore.build(**kwa), 1):
+    for i, x in enumerate(_get_custom_payments(**kwa), 1):
         assert x.no == i
         assert x.date == tab1[1].date + _MONTH * (i - 1)
         assert [x.amort, x.gain, x.raw, x.tax, x.net, x.bal] == [decimal.Decimal(y) for y in tab2[i]]
 
     assert i == len(tab1) - 1 == len(tab2)
 
-def test_will_create_livre_5b():
+def test_will_create_custom_5b():
     '''
     Operação modalidade Livre CDI com aniversário e carência de 3 meses.
 
@@ -3810,7 +4132,7 @@ def test_will_create_livre_5b():
     tab2[5] = '33333.33', '1088.39', '36470.53', '705.87', '35764.66', '34357.73'
     tab2[6] = '33333.33', '523.90', '34881.64', '309.66', '34571.98', 0
 
-    for i, x in enumerate(fincore.build(**kwa), 1):
+    for i, x in enumerate(_get_custom_payments(**kwa), 1):
         assert x.no == i
         assert x.date == tab1[1].date + _MONTH * (i - 1)
 
@@ -3818,7 +4140,7 @@ def test_will_create_livre_5b():
 
     assert i == len(tab1) - 1 == len(tab2)
 
-def test_will_create_livre_6a():
+def test_will_create_custom_6a():
     '''
     Operação pós-fixada IPCA, modalidade Livre.
 
@@ -3877,7 +4199,7 @@ def test_will_create_livre_6a():
     tab2[29] = '3919.98', '709.31', '41312.62', '694.39', '40618.23', '40603.31'
     tab2[30] = '3919.98', '354.65', '40957.97', '641.20', '40316.77', 0
 
-    for i, x in enumerate(fincore.build(**kwa), 1):
+    for i, x in enumerate(_get_custom_payments(**kwa), 1):
         x = t.cast(fincore.PriceAdjustedPayment, x)
 
         assert x.no == i
@@ -3904,7 +4226,7 @@ def test_will_create_livre_6a():
     fincore.CalcDate(value=datetime.date(2024, 1, 6), runaway=False),
     fincore.CalcDate(value=datetime.date(2025, 1, 6), runaway=True)
 ])
-def test_will_create_livre_6b(calc_date):
+def test_will_create_custom_6b(calc_date):
     '''
     Operação pós-fixada IPCA, modalidade Livre c/ antecipação total.
 
@@ -3941,7 +4263,7 @@ def test_will_create_livre_6b(calc_date):
     tab2[5] = '463.66', '36683.33', '8436.06', '45583.05', '2002.44', '43580.61', '928674.84'
     tab2[6] = '15152.95', '917083.33', '7615.23', '939851.51', '4553.64', '935297.87', 0
 
-    for i, x in enumerate(fincore.build(**kwa), 1):
+    for i, x in enumerate(_get_custom_payments(**kwa), 1):
         x = t.cast(fincore.PriceAdjustedPayment, x)
 
         assert x.no == i
@@ -3956,7 +4278,7 @@ def test_will_create_livre_6b(calc_date):
 
     assert i == len(tab2)
 
-@pytest.mark.parametrize('factory', [fincore.build_jm, fincore.build_price])
+@pytest.mark.parametrize('factory', [_get_american_payments, _get_price_payments])
 def test_wont_charge_negative_interest_past_the_calculation_date(factory):
     '''
     O "runaway" acrescenta as parcelas posteriores à data de cálculo, e não altera o que já foi apurado até ela.
@@ -4003,7 +4325,7 @@ def test_wont_charge_negative_interest_past_the_calculation_date(factory):
     assert abs(sum(x.amort for x in tab2) - kwa['principal']) <= decimal.Decimal('0.01')
     assert tab2[-1].bal == 0
 
-def test_will_create_livre_7():
+def test_will_create_custom_7():
     '''
     Operação Resolvvi, primeiro e segundo pagamentos.
 
@@ -4067,7 +4389,7 @@ def test_will_create_livre_7():
     tab2[31] = 0, '14330.83', 0, 0, 0, '872003.91'
     tab2[32] = '557453.71', '14570.28', '886574.19', '49368.07', '837206.12', 0
 
-    for i, x in enumerate(fincore.build(**kwa), 1):
+    for i, x in enumerate(_get_custom_payments(**kwa), 1):
         assert x.no == i
 
         if i == 1:
@@ -4086,7 +4408,7 @@ def test_will_create_livre_7():
 
     assert i == len(tab1) + 1 == len(tab2)
 
-def test_will_create_livre_8a():
+def test_will_create_custom_8a():
     '''
     Operação hipotética, modalidade Livre, com antecipação durante o período de carência.
 
@@ -4133,7 +4455,7 @@ def test_will_create_livre_8a():
     tab2[12] = 0, '34062.04', 0, 0, 0, '1025214.92'
     tab2[13] = '739245.91', '35232.62', '1060447.54', '56210.29', '1004237.25', 0
 
-    for i, x in enumerate(fincore.build(**kwa), 1):
+    for i, x in enumerate(_get_custom_payments(**kwa), 1):
         assert x.no == i
 
         if i == 1:
@@ -4149,7 +4471,7 @@ def test_will_create_livre_8a():
 
     assert i == len(tab1) == len(tab2)
 
-def test_will_create_livre_8b():
+def test_will_create_custom_8b():
     '''
     Operação pós-fixada CDI hipotética, modalidade Livre, com antecipação dutrante o período de carência.
 
@@ -4187,7 +4509,7 @@ def test_will_create_livre_8b():
     tab2[6] = 0, '1470.95', 0, 0, 0, '96379.53'
     tab2[7] = '91854.15', '1452.45', '97831.98', '1195.57', '96636.41', 0
 
-    for i, x in enumerate(fincore.build(**kwa), 1):
+    for i, x in enumerate(_get_custom_payments(**kwa), 1):
         assert x.no == i
 
         if i == 2:
@@ -4200,7 +4522,7 @@ def test_will_create_livre_8b():
 
     assert i == len(tab1) == len(tab2)
 
-def test_will_create_livre_9a():
+def test_will_create_custom_9a():
     '''
     Operação hipotética, modalidade Livre, com antecipação durante o período de carência.
 
@@ -4236,7 +4558,7 @@ def test_will_create_livre_9a():
     tab2[1] = 0, '25774.56', 0, 0, 0, '775774.56'
     tab2[2] = '750000.00', '8471.35', '784245.91', '7705.33', '776540.58', 0
 
-    for i, x in enumerate(fincore.build(**kwa), 1):
+    for i, x in enumerate(_get_custom_payments(**kwa), 1):
         assert x.no == i
         assert x.date == datetime.date(2022, 2, 1) if i == 1 else x.date == datetime.date(2022, 2, 10)
 
@@ -4244,7 +4566,7 @@ def test_will_create_livre_9a():
 
     assert i == len(tab1) - 11 == len(tab2)
 
-def test_will_create_livre_9b():
+def test_will_create_custom_9b():
     '''
     Operação pós-fixada CDI hipotética, modalidade Livre, com antecipação dutrante o período de carência.
 
@@ -4277,7 +4599,7 @@ def test_will_create_livre_9b():
     tab2[1] = 0, '1222.59', 0, 0, 0, '101222.59'
     tab2[2] = '100000', '631.56', '101854.15', '417.18', '101436.97', 0
 
-    for i, x in enumerate(fincore.build(**kwa), 1):
+    for i, x in enumerate(_get_custom_payments(**kwa), 1):
         assert x.no == i
         assert x.date == datetime.date(2022, 2, 1) if i == 1 else x.date == kwa['insertions'][0].date
 
@@ -4285,7 +4607,7 @@ def test_will_create_livre_9b():
 
     assert i == len(tab1) - 5 == len(tab2)
 
-def test_will_create_livre_10():
+def test_will_create_custom_10():
     '''
     Operação hipotética, modalidade Livre, incorporação de juros e amortização de principal.
 
@@ -4331,7 +4653,7 @@ def test_will_create_livre_10():
     tab2[11] = '62500.00', '11011.56', '62500.00', '0.00', '62500.00', '268931.10',
     tab2[12] = '62500.00', '9242.11', '278173.21', '37742.81', '240430.40', 0
 
-    for i, x in enumerate(fincore.build(**kwa), 1):
+    for i, x in enumerate(_get_custom_payments(**kwa), 1):
         assert x.no == i
         assert x.date == tab1[i].date
 
@@ -4359,7 +4681,7 @@ def test_will_return_net_output_correctly_1():
     kwa['term'] = 12
     kwa['tax_exempt'] = True
 
-    for i, x in enumerate(fincore.build_bullet(**kwa), 1):
+    for i, x in enumerate(_get_bullet_payments(**kwa), 1):
         assert x.no == 1
         assert x.date == datetime.date(2023, 1, 1)
         assert x.amort == decimal.Decimal('120000')
@@ -4430,7 +4752,7 @@ def test_will_return_gain_output_correctly_1():
     tab3[7] = '2023-10-21', '5417.79', '0.00', '0.00', '0.00', '0.00', '329662.07'
     tab3[8] = '2023-10-23', '352.63', '324244.28', '330014.70', '1298.34', '328716.36', '0.00'
 
-    for i, x in enumerate(fincore.build(**kwa), 1):
+    for i, x in enumerate(_get_custom_payments(**kwa), 1):
         assert x.no == i
         assert x.date == datetime.date.fromisoformat(tab3[i][0])
         assert [x.gain, x.amort, x.raw, x.tax, x.net, x.bal] == [decimal.Decimal(y) for y in tab3[i][1:]]
@@ -4493,7 +4815,7 @@ def test_will_return_gain_output_correctly_2():
     tab3[7] = '2023-10-21', '5417.79', '0.00', '0.00', '0.00', '0.00', '329662.07'
     tab3[8] = '2023-10-23', '5770.41', '324244.28', '330014.70', '1298.34', '328716.36', '0.00'
 
-    for i, x in enumerate(fincore.build(**kwa), 1):
+    for i, x in enumerate(_get_custom_payments(**kwa), 1):
         assert x.no == i
         assert x.date == datetime.date.fromisoformat(tab3[i][0])
         assert [x.gain, x.amort, x.raw, x.tax, x.net, x.bal] == [decimal.Decimal(y) for y in tab3[i][1:]]
@@ -4556,7 +4878,7 @@ def test_will_return_gain_output_correctly_3():
     tab3[7] = '2023-10-21', '0.00', '0.00', '0.00', '0.00', '0.00', '329662.07'
     tab3[8] = '2023-10-23', '5770.41', '324244.28', '330014.70', '1298.34', '328716.36', '0.00'
 
-    for i, x in enumerate(fincore.build(**kwa), 1):
+    for i, x in enumerate(_get_custom_payments(**kwa), 1):
         assert x.no == i
         assert x.date == datetime.date.fromisoformat(tab3[i][0])
         assert [x.gain, x.amort, x.raw, x.tax, x.net, x.bal] == [decimal.Decimal(y) for y in tab3[i][1:]]
@@ -4576,7 +4898,7 @@ def test_will_return_gain_output_correctly_3():
 #   >>> kwa['zero_date'] = datetime.date(2023, 3, 31)
 #   >>> kwa['term'] = 3
 #
-#   >>> sched1 = fincore.build_jm(**kwa)
+#   >>> sched1 = _get_american_payments(**kwa)
 #
 # Trecho dois.
 #
@@ -4588,7 +4910,7 @@ def test_will_return_gain_output_correctly_3():
 #   >>> kwa['term'] = 3
 #   >>> kwa['anniversary_date'] = datetime.date(2023, 4, 30)  # Linha extra.
 #
-#   >>> sched2 = fincore.build_jm(**kwa)
+#   >>> sched2 = _get_american_payments(**kwa)
 #
 # Observe que o aniversário do trecho dois é exatamente a data do primeiro pagamento do trecho um. Teoricamente, e
 # intuitivamente, os dois cronogramas devem ser iguais. Na prática, isso não acontecia. O primeiro cronograma gerava as
@@ -4632,10 +4954,10 @@ def test_will_redundantly_set_aniversary_date_without_collateral_effect_1():
     kwa2['zero_date'] = datetime.date(2023, 3, 31)
     kwa2['anniversary_date'] = datetime.date(2023, 4, 30)
 
-    for x, y in zip(fincore.build_jm(**kwa1), fincore.build_jm(**kwa2)):  # When.
+    for x, y in zip(_get_american_payments(**kwa1), _get_american_payments(**kwa2)):  # When.
         assert x == y  # Then.
 
-    for x, y in zip(fincore.build_price(**kwa1), fincore.build_price(**kwa2)):  # When.
+    for x, y in zip(_get_price_payments(**kwa1), _get_price_payments(**kwa2)):  # When.
         assert x == y  # Then.
 
 @pytest.mark.enigmatic
@@ -4662,10 +4984,10 @@ def test_will_redundantly_set_aniversary_date_without_collateral_effect_2():
     kwa2['zero_date'] = datetime.date(2023, 4, 4)
     kwa2['anniversary_date'] = datetime.date(2023, 5, 4)
 
-    for x, y in zip(fincore.build_jm(**kwa1), fincore.build_jm(**kwa2)):  # When.
+    for x, y in zip(_get_american_payments(**kwa1), _get_american_payments(**kwa2)):  # When.
         assert x == y  # Then.
 
-    for x, y in zip(fincore.build_price(**kwa1), fincore.build_price(**kwa2)):  # When.
+    for x, y in zip(_get_price_payments(**kwa1), _get_price_payments(**kwa2)):  # When.
         assert x == y  # Then.
 
 @pytest.mark.enigmatic
@@ -4714,14 +5036,14 @@ def test_will_have_rounding_artifacts_1(modalidade):
         kwa['zero_date'] = datetime.date(2022, 3, 9)
 
         # Soma do valor bruto dos M pagamentos de E.
-        for x in fincore.build_bullet(**kwa):  # When.
+        for x in _get_bullet_payments(**kwa):  # When.
             buf.raw_1 += x.raw
 
         # Soma os pagamentos das partes de E.
         for val in buf.parts:
             kwa['principal'] = val
 
-            for x in fincore.build_bullet(**kwa):
+            for x in _get_bullet_payments(**kwa):
                 buf.raw_2 += x.raw
 
         # Then. As somas não casam.
@@ -4736,14 +5058,14 @@ def test_will_have_rounding_artifacts_1(modalidade):
         kwa['zero_date'] = datetime.date(2022, 3, 9)
 
         # Soma do valor bruto dos M pagamentos de E.
-        for x in fincore.build_jm(**kwa):  # When.
+        for x in _get_american_payments(**kwa):  # When.
             buf.raw_1 += x.raw
 
         # Soma os pagamentos das partes de E.
         for val in buf.parts:
             kwa['principal'] = val
 
-            for x in fincore.build_jm(**kwa):
+            for x in _get_american_payments(**kwa):
                 buf.raw_2 += x.raw
 
         # Then. As somas não casam.
@@ -4758,14 +5080,14 @@ def test_will_have_rounding_artifacts_1(modalidade):
         kwa['zero_date'] = datetime.date(2022, 3, 9)
 
         # Soma do valor bruto dos M pagamentos de E.
-        for x in fincore.build_price(**kwa):  # When.
+        for x in _get_price_payments(**kwa):  # When.
             buf.raw_1 += x.raw
 
         # Soma os pagamentos das partes de E.
         for val in buf.parts:
             kwa['principal'] = val
 
-            for x in fincore.build_price(**kwa):
+            for x in _get_price_payments(**kwa):
                 buf.raw_2 += x.raw
 
         # Then. As somas não casam.
@@ -4784,14 +5106,14 @@ def test_will_have_rounding_artifacts_1(modalidade):
             kwa['amortizations'].append(fincore.Amortization(date=kwa['amortizations'][0].date + _MONTH * i, amortization_ratio=decimal.Decimal('0.0833333333')))
 
         # Soma do valor bruto dos M pagamentos de E.
-        for x in fincore.build(**kwa):  # When.
+        for x in _get_custom_payments(**kwa):  # When.
             buf.raw_1 += x.raw
 
         # Soma os pagamentos das partes de E.
         for val in buf.parts:
             kwa['principal'] = val
 
-            for x in fincore.build(**kwa):
+            for x in _get_custom_payments(**kwa):
                 buf.raw_2 += x.raw
 
         # Then. As somas não casam.
@@ -4852,8 +5174,8 @@ def test_will_have_rounding_artifacts_2():
         kwa['amortizations'].append(fincore.Amortization(date=d00 + _MONTH * i, amortization_ratio=decimal.Decimal('0.0833333333')))
 
     # When. Run cases one and two.
-    pm1 = next(_tail(1, fincore.build(calc_date=fincore.CalcDate(value=d01, runaway=False), **kwa)))
-    pm2 = next(_tail(1, fincore.build(insertions=[fincore.Amortization.Bare(d01, value=decimal.Decimal('449892.69'))], **kwa)))
+    pm1 = next(_tail(1, _get_custom_payments(calc_date=fincore.CalcDate(value=d01, runaway=False), **kwa)))
+    pm2 = next(_tail(1, _get_custom_payments(insertions=[fincore.Amortization.Bare(d01, value=decimal.Decimal('449892.69'))], **kwa)))
 
     # Then. Rounding artifact. One cent difference between case one, "pm1.bal + pm1.raw"; and case two, "pm2.raw".
     assert pm1.bal + pm1.raw - pm2.raw == _CENTI
@@ -4931,11 +5253,11 @@ def test_wont_internally_round_calculations():
     kwa['zero_date'] = datetime.date(2022, 3, 9)
 
     # When: gera o cronograma via vanilla Fincore.
-    lst1 = list(fincore.build_price(**kwa))
+    lst1 = list(_get_price_payments(**kwa))
 
     # When: gera um cronograma usando o Fincore com a sub-rotina adulterada.
     with unittest.mock.patch.object(fincore, 'get_payments_table', get_payments_table):
-        lst2 = list(fincore.build_price(**kwa))
+        lst2 = list(_get_price_payments(**kwa))
 
     # Then.
     for pmt1, pmt2 in zip(lst1, lst2):
@@ -5001,7 +5323,7 @@ def test_will_redundantly_set_calc_date_bullet(indexador):
     elif indexador == 'IPCA':
         opts['vir'] = fincore.VariableIndex(code='IPCA')
 
-    for i, (x, y) in enumerate(zip(fincore.build_bullet(**opts), fincore.build_bullet(**opts, calc_date=calc)), 1):
+    for i, (x, y) in enumerate(zip(_get_bullet_payments(**opts), _get_bullet_payments(**opts, calc_date=calc)), 1):
         assert x.no == y.no
         assert x.date == y.date
         assert x.raw == y.raw
@@ -5015,7 +5337,7 @@ def test_will_redundantly_set_calc_date_bullet(indexador):
 
 # Juros mensais com indexador Poupança não é oficialmente suportada.
 @pytest.mark.parametrize('indexador', ['PRE', 'CDI', 'IPCA'])
-def test_will_redundantly_set_calc_date_jm_1(indexador):
+def test_will_redundantly_set_calc_date_american_1(indexador):
     '''
     Testa o uso redundante da data de cálculo em operação Juros Mensais.
 
@@ -5039,7 +5361,7 @@ def test_will_redundantly_set_calc_date_jm_1(indexador):
     elif indexador == 'IPCA':
         opts['vir'] = fincore.VariableIndex(code='IPCA')
 
-    for i, (x, y) in enumerate(zip(fincore.build_jm(**opts), fincore.build_jm(**opts, calc_date=calc)), 1):
+    for i, (x, y) in enumerate(zip(_get_american_payments(**opts), _get_american_payments(**opts, calc_date=calc)), 1):
         assert x.no == y.no
         assert x.date == y.date
         assert x.raw == y.raw
@@ -5053,7 +5375,7 @@ def test_will_redundantly_set_calc_date_jm_1(indexador):
 
 # Juros mensais com indexador Poupança não é oficialmente suportada.
 @pytest.mark.parametrize('indexador', ['PRE', 'CDI', 'IPCA'])
-def test_will_redundantly_set_calc_date_jm_2(indexador):
+def test_will_redundantly_set_calc_date_american_2(indexador):
     '''
     Testa o uso redundante da data de cálculo em operação Juros Mensais.
 
@@ -5078,7 +5400,7 @@ def test_will_redundantly_set_calc_date_jm_2(indexador):
     elif indexador == 'IPCA':
         opts['vir'] = fincore.VariableIndex(code='IPCA')
 
-    for i, (x, y) in enumerate(zip(fincore.build_jm(**opts), fincore.build_jm(**opts, calc_date=calc)), 1):
+    for i, (x, y) in enumerate(zip(_get_american_payments(**opts), _get_american_payments(**opts, calc_date=calc)), 1):
         assert x.no == y.no
         assert x.date == y.date
         assert x.raw == y.raw
@@ -5105,7 +5427,7 @@ def test_will_redundantly_set_calc_date_price_1():
     opts['zero_date'] = datetime.date(2018, 6, 30)
     opts['term'] = 6
 
-    for i, (x, y) in enumerate(zip(fincore.build_price(**opts), fincore.build_price(**opts, calc_date=calc)), 1):
+    for i, (x, y) in enumerate(zip(_get_price_payments(**opts), _get_price_payments(**opts, calc_date=calc)), 1):
         assert x.no == y.no
         assert x.date == y.date
         assert x.raw == y.raw
@@ -5133,7 +5455,7 @@ def test_will_redundantly_set_calc_date_price_2():
     opts['zero_date'] = datetime.date(2018, 6, 30)
     opts['term'] = 6
 
-    for i, (x, y) in enumerate(zip(fincore.build_price(**opts), fincore.build_price(**opts, calc_date=calc)), 1):
+    for i, (x, y) in enumerate(zip(_get_price_payments(**opts), _get_price_payments(**opts, calc_date=calc)), 1):
         assert x.no == y.no
         assert x.date == y.date
         assert x.raw == y.raw
@@ -5147,7 +5469,7 @@ def test_will_redundantly_set_calc_date_price_2():
 
 # Livre com indexador Poupança não é oficialmente suportada.
 @pytest.mark.parametrize('indexador', ['PRE', 'CDI', 'IPCA'])
-def test_will_redundantly_set_calc_date_livre_1(indexador):
+def test_will_redundantly_set_calc_date_custom_1(indexador):
     '''
     Testa o uso redundante da data de cálculo em operação Livre.
 
@@ -5177,7 +5499,7 @@ def test_will_redundantly_set_calc_date_livre_1(indexador):
     for i in range(1, 31):
         tab.append(fincore.Amortization(date=tab[0].date + _MONTH * i, amortization_ratio=decimal.Decimal('0.033333333333333335')))
 
-    for j, (x, y) in enumerate(zip(fincore.build(**opts), fincore.build(**opts, calc_date=calc)), 1):
+    for j, (x, y) in enumerate(zip(_get_custom_payments(**opts), _get_custom_payments(**opts, calc_date=calc)), 1):
         assert x.no == y.no
         assert x.date == y.date
         assert x.raw == y.raw
@@ -5191,7 +5513,7 @@ def test_will_redundantly_set_calc_date_livre_1(indexador):
 
 # Livre com indexador Poupança não é oficialmente suportada.
 @pytest.mark.parametrize('indexador', ['PRE', 'CDI', 'IPCA'])
-def test_will_redundantly_set_calc_date_livre_2(indexador):
+def test_will_redundantly_set_calc_date_custom_2(indexador):
     '''
     Testa o uso redundante da data de cálculo em operação Livre c/ amortização extraordinária.
 
@@ -5225,7 +5547,7 @@ def test_will_redundantly_set_calc_date_livre_2(indexador):
     # Insere uma entrada extraordinária.
     opts['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 12, 31), value=decimal.Decimal(100_000))]
 
-    for j, (x, y) in enumerate(zip(fincore.build(**opts), fincore.build(**opts, calc_date=calc)), 1):
+    for j, (x, y) in enumerate(zip(_get_custom_payments(**opts), _get_custom_payments(**opts, calc_date=calc)), 1):
         assert x.no == y.no
         assert x.date == y.date
         assert x.raw == y.raw
@@ -5719,7 +6041,7 @@ def test_will_create_loan_daily_returns_bullet_1():
     kwa['term'] = 12
 
     # Calcula os retornos diários.
-    for entry in fincore.get_bullet_daily_returns(**kwa):
+    for entry in _get_bullet_daily_returns(**kwa):
         # Valida fator de juros.
         assert decimal.Decimal.quantize(entry.sf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00038830')
 
@@ -5747,7 +6069,7 @@ def test_will_create_loan_daily_returns_bullet_2():
     kwa['is_bizz_day_cb'] = lambda x: x.weekday() < 5
 
     # Calcula os retornos diários.
-    for entry in fincore.get_bullet_daily_returns(**kwa):
+    for entry in _get_bullet_daily_returns(**kwa):
         # Valida fator de juros.
         assert decimal.Decimal.quantize(entry.sf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00038830')
 
@@ -5778,7 +6100,7 @@ def test_will_create_loan_daily_returns_bullet_3():
     kwa['vir'] = fincore.VariableIndex(code='Poupança')
 
     # Calcula os retornos diários.
-    for entry in fincore.get_bullet_daily_returns(**kwa):
+    for entry in _get_bullet_daily_returns(**kwa):
         if entry.date < datetime.date(2022, 2, 1):
             # Valida fatores de juros.
             assert decimal.Decimal.quantize(entry.vf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00018041')
@@ -5814,7 +6136,7 @@ def test_will_create_loan_daily_returns_bullet_4():
     kwa['capitalisation'] = '365'
 
     # Calcula os retornos diários.
-    for entry in fincore.get_bullet_daily_returns(**kwa):
+    for entry in _get_bullet_daily_returns(**kwa):
         # Valida fator de juros.
         assert decimal.Decimal.quantize(entry.sf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00038298')
 
@@ -5845,12 +6167,12 @@ def test_will_create_loan_daily_returns_price():
     kwa['insertions'].append(fincore.Amortization.Bare(date=datetime.date(2022, 2, 20), value=decimal.Decimal('73755.96')))
 
     # Calcula os pagamentos.
-    payments = list(fincore.build_price(calc_date=fincore.CalcDate(datetime.date(2022, 2, 20)), **kwa))
+    payments = list(_get_price_payments(calc_date=fincore.CalcDate(datetime.date(2022, 2, 20)), **kwa))
 
     kwa['is_bizz_day_cb'] = lambda x: x.weekday() < 5
 
     # Calcula os retornos diários.
-    for entry in fincore.get_price_daily_returns(**kwa):
+    for entry in _get_price_daily_returns(**kwa):
         if entry.period == 1:
             # Valida fator de juros.
             assert decimal.Decimal.quantize(entry.sf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00037577')
@@ -5875,7 +6197,7 @@ def test_will_create_loan_daily_returns_price():
 
         bal += entry.value
 
-def test_will_create_loan_daily_returns_livre_1():
+def test_will_create_loan_daily_returns_custom_1():
     '''
     Operação pré-fixada modalidade Livre.
 
@@ -5899,10 +6221,10 @@ def test_will_create_loan_daily_returns_livre_1():
         tab.append(fincore.Amortization(date, amortization_ratio=pct, amortizes_interest=True))
 
     # Calcula os pagamentos.
-    pays = fincore.build(calc_date=fincore.CalcDate(datetime.date(2022, 2, 28)), **kwa)
+    pays = _get_custom_payments(calc_date=fincore.CalcDate(datetime.date(2022, 2, 28)), **kwa)
 
     # Calcula os retornos diários.
-    for entry in fincore.get_livre_daily_returns(**kwa):
+    for entry in _get_custom_daily_returns(**kwa):
         # Valida fator de juros.
         if entry.period == 1:
             assert decimal.Decimal.quantize(entry.sf, exp=decimal.Decimal('0.00000001')) == decimal.Decimal('1.00037577')
@@ -5921,7 +6243,7 @@ def test_will_create_loan_daily_returns_livre_1():
 
         bal += entry.value
 
-def test_will_create_loan_daily_returns_livre_2():
+def test_will_create_loan_daily_returns_custom_2():
     '''
     Operação CDI, modalidade Livre.
 
@@ -5944,7 +6266,7 @@ def test_will_create_loan_daily_returns_livre_2():
 
         tab.append(fincore.Amortization(date, amortization_ratio=pct, amortizes_interest=True))
 
-    for entry in fincore.get_livre_daily_returns(**kwa):
+    for entry in _get_custom_daily_returns(**kwa):
         # Valida fator de juros.
         if entry.date.weekday() >= 5:
             assert entry.vf == _1
@@ -5962,7 +6284,7 @@ def test_will_create_loan_daily_returns_livre_2():
 
         bal += entry.value
 
-def test_will_create_loan_daily_returns_livre_3():
+def test_will_create_loan_daily_returns_custom_3():
     '''
     Operação Resolvvi - Pré-Fixada - Parcelas Amortizadas - 30 meses, ID "XeGMPU4QNJK0Utfk1FeN0".
 
@@ -6120,7 +6442,7 @@ def test_will_create_loan_daily_returns_livre_3():
     tst[125] = datetime.date(2023, 10, 21), 5, 1, '1.00053469', '329662.07', '176.27'
     tst[126] = datetime.date(2023, 10, 22), 5, 2, '1.00053469', '329838.34', '176.36'
 
-    for i, entry in enumerate(fincore.get_livre_daily_returns(**kwa), 1):
+    for i, entry in enumerate(_get_custom_daily_returns(**kwa), 1):
         assert entry.date == tst[i][0]
         assert entry.period == tst[i][1]
         assert entry.no == tst[i][2]
@@ -6133,7 +6455,7 @@ def test_will_create_loan_daily_returns_livre_3():
         # Memoriza o saldo para a próxima iteração.
         bal = entry.bal
 
-def test_will_create_loan_daily_returns_livre_4():
+def test_will_create_loan_daily_returns_custom_4():
     '''
     Operação Resolvvi 4 - Pré-Fixada - Parcelas Amortizadas - 30 meses, ID "yNdS80j75OzXrqBH62WrF".
 
@@ -6441,7 +6763,7 @@ def test_will_create_loan_daily_returns_livre_4():
     tst[273] = datetime.date(2024, 6, 27), 9, 30, '1.00053469', '168840.40', '90.28'
     tst[274] = datetime.date(2024, 6, 28), 9, 31, '1.00053469', '168930.68', '0.00'
 
-    for i, entry in enumerate(fincore.get_livre_daily_returns(**kwa), 1):
+    for i, entry in enumerate(_get_custom_daily_returns(**kwa), 1):
         assert entry.date == tst[i][0]
         assert entry.period == tst[i][1]
         assert entry.no == tst[i][2]
@@ -6455,7 +6777,7 @@ def test_will_create_loan_daily_returns_livre_4():
         bal = entry.bal
 
 @pytest.mark.skip(reason='Not implemented yet.')
-def test_will_create_loan_daily_returns_livre_5():
+def test_will_create_loan_daily_returns_custom_5():
     '''
     Operação LIVRE CDI 2.
 
@@ -6467,7 +6789,7 @@ def test_will_create_loan_daily_returns_livre_5():
 
     pass  # FIXME: implementar. Já está em planilha de testes.
 
-def test_will_create_loan_daily_returns_livre_6():
+def test_will_create_loan_daily_returns_custom_6():
     '''
     Operação ASAD Energia.
 
@@ -6761,7 +7083,7 @@ def test_will_create_loan_daily_returns_livre_6():
     tst[213] = datetime.date(2022, 11, 3), 7, 30, '0.000256243', '0.003629695', '42.41', '149873.11'
     tst[214] = datetime.date(2022, 11, 4), 7, 31, '0.000256243', '0.003629695', '42.71', '150455.65'
 
-    for i, entry in enumerate(fincore.get_livre_daily_returns(**kwa), 1):
+    for i, entry in enumerate(_get_custom_daily_returns(**kwa), 1):
         entry = t.cast(fincore.PriceAdjustedDailyReturn, entry)
 
         if i < 215:
@@ -6773,7 +7095,7 @@ def test_will_create_loan_daily_returns_livre_6():
             assert entry.value == decimal.Decimal(tst[i][5])
             assert entry.bal == decimal.Decimal(tst[i][6])
 
-def test_will_create_loan_daily_returns_jm_1():
+def test_will_create_loan_daily_returns_american_1():
     '''
     Operação CRI - Max Tulum (Isento de IR).
 
@@ -6866,7 +7188,7 @@ def test_will_create_loan_daily_returns_jm_1():
     tst[68] = 2, 30, datetime.date(2025, 1, 5), '1.00027670', '1.000125570', '1386.30', '3090.95', '11133537.25'
     tst[69] = 2, 31, datetime.date(2025, 1, 6), '1.00027670', '1.000125570', '1386.48', '3092.57', '11138016.30'
 
-    for i, entry in enumerate(itertools.islice(fincore.get_jm_daily_returns(**kwa), 0, 69), 1):
+    for i, entry in enumerate(itertools.islice(_get_american_daily_returns(**kwa), 0, 69), 1):
         assert entry.period == tst[i][0]
         assert entry.date == tst[i][2]
         assert entry.no == tst[i][1]
@@ -6883,7 +7205,7 @@ def test_will_create_loan_daily_returns_jm_1():
         assert entry.bal == decimal.Decimal(tst[i][7])
 
 @pytest.mark.skip(reason='Not implemented yet.')
-def test_will_create_loan_daily_returns_jm_2():
+def test_will_create_loan_daily_returns_american_2():
     '''
     Operação Palazzo Saldanha - Juros mensais - 9 meses.
 
@@ -6916,7 +7238,7 @@ def test_will_defer_price_level_adjustment_on_daily_returns():
 
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2026, 8, 3), value=decimal.Decimal('52000'))]
 
-    drs = {x.date: t.cast(fincore.PriceAdjustedDailyReturn, x) for x in fincore.get_jm_daily_returns(**kwa)}
+    drs = {x.date: t.cast(fincore.PriceAdjustedDailyReturn, x) for x in _get_american_daily_returns(**kwa)}
 
     # Véspera: a correção do período, de 8.360,43, está embutida no saldo.
     assert drs[datetime.date(2026, 8, 2)].opla == decimal.Decimal('8360.43')
@@ -6951,7 +7273,7 @@ def test_will_lock_interest_and_adjustment_on_daily_returns():
         fincore.Amortization.Bare(date=datetime.date(2026, 8, 3), value=decimal.Decimal('150000'))
     ]
 
-    drs = {x.date: t.cast(fincore.PriceAdjustedDailyReturn, x) for x in fincore.get_jm_daily_returns(**kwa)}
+    drs = {x.date: t.cast(fincore.PriceAdjustedDailyReturn, x) for x in _get_american_daily_returns(**kwa)}
 
     # A travada: o valor sai inteiro do principal, e o juro do período fica devido, no saldo.
     assert drs[datetime.date(2026, 7, 20)].op == decimal.Decimal('5950000.00')
@@ -6991,8 +7313,8 @@ def test_will_match_payments_table_and_daily_returns_1():
 
         tab.append(fincore.Amortization(due, amortization_ratio=pct, amortizes_interest=True))
 
-    pmt = next(_tail(1, fincore.build(**kwa)))
-    drt = next(_tail(1, fincore.get_livre_daily_returns(**kwa)))
+    pmt = next(_tail(1, _get_custom_payments(**kwa)))
+    drt = next(_tail(1, _get_custom_daily_returns(**kwa)))
 
     assert pmt.raw == drt.bal
 
@@ -7012,8 +7334,8 @@ def test_will_match_payments_table_and_daily_returns_2():
     kwa['vir'] = fincore.VariableIndex(code='IPCA')
     kwa['amortizes_correction'] = False
 
-    pmt = next(_tail(1, fincore.build_jm(**kwa)))
-    drt = next(_tail(1, fincore.get_jm_daily_returns(**kwa)))
+    pmt = next(_tail(1, _get_american_payments(**kwa)))
+    drt = next(_tail(1, _get_american_daily_returns(**kwa)))
 
     assert pmt.raw == drt.bal
 
@@ -7035,8 +7357,8 @@ def test_will_match_payments_table_and_daily_returns_3():
     kwa['amortizes_correction'] = False
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 4, 18), value=fincore.Amortization.Bare.MAX_VALUE)]
 
-    pmt = next(_tail(1, fincore.build_jm(**kwa)))
-    drt = next(_tail(1, fincore.get_jm_daily_returns(**kwa)))
+    pmt = next(_tail(1, _get_american_payments(**kwa)))
+    drt = next(_tail(1, _get_american_daily_returns(**kwa)))
 
     assert pmt.raw == drt.bal
 
@@ -7057,8 +7379,8 @@ def test_will_match_payments_table_and_daily_returns_4():
     kwa['vir'] = fincore.VariableIndex(code='IPCA')
     kwa['first_dct_rule'] = '31'
 
-    pmt = next(fincore.build_jm(**kwa))
-    drt = next(_tail(1, (x for x in fincore.get_jm_daily_returns(**kwa) if x.date < pmt.date)))
+    pmt = next(_get_american_payments(**kwa))
+    drt = next(_tail(1, (x for x in _get_american_daily_returns(**kwa) if x.date < pmt.date)))
 
     assert pmt.raw + pmt.bal == drt.bal
 
@@ -7083,8 +7405,8 @@ def test_will_match_payments_table_and_daily_returns_5():
     kwa['term'] = 6
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2026, 7, 20), value=decimal.Decimal('50000'), amortizes_interest=False)]
 
-    sched = list(fincore.build_jm(**kwa))
-    drs = {x.date: x for x in fincore.get_jm_daily_returns(**kwa)}
+    sched = list(_get_american_payments(**kwa))
+    drs = {x.date: x for x in _get_american_daily_returns(**kwa)}
 
     # O motor diário não emite o dia do pagamento final: o saldo da véspera é o que ele paga.
     for pmt in sched[:-1]:
@@ -7118,8 +7440,8 @@ def test_will_keep_daily_returns_running_while_interest_stays_locked():
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2026, 7, 20), value=decimal.Decimal('1000000'), amortizes_interest=False)]
 
     dbl = kwa['insertions'][0].date
-    sched = list(fincore.build_jm(**kwa))
-    drs = list(fincore.get_jm_daily_returns(**kwa))
+    sched = list(_get_american_payments(**kwa))
+    drs = list(_get_american_daily_returns(**kwa))
 
     # A antecipação leva o principal a zero, e ainda assim deixa juros em aberto.
     assert next(x for x in drs if x.date == dbl).op == _0
@@ -7158,8 +7480,8 @@ def test_will_apply_first_dct_rule_to_the_first_period_only_on_daily_returns():
     kwa['anniversary_date'] = datetime.date(2026, 7, 7)
     kwa['first_dct_rule'] = '31'
 
-    sched = list(fincore.build_jm(**kwa))
-    drs = list(fincore.get_jm_daily_returns(**kwa))
+    sched = list(_get_american_payments(**kwa))
+    drs = list(_get_american_daily_returns(**kwa))
 
     assert sched[-1].raw == drs[-1].bal
 
@@ -7168,7 +7490,7 @@ def test_will_apply_first_dct_rule_to_the_first_period_only_on_daily_returns():
 
     del kwc['first_dct_rule']  # Volta ao AUTO, que calcula DCT 31 para o primeiro período desta operação.
 
-    for x, y in zip(fincore.get_jm_daily_returns(**kwb), fincore.get_jm_daily_returns(**kwc), strict=True):
+    for x, y in zip(_get_american_daily_returns(**kwb), _get_american_daily_returns(**kwc), strict=True):
         assert (x.date, x.value, x.bal) == (y.date, y.value, y.bal)
 
 def test_will_match_payments_table_and_daily_returns_6():
@@ -7192,16 +7514,16 @@ def test_will_match_payments_table_and_daily_returns_6():
     kwa['term'] = 120
     kwa['vir'] = fincore.VariableIndex('IPCA')
 
-    pmt = next(fincore.build_bullet(**kwa))
-    drt = next(_tail(1, fincore.get_bullet_daily_returns(**kwa)))
+    pmt = next(_get_bullet_payments(**kwa))
+    drt = next(_tail(1, _get_bullet_daily_returns(**kwa)))
 
     assert pmt.raw == drt.bal == decimal.Decimal('193510.84')  # Conferido em "test_will_create_bullet_ipca_1a".
 
     # Com spread, para exercitar juro e correção juntos.
     kwa['apy'] = decimal.Decimal('8')
 
-    pmt = next(fincore.build_bullet(**kwa))
-    drt = next(_tail(1, fincore.get_bullet_daily_returns(**kwa)))
+    pmt = next(_get_bullet_payments(**kwa))
+    drt = next(_tail(1, _get_bullet_daily_returns(**kwa)))
 
     assert pmt.raw == drt.bal
 
@@ -7300,10 +7622,10 @@ def test_will_match_payments_table_and_daily_returns_8():
     kwa['amortizations'] = lst
     kwa['vir'] = fincore.VariableIndex(code='IPCA', backend=_RicherIpcaBackend())
 
-    sched = t.cast(t.List[fincore.PriceAdjustedPayment], list(fincore.build(**kwa)))
+    sched = t.cast(t.List[fincore.PriceAdjustedPayment], list(_get_custom_payments(**kwa)))
     dias = collections.defaultdict(list)
 
-    for drt in fincore.get_livre_daily_returns(**kwa):
+    for drt in _get_custom_daily_returns(**kwa):
         dias[drt.period].append(t.cast(fincore.PriceAdjustedDailyReturn, drt))
 
     # A soma dos rendimentos diários de um período é o que o pagamento que o fecha remunera: juros mais correção. A
@@ -7352,10 +7674,10 @@ def test_will_match_payments_table_and_daily_returns_9(amortizes_correction):
     kwa['vir'] = fincore.VariableIndex(code='IPCA', backend=_RicherIpcaBackend())
     kwa['amortizes_correction'] = amortizes_correction
 
-    sched = t.cast(t.List[fincore.PriceAdjustedPayment], list(fincore.build_jm(**kwa)))
+    sched = t.cast(t.List[fincore.PriceAdjustedPayment], list(_get_american_payments(**kwa)))
     dias = collections.defaultdict(list)
 
-    for drt in fincore.get_jm_daily_returns(**kwa):
+    for drt in _get_american_daily_returns(**kwa):
         dias[drt.period].append(t.cast(fincore.PriceAdjustedDailyReturn, drt))
 
     for num, pmt in enumerate(sched, 1):
@@ -7385,10 +7707,10 @@ def test_will_match_payments_table_and_daily_returns_10():
     kwa['term'] = 24
     kwa['vir'] = fincore.VariableIndex(code='IPCA', backend=_RicherIpcaBackend())
 
-    sched = t.cast(t.List[fincore.PriceAdjustedPayment], list(fincore.build_bullet(**kwa)))
+    sched = t.cast(t.List[fincore.PriceAdjustedPayment], list(_get_bullet_payments(**kwa)))
     dias = collections.defaultdict(list)
 
-    for drt in fincore.get_bullet_daily_returns(**kwa):
+    for drt in _get_bullet_daily_returns(**kwa):
         dias[drt.period].append(t.cast(fincore.PriceAdjustedDailyReturn, drt))
 
     for num, pmt in enumerate(sched, 1):
@@ -7436,8 +7758,8 @@ def test_will_match_payments_table_and_daily_returns_11(amortizes_interest):
     kwa['vir'] = fincore.VariableIndex(code='IPCA', backend=_RicherIpcaBackend())
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 4, 20), value=decimal.Decimal('5000'), amortizes_interest=amortizes_interest)]
 
-    sched = t.cast(t.List[fincore.PriceAdjustedPayment], list(fincore.build_jm(**kwa)))
-    dias = [t.cast(fincore.PriceAdjustedDailyReturn, x) for x in fincore.get_jm_daily_returns(**kwa)]
+    sched = t.cast(t.List[fincore.PriceAdjustedPayment], list(_get_american_payments(**kwa)))
+    dias = [t.cast(fincore.PriceAdjustedDailyReturn, x) for x in _get_american_daily_returns(**kwa)]
     due = kwa['insertions'][0].date
 
     # A antecipação está no fluxo, e é ela que distingue este caso do "test_..._9".
