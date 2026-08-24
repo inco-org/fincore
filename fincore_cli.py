@@ -278,7 +278,7 @@ class LocalDirectoryBackend(fincore.IndexStorageBackend):  # pragma: no cover
         The "query_string" parameter configures the response format and the start and end dates of the period to query.
         Example:
 
-          {'formato': 'json', 'dataInicial': '10/10/2020', 'dataFinal': '12/12/2022'}
+          {'format': 'json', 'dataInicial': '10/10/2020', 'dataFinal': '12/12/2022'}
 
         This function will save the HTTP API response in JSON format to a local directory if it can communicate
         with BACEN. This directory comes from the "platform" parameter, which in turn comes from the "self._platform" member,
@@ -354,7 +354,7 @@ class LocalDirectoryBackend(fincore.IndexStorageBackend):  # pragma: no cover
         Queries the CDI indexer on the BACEN API.
         '''
 
-        qry = {'formato': 'json', 'dataInicial': '01/01/2018', 'dataFinal': _TODAY().strftime('%d/%m/%Y')}
+        qry = {'format': 'json', 'dataInicial': '01/01/2018', 'dataFinal': _TODAY().strftime('%d/%m/%Y')}
         url = _BACEN_API('/dados/serie/bcdata.sgs.12/dados').geturl()
         bit = False  # See [ERROS-BACEN] above.
         mem = []
@@ -463,7 +463,7 @@ class LocalDirectoryBackend(fincore.IndexStorageBackend):  # pragma: no cover
         Queries IPCA indexers on the BACEN API.
         '''
 
-        qry = {'formato': 'json', 'dataInicial': '01/01/2018', 'dataFinal': _TODAY().strftime('%d/%m/%Y')}
+        qry = {'format': 'json', 'dataInicial': '01/01/2018', 'dataFinal': _TODAY().strftime('%d/%m/%Y')}
         url = _BACEN_API('/dados/serie/bcdata.sgs.433/dados').geturl()
         bit = False  # See [ERROS-BACEN] above.
         mem = []
@@ -529,7 +529,7 @@ class LocalDirectoryBackend(fincore.IndexStorageBackend):  # pragma: no cover
         Queries the Savings indexer on the BACEN API.
         '''
 
-        qry = {'formato': 'json', 'dataInicial': '01/01/2018', 'dataFinal': _TODAY().strftime('%d/%m/%Y')}
+        qry = {'format': 'json', 'dataInicial': '01/01/2018', 'dataFinal': _TODAY().strftime('%d/%m/%Y')}
         url = _BACEN_API('/dados/serie/bcdata.sgs.195/dados').geturl()
         bit = False  # See [ERROS-BACEN] above.
         mem = []
@@ -599,6 +599,12 @@ class LocalDirectoryBackend(fincore.IndexStorageBackend):  # pragma: no cover
 # schedule from a start date plus a term, in the Bullet, American Amortization, and Price modalities, and delegate to
 # the library core, "fincore.get_payments_table" and "fincore.get_daily_returns".
 #
+
+# Operation modalities accepted by the schedule generating commands.
+_MODES = ('Bullet', 'American', 'Price')
+
+# Truthy values for yes/no options.
+_YES = ('yes', 'y')
 
 # A month.
 _MONTH = dateutil.relativedelta.relativedelta(months=1)
@@ -881,58 +887,58 @@ def _get_price_daily_returns(
     yield from fincore.get_daily_returns(**kwa)
 # }}}
 
-def ajuda(command=''):  # pragma: no cover
+def help(command=''):  # pragma: no cover
     '''
     Supported commands:
 
-    - "calcula_fatores_za", debugs Zille-Anna factors;
-    - "gera_pagamentos", generates a payment schedule for a given operation;
-    - "gera_rendimentos_diarios", generates a daily returns table for an operation.
+    - "calculate_za_factors", debugs Zille-Anna factors;
+    - "generate_payments", generates a payment schedule for a given operation;
+    - "generate_daily_returns", generates a daily returns table for an operation.
     '''
 
     dic = globals()
 
-    if command and command in dic and dic[command].__doc__ and command != 'ajuda':
+    if command and command in dic and dic[command].__doc__ and command != 'help':
         _PR(textwrap.dedent(dic[command].__doc__))
 
     else:
-        _PR(textwrap.dedent(str(ajuda.__doc__)))
+        _PR(textwrap.dedent(str(help.__doc__)))
 
     return sh2py.HALT
 
-def gera_pagamentos(modalidade, principal, taxa_fixa, inicio_prazo='', aniversario='', **kwargs):  # pragma: no cover
+def generate_payments(mode, principal, fixed_rate, start_and_term='', anniversary='', **kwargs):  # pragma: no cover
     r'''
     Generates a payment schedule using the financial library.
 
     Parameters:
 
-      • "modalidade", operation modality. Must be Bullet, Juros mensais, or Price;
+      • "mode", operation modality. Must be Bullet, American (the American Amortization system), or Price;
 
       • "principal", loan amount;
 
-      • "taxa_fixa", nominal annual interest rate, fixed;
+      • "fixed_rate", nominal annual interest rate, fixed;
 
-      • "inicio_prazo", a date in the format "D+N", where D is an ISO 8601 date and N is a positive
+      • "start_and_term", a date in the format "D+N", where D is an ISO 8601 date and N is a positive
         integer. Simultaneously informs the start date of the return and the investment term.
 
-      • "aniversario", optional, investment anniversary date;
+      • "anniversary", optional, investment anniversary date;
 
     Optional parameters:
 
-      • "indice_variavel", variable index. Can be CDI, Savings, IPCA or IGPM;
+      • "variable_index", variable index. Can be CDI, Poupança, IPCA or IGPM;
 
-      • "indice_variavel_percentual", percentage of the index used in the variable return calculation;
+      • "variable_index_percentage", percentage of the index used in the variable return calculation;
 
-      • "antecipacoes", prepayments, as a list of DATE+VALUE separated by semicolons. Example Palazzo
-        Saldanha operation - Juros mensais - 9 months.
+      • "prepayments", prepayments, as a list of DATE+VALUE separated by semicolons. Example Palazzo
+        Saldanha operation - American - 9 months.
 
-          icicle gera_pagamentos Juros\ mensais 4000000 6 2023-09-29+9 aniversario=2023-11-07 indice_variavel=CDI \
-                 antecipacoes='2024-01-05+676127;2024-01-08+53022;2024-04-26+2908097;2024-05-27+447711.21'
+          icicle generate_payments American 4000000 6 2023-09-29+9 anniversary=2023-11-07 variable_index=CDI \
+                 prepayments='2024-01-05+676127;2024-01-08+53022;2024-04-26+2908097;2024-05-27+447711.21'
 
       • "calc_date", calculation limit date. Has a special syntax to indicate that the entire schedule should be
         printed: "D+R". Example
 
-         icicle gera_pagamentos Bullet 145000 10 2022-01-01+12 indice_variavel=IPCA calc_date=2022-12-01+R
+         icicle generate_payments Bullet 145000 10 2022-01-01+12 variable_index=IPCA calc_date=2022-12-01+R
 
       • "gain_output", output mode for the engine's interest. Can be current, deferred or settled, the default is always current;
 
@@ -940,17 +946,17 @@ def gera_pagamentos(modalidade, principal, taxa_fixa, inicio_prazo='', aniversar
 
       • "first_dct_rule", optional, rule for the first DCT. Can be 30, 31 or AUTO.
 
-      • "formato", the output format. Besides the formats supported by the Python Tabulate library, see
+      • "format", the output format. Besides the formats supported by the Python Tabulate library, see
         "http://github.com/astanin/python-tabulate#table-format", this routine supports the "json" format, which emits the
         table in JSON format. The "raw" format is a synonym for the "json" format.
     '''
 
-    if kwargs.get('debug', '').lower() in ['s', 'sim', 'y', 'yes']:
+    if kwargs.get('debug', '').lower() in _YES:
         logging.basicConfig(level=logging.DEBUG)
 
     # 0. Validate.
-    if modalidade not in ['Bullet', 'Juros mensais', 'Price']:
-        _PR(f'Error: modality "{modalidade}" not supported.')
+    if mode not in _MODES:
+        _PR(f'Error: modality "{mode}" not supported.')
 
         return sh2py.HALT
 
@@ -958,25 +964,25 @@ def gera_pagamentos(modalidade, principal, taxa_fixa, inicio_prazo='', aniversar
     gen = None
     kwa = {}
 
-    if modalidade == 'Bullet' or modalidade == 'Juros mensais':
-        pct = int(kwargs.get('indice_variavel_percentual', '100'))
-        vir = kwargs.get('indice_variavel', '')
-        tup = inicio_prazo.split('+')
+    if mode == 'Bullet' or mode == 'American':
+        pct = int(kwargs.get('variable_index_percentage', '100'))
+        vir = kwargs.get('variable_index', '')
+        tup = start_and_term.split('+')
 
         kwa['principal'] = decimal.Decimal(principal)
-        kwa['apy'] = decimal.Decimal(taxa_fixa)
+        kwa['apy'] = decimal.Decimal(fixed_rate)
         kwa['zero_date'] = datetime.date.fromisoformat(tup[0])
         kwa['term'] = int(tup[1])
-        kwa['tax_exempt'] = kwargs.get('tax_exempt', 'não') in ['sim', 's', 'yes', 'y']
+        kwa['tax_exempt'] = kwargs.get('tax_exempt', 'no') in _YES
         kwa['first_dct_rule'] = kwargs.get('first_dct_rule', 'AUTO')
 
-        if aniversario:
-            kwa['anniversary_date'] = datetime.date.fromisoformat(aniversario)
+        if anniversary:
+            kwa['anniversary_date'] = datetime.date.fromisoformat(anniversary)
 
-        if 'antecipacoes' in kwargs:
+        if 'prepayments' in kwargs:
             kwa['insertions'] = []
 
-            for x in kwargs['antecipacoes'].split(';'):
+            for x in kwargs['prepayments'].split(';'):
                 tup = x.split('+')
                 ent = fincore.Amortization.Bare(date=datetime.date.fromisoformat(tup[0]))
 
@@ -1000,25 +1006,25 @@ def gera_pagamentos(modalidade, principal, taxa_fixa, inicio_prazo='', aniversar
         if 'gain_output' in kwargs:
             kwa['gain_output'] = kwargs['gain_output']
 
-        gen = _get_bullet_payments(**kwa) if modalidade == 'Bullet' else _get_american_payments(**kwa)
+        gen = _get_bullet_payments(**kwa) if mode == 'Bullet' else _get_american_payments(**kwa)
 
-    elif modalidade == 'Price':
-        tup = inicio_prazo.split('+')
+    elif mode == 'Price':
+        tup = start_and_term.split('+')
 
         kwa['principal'] = decimal.Decimal(principal)
-        kwa['apy'] = decimal.Decimal(taxa_fixa)
+        kwa['apy'] = decimal.Decimal(fixed_rate)
         kwa['zero_date'] = datetime.date.fromisoformat(tup[0])
         kwa['term'] = int(tup[1])
-        kwa['tax_exempt'] = kwargs.get('tax_exempt', 'não') in ['sim', 's', 'yes', 'y']
+        kwa['tax_exempt'] = kwargs.get('tax_exempt', 'no') in _YES
         kwa['first_dct_rule'] = kwargs.get('first_dct_rule', 'AUTO')
 
-        if aniversario:
-            kwa['anniversary_date'] = datetime.date.fromisoformat(aniversario)
+        if anniversary:
+            kwa['anniversary_date'] = datetime.date.fromisoformat(anniversary)
 
-        if 'antecipacoes' in kwargs:
+        if 'prepayments' in kwargs:
             kwa['insertions'] = []
 
-            for x in kwargs['antecipacoes'].split(';'):
+            for x in kwargs['prepayments'].split(';'):
                 tup = x.split('+')
                 ent = fincore.Amortization.Bare(date=datetime.date.fromisoformat(tup[0]))
 
@@ -1042,7 +1048,7 @@ def gera_pagamentos(modalidade, principal, taxa_fixa, inicio_prazo='', aniversar
         gen = _get_price_payments(**kwa)
 
     # 2. Execute and format the results.
-    if (fmt := kwargs.get('formato', 'fancy_outline')) in tabulate.tabulate_formats:
+    if (fmt := kwargs.get('format', 'fancy_outline')) in tabulate.tabulate_formats:
         func = functools.partial(locale.currency, symbol=False, grouping=True)
         data = []
 
@@ -1055,7 +1061,7 @@ def gera_pagamentos(modalidade, principal, taxa_fixa, inicio_prazo='', aniversar
             out.append(x.date.strftime('%x'))
             out.append(func(x.gain))
 
-            if kwargs.get('indice_variavel', '') in typing.get_args(fincore._PL_INDEX):
+            if kwargs.get('variable_index', '') in typing.get_args(fincore._PL_INDEX):
                 out.append(func(getattr(x, 'pla', decimal.Decimal())))
 
             out.append(func(x.amort))
@@ -1069,7 +1075,7 @@ def gera_pagamentos(modalidade, principal, taxa_fixa, inicio_prazo='', aniversar
 
         _PR()
 
-        if kwargs.get('indice_variavel', '') in typing.get_args(fincore._PL_INDEX):
+        if kwargs.get('variable_index', '') in typing.get_args(fincore._PL_INDEX):
             _PR(tabulate.tabulate(data, tablefmt=fmt, **_PAYMENT_LIST_OPTS_2))
 
         else:
@@ -1087,7 +1093,7 @@ def gera_pagamentos(modalidade, principal, taxa_fixa, inicio_prazo='', aniversar
             out.append(x.date.isoformat())
             out.append(str(x.gain))
 
-            if kwargs.get('indice_variavel', '') in typing.get_args(fincore._PL_INDEX):
+            if kwargs.get('variable_index', '') in typing.get_args(fincore._PL_INDEX):
                 out.append(str(getattr(x, 'pla', decimal.Decimal())))
 
             out.append(str(x.amort))
@@ -1102,7 +1108,7 @@ def gera_pagamentos(modalidade, principal, taxa_fixa, inicio_prazo='', aniversar
         print(json.dumps(data))
 
     elif fmt == 'csv':
-        if kwargs.get('indice_variavel', '') in typing.get_args(fincore._PL_INDEX):
+        if kwargs.get('variable_index', '') in typing.get_args(fincore._PL_INDEX):
             dev = csv.DictWriter(sys.stdout, [x for x in vars(fincore.PriceAdjustedPayment()) if not x.startswith('_')])
 
             dev.writeheader()
@@ -1135,48 +1141,48 @@ def gera_pagamentos(modalidade, principal, taxa_fixa, inicio_prazo='', aniversar
 
         return sh2py.HALT
 
-def gera_rendimentos_diarios(modalidade, principal, taxa_fixa, inicio_prazo='', aniversario='', **kwargs):  # pragma: no cover
+def generate_daily_returns(mode, principal, fixed_rate, start_and_term='', anniversary='', **kwargs):  # pragma: no cover
     r'''
     Generates a daily returns schedule using the financial library.
 
     Parameters:
 
-      • "modalidade", operation modality. Must be Bullet, Juros mensais, or Price;
+      • "mode", operation modality. Must be Bullet, American (the American Amortization system), or Price;
 
       • "principal", loan amount;
 
-      • "taxa_fixa", nominal annual interest rate, fixed;
+      • "fixed_rate", nominal annual interest rate, fixed;
 
-      • "inicio_prazo", a date in the format "D+N", where D is an ISO 8601 date and N is a positive
+      • "start_and_term", a date in the format "D+N", where D is an ISO 8601 date and N is a positive
         integer. Simultaneously informs the start date of the return and the investment term.
 
-      • "aniversario", optional, investment anniversary date.
+      • "anniversary", optional, investment anniversary date.
 
     Optional parameters:
 
-      • "indice_variavel", variable index. Can be CDI, Savings, IPCA or IGPM;
+      • "variable_index", variable index. Can be CDI, Poupança, IPCA or IGPM;
 
-      • "indice_variavel_percentual", percentage of the index used in the variable return calculation;
+      • "variable_index_percentage", percentage of the index used in the variable return calculation;
 
-      • "antecipacoes", prepayments, as a list of DATE+VALUE separated by semicolons. Example Palazzo
-        Saldanha operation - Juros mensais - 9 months.
+      • "prepayments", prepayments, as a list of DATE+VALUE separated by semicolons. Example Palazzo
+        Saldanha operation - American - 9 months.
 
-          icicle gera_pagamentos Juros\ mensais 4000000 6 2023-09-29+9 aniversario=2023-11-07 indice_variavel=CDI \
-                 antecipacoes='2024-01-05+676127;2024-01-08+53022;2024-04-26+2908097;2024-05-27+447711.21'
+          icicle generate_daily_returns American 4000000 6 2023-09-29+9 anniversary=2023-11-07 variable_index=CDI \
+                 prepayments='2024-01-05+676127;2024-01-08+53022;2024-04-26+2908097;2024-05-27+447711.21'
 
       • "first_dct_rule", optional, rule for the first DCT. Can be 30, 31 or AUTO.
 
-      • "formato", the output format. Besides the formats supported by the Python Tabulate library, see
+      • "format", the output format. Besides the formats supported by the Python Tabulate library, see
         "http://github.com/astanin/python-tabulate#table-format", this routine supports the "json" format, which emits the
         table in JSON format. The "raw" format is a synonym for the "json" format.
     '''
 
-    if kwargs.get('debug', '').lower() in ['s', 'sim', 'y', 'yes']:
+    if kwargs.get('debug', '').lower() in _YES:
         logging.basicConfig(level=logging.DEBUG)
 
     # 0. Validate.
-    if modalidade not in ['Bullet', 'Juros mensais', 'Price']:
-        _PR(f'Error: modality "{modalidade}" not supported.')
+    if mode not in _MODES:
+        _PR(f'Error: modality "{mode}" not supported.')
 
         return sh2py.HALT
 
@@ -1184,28 +1190,28 @@ def gera_rendimentos_diarios(modalidade, principal, taxa_fixa, inicio_prazo='', 
     fun = functools.partial(locale.currency, symbol=False, grouping=True)
     kwa = {}
 
-    if modalidade == 'Bullet' or modalidade == 'Juros mensais':
-        pct = int(kwargs.get('indice_variavel_percentual', '100'))
-        vir = kwargs.get('indice_variavel', '')
-        tup = inicio_prazo.split('+')
+    if mode == 'Bullet' or mode == 'American':
+        pct = int(kwargs.get('variable_index_percentage', '100'))
+        vir = kwargs.get('variable_index', '')
+        tup = start_and_term.split('+')
 
         kwa['principal'] = decimal.Decimal(principal)
-        kwa['apy'] = decimal.Decimal(taxa_fixa)
+        kwa['apy'] = decimal.Decimal(fixed_rate)
         kwa['zero_date'] = datetime.date.fromisoformat(tup[0])
         kwa['term'] = int(tup[1])
         kwa['first_dct_rule'] = kwargs.get('first_dct_rule', 'AUTO')
         kwa['is_bizz_day_cb'] = lambda x: x.weekday() < 5 and not _is_bacen_holiday(x)
 
-        if aniversario:
-            kwa['anniversary_date'] = datetime.date.fromisoformat(aniversario)
+        if anniversary:
+            kwa['anniversary_date'] = datetime.date.fromisoformat(anniversary)
 
         if vir:
             kwa['vir'] = _make_variable_index(vir, pct)
 
-        if 'antecipacoes' in kwargs:
+        if 'prepayments' in kwargs:
             kwa['insertions'] = []
 
-            for x in kwargs['antecipacoes'].split(';'):
+            for x in kwargs['prepayments'].split(';'):
                 tup = x.split('+')
                 ent = fincore.Amortization.Bare(date=datetime.date.fromisoformat(tup[0]))
 
@@ -1213,23 +1219,23 @@ def gera_rendimentos_diarios(modalidade, principal, taxa_fixa, inicio_prazo='', 
 
                 kwa['insertions'].append(ent)
 
-    elif modalidade == 'Price':
-        tup = inicio_prazo.split('+')
+    elif mode == 'Price':
+        tup = start_and_term.split('+')
 
         kwa['principal'] = decimal.Decimal(principal)
-        kwa['apy'] = decimal.Decimal(taxa_fixa)
+        kwa['apy'] = decimal.Decimal(fixed_rate)
         kwa['zero_date'] = datetime.date.fromisoformat(tup[0])
         kwa['term'] = int(tup[1])
         kwa['first_dct_rule'] = kwargs.get('first_dct_rule', 'AUTO')
         kwa['is_bizz_day_cb'] = lambda x: x.weekday() < 5 and not _is_bacen_holiday(x)
 
-        if aniversario:
-            kwa['anniversary_date'] = datetime.date.fromisoformat(aniversario)
+        if anniversary:
+            kwa['anniversary_date'] = datetime.date.fromisoformat(anniversary)
 
-        if 'antecipacoes' in kwargs:
+        if 'prepayments' in kwargs:
             kwa['insertions'] = []
 
-            for x in kwargs['antecipacoes'].split(';'):
+            for x in kwargs['prepayments'].split(';'):
                 tup = x.split('+')
                 ent = fincore.Amortization.Bare(date=datetime.date.fromisoformat(tup[0]))
 
@@ -1238,10 +1244,10 @@ def gera_rendimentos_diarios(modalidade, principal, taxa_fixa, inicio_prazo='', 
                 kwa['insertions'].append(ent)
 
     # 2. Create the daily returns generator.
-    if modalidade == 'Bullet':
+    if mode == 'Bullet':
         gene = _get_bullet_daily_returns(**kwa)
 
-    elif modalidade == 'Juros mensais':
+    elif mode == 'American':
         gene = _get_american_daily_returns(**kwa)
 
     else:  # Assumes "Price".
@@ -1250,7 +1256,7 @@ def gera_rendimentos_diarios(modalidade, principal, taxa_fixa, inicio_prazo='', 
     # 3. Execute and format the results.
     bal = decimal.Decimal(principal)
 
-    if (fmt := kwargs.get('formato', 'fancy_outline')) in tabulate.tabulate_formats:
+    if (fmt := kwargs.get('format', 'fancy_outline')) in tabulate.tabulate_formats:
         data = []
 
         tabulate.PRESERVE_WHITESPACE = True  # Force Tabulate to preserve spaces (http://github.com/astanin/python-tabulate#text-formatting).
@@ -1264,25 +1270,25 @@ def gera_rendimentos_diarios(modalidade, principal, taxa_fixa, inicio_prazo='', 
             out.append(fun(bal))
             out.append(fun(x.value))
 
-            if kwargs.get('indice_variavel', '') in typing.get_args(fincore._PL_INDEX):
+            if kwargs.get('variable_index', '') in typing.get_args(fincore._PL_INDEX):
                 out.append(fun(typing.cast(fincore.PriceAdjustedPayment, x).pla))
 
             out.append(locale.str(round(x.sf, 8)))  # pyright: ignore[reportArgumentType]
 
-            if kwargs.get('indice_variavel', '') in typing.get_args(fincore._PL_INDEX):
+            if kwargs.get('variable_index', '') in typing.get_args(fincore._PL_INDEX):
                 out.append(locale.str(round(typing.cast(fincore.PriceAdjustedPayment, x).cf, 8)))  # pyright: ignore[reportArgumentType]
 
-            elif kwargs.get('indice_variavel', '') in typing.get_args(fincore._VR_INDEX):
+            elif kwargs.get('variable_index', '') in typing.get_args(fincore._VR_INDEX):
                 out.append(locale.str(round(x.vf, 8)))  # pyright: ignore[reportArgumentType]
 
             data.append(out)
 
             bal = x.bal  # Memorize the balance for the next iteration.
 
-        if data and not kwargs.get('indice_variavel', ''):
+        if data and not kwargs.get('variable_index', ''):
             _PR(tabulate.tabulate(data, tablefmt=fmt, **_DAILY_RETURNS_OPTS_PRE))
 
-        elif data and kwargs.get('indice_variavel', '') in typing.get_args(fincore._VR_INDEX):
+        elif data and kwargs.get('variable_index', '') in typing.get_args(fincore._VR_INDEX):
             _PR(tabulate.tabulate(data, tablefmt=fmt, **_DAILY_RETURNS_OPTS_POS_1))
 
         elif data:
@@ -1300,15 +1306,15 @@ def gera_rendimentos_diarios(modalidade, principal, taxa_fixa, inicio_prazo='', 
             out.append(fun(bal))
             out.append(fun(x.value))
 
-            if kwargs.get('indice_variavel', '') in typing.get_args(fincore._PL_INDEX):
+            if kwargs.get('variable_index', '') in typing.get_args(fincore._PL_INDEX):
                 out.append(fun(typing.cast(fincore.PriceAdjustedPayment, x).pla))
 
             out.append(locale.str(round(x.sf, 10)))  # pyright: ignore[reportArgumentType]
 
-            if kwargs.get('indice_variavel', '') in typing.get_args(fincore._PL_INDEX):
+            if kwargs.get('variable_index', '') in typing.get_args(fincore._PL_INDEX):
                 out.append(locale.str(round(typing.cast(fincore.PriceAdjustedPayment, x).cf, 8)))  # pyright: ignore[reportArgumentType]
 
-            elif kwargs.get('indice_variavel', '') in typing.get_args(fincore._VR_INDEX):
+            elif kwargs.get('variable_index', '') in typing.get_args(fincore._VR_INDEX):
                 out.append(locale.str(round(x.vf, 8)))  # pyright: ignore[reportArgumentType]
 
             data.append(out)
@@ -1319,7 +1325,7 @@ def gera_rendimentos_diarios(modalidade, principal, taxa_fixa, inicio_prazo='', 
             print(json.dumps(data))
 
     elif fmt == 'csv':
-        if kwargs.get('indice_variavel', '') in typing.get_args(fincore._PL_INDEX):
+        if kwargs.get('variable_index', '') in typing.get_args(fincore._PL_INDEX):
             dev = csv.DictWriter(sys.stdout, vars(fincore.PriceAdjustedDailyReturn()))
 
             dev.writeheader()
@@ -1340,7 +1346,7 @@ def gera_rendimentos_diarios(modalidade, principal, taxa_fixa, inicio_prazo='', 
 
         return sh2py.HALT
 
-def calcula_fatores_za(indice, taxa_fixa, data_inicio, data_fim, indice_pct='100', debug='n'):  # pragma: no cover
+def calculate_za_factors(index, fixed_rate, start_date, end_date, index_pct='100', debug='n'):  # pragma: no cover
     '''
     Calculates Zille-Anna factors.
 
@@ -1349,26 +1355,26 @@ def calcula_fatores_za(indice, taxa_fixa, data_inicio, data_fim, indice_pct='100
     Used to facilitate debugging of indices used in post-fixed operations. Helps in creating test cases,
     building spreadsheets, and validating calculations in general.
 
-      icicle calcula_fatores_za INDEX FIXED_RATE START_DATE END_DATE [indice_pct=100] [debug=yes/no]
+      icicle calculate_za_factors INDEX FIXED_RATE START_DATE END_DATE [index_pct=100] [debug=y/n]
 
     Provide the index, the fixed annual rate, the start date, and the end date of the period. Example for a
     Bullet CDI operation with a rate of 6.33% p.a., for eighteen months, from 2021-12-28 to 2023-06-28.
 
-      icicle calcula_fatores_za CDI 6.33 2021-12-28 2023-06-28
+      icicle calculate_za_factors CDI 6.33 2021-12-28 2023-06-28
 
-    The "debug=s" argument will activate the "DEBUG" level in the "logging" module, and show the indices
+    The "debug=y" argument will activate the "DEBUG" level in the "logging" module, and show the indices
     for the requested period, one by one.
     '''
 
-    if debug.lower() in ['s', 'sim', 'y', 'yes']:
+    if debug.lower() in _YES:
         logging.basicConfig(level=logging.DEBUG)
 
-    fr = decimal.Decimal(taxa_fixa)  # Fixed rate, or Annual Percentage Yield (APY).
-    d0 = datetime.date.fromisoformat(data_inicio)
-    d1 = datetime.date.fromisoformat(data_fim)
-    pc = int(indice_pct)
+    fr = decimal.Decimal(fixed_rate)  # Fixed rate, or Annual Percentage Yield (APY).
+    d0 = datetime.date.fromisoformat(start_date)
+    d1 = datetime.date.fromisoformat(end_date)
+    pc = int(index_pct)
 
-    if indice == 'CDI':
+    if index == 'CDI':
         vir = _make_variable_index('CDI', pc)
         f_v = vir.backend.calculate_cdi_factor(d0, d1, pc)
         f_s = fincore.calculate_interest_factor(fr, decimal.Decimal(f_v.amount) / 252)
@@ -1381,7 +1387,7 @@ def calcula_fatores_za(indice, taxa_fixa, data_inicio, data_fim, indice_pct='100
         _PR(f'Indices............: {locale.str(round(f_v.amount, 10))}')
         _PR(f'Generation.........: {datetime.datetime.now(_BRT).strftime("%d/%m/%Y %H:%M:%S")}')
 
-    elif indice == 'Poupança':  # 'Poupança' is Portuguese for Savings.
+    elif index == 'Poupança':  # 'Poupança' is Portuguese for Savings.
         vir = _make_variable_index('Poupança', pc)
         f_v = vir.backend.calculate_savings_factor(d0, d1, pc)
         f_s = fincore.calculate_interest_factor(fr, decimal.Decimal((d1 - d0).days) / 360)
@@ -1395,14 +1401,14 @@ def calcula_fatores_za(indice, taxa_fixa, data_inicio, data_fim, indice_pct='100
         _PR(f'Generation.........: {datetime.datetime.now(_BRT).strftime("%d/%m/%Y %H:%M:%S")}')
 
     else:
-        raise ValueError(f'Unsupported index: {indice}.')  # FIXME: implement IPCA.
+        raise ValueError(f'Unsupported index: {index}.')  # FIXME: implement IPCA.
 
 cli = sh2py.CommandLineMapper()
 
-cli.add(ajuda)
-cli.add(gera_pagamentos)
-cli.add(gera_rendimentos_diarios)
-cli.add(calcula_fatores_za)
+cli.add(help)
+cli.add(generate_payments)
+cli.add(generate_daily_returns)
+cli.add(calculate_za_factors)
 
 try:
     locale.setlocale(locale.LC_ALL, '')
@@ -1416,7 +1422,7 @@ except locale.Error as e:  # pragma: no cover
     except locale.Error as e_fallback:
         _PR(f'Error: Failed to set fallback locale "en_US.UTF-8": {e_fallback}. Currency formatting will likely fail.')
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == '__main__':  # pragma: no cover
     if cli.run() is sh2py.HALT:
         exit(1)
 
