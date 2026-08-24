@@ -70,39 +70,39 @@ for daily_return in fincore.get_daily_returns(
 
 ## Command Line Interface
 
-The `fincore_cli.py` script is a self-contained [uv script](https://docs.astral.sh/uv/guides/scripts/): invoking it directly installs its dependencies automatically. Use `gera_pagamentos` to generate a payment schedule. Its positional arguments are the modality, the principal, the fixed annual rate, and the start date plus term in the `DATE+MONTHS` format.
+The `fincore_cli.py` script is a self-contained [uv script](https://docs.astral.sh/uv/guides/scripts/): invoking it directly installs its dependencies automatically. Use `generate_payments` to generate a payment schedule. Its positional arguments are the mode, the principal, the fixed annual rate, and the start date plus term in the `DATE+MONTHS` format.
 
 Bullet — principal and interest settled in a single payment at maturity:
 
-    ./fincore_cli.py gera_pagamentos Bullet 100000 10 2024-01-15+6
+    ./fincore_cli.py generate_payments Bullet 100000 10 2024-01-15+6
 
-Monthly interest (Juros mensais) — interest paid monthly, principal at maturity:
+American — the American Amortization system, interest paid monthly, principal at maturity:
 
-    ./fincore_cli.py gera_pagamentos Juros\ mensais 100000 10 2024-01-15+6
+    ./fincore_cli.py generate_payments American 100000 10 2024-01-15+6
 
 Price — fixed installments amortizing principal and interest:
 
-    ./fincore_cli.py gera_pagamentos Price 100000 10 2024-01-15+12
+    ./fincore_cli.py generate_payments Price 100000 10 2024-01-15+12
 
-Use `gera_rendimentos_diarios` to generate a daily returns table. It takes the same positional arguments as `gera_pagamentos`:
+Use `generate_daily_returns` to generate a daily returns table. It takes the same positional arguments as `generate_payments`:
 
-    ./fincore_cli.py gera_rendimentos_diarios Bullet 100000 10 2024-01-15+6
+    ./fincore_cli.py generate_daily_returns Bullet 100000 10 2024-01-15+6
 
-    ./fincore_cli.py gera_rendimentos_diarios Juros\ mensais 100000 10 2024-01-15+6
+    ./fincore_cli.py generate_daily_returns American 100000 10 2024-01-15+6
 
-    ./fincore_cli.py gera_rendimentos_diarios Price 100000 10 2024-01-15+12
+    ./fincore_cli.py generate_daily_returns Price 100000 10 2024-01-15+12
 
-Each row shows the payment period (T), the day number, the opening balance, the daily return, and the daily factors. Use `formato=csv` or `formato=json` for machine-readable output.
+Each row shows the payment period (T), the day number, the opening balance, the daily return, and the daily factors. Use `format=csv` or `format=json` for machine-readable output.
 
-Both routines support post-fixed operations through the `indice_variavel` option. With CDI, the fixed rate acts as a spread over the index, and interest accrues only on business days. Indexes are fetched from the BACEN API and cached locally, so the first run of the day requires network access:
+Both routines support post-fixed operations through the `variable_index` option. With CDI, the fixed rate acts as a spread over the index, and interest accrues only on business days. Indexes are fetched from the BACEN API and cached locally, so the first run of the day requires network access:
 
-    ./fincore_cli.py gera_pagamentos Bullet 100000 6 2024-01-15+6 indice_variavel=CDI
+    ./fincore_cli.py generate_payments Bullet 100000 6 2024-01-15+6 variable_index=CDI
 
-    ./fincore_cli.py gera_rendimentos_diarios Bullet 100000 6 2024-01-15+6 indice_variavel=CDI
+    ./fincore_cli.py generate_daily_returns Bullet 100000 6 2024-01-15+6 variable_index=CDI
 
-Use `indice_variavel_percentual` to apply a percentage of the index, e.g. `indice_variavel_percentual=120` for 120% of CDI.
+Use `variable_index_percentage` to apply a percentage of the index, e.g. `variable_index_percentage=120` for 120% of CDI.
 
-Run `./fincore_cli.py ajuda gera_pagamentos` or `./fincore_cli.py ajuda gera_rendimentos_diarios` for the full list of options, including other variable indexes (IPCA, Savings), prepayments, and output formats.
+Run `./fincore_cli.py help generate_payments` or `./fincore_cli.py help generate_daily_returns` for the full list of options, including other variable indexes (IPCA, Poupança), prepayments, and output formats.
 
 ## Coverage
 

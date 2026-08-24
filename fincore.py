@@ -5,6 +5,18 @@
 #
 # Unauthorized copying of this file, via any medium, is strictly prohibited. Proprietary and confidential.
 #
+# [FINCORE V5]
+#
+# The english nomenclature release. Also shrinks the library to its core. Released on August 24, 2026.
+#
+# The whole codebase — library, CLI, test battery, and specification notebook — now uses english market nomenclature.
+# The American Amortization mode replaces "Juros mensais". The "Livre" mode is gone: custom schedules remain fully
+# supported through the core routines, which are now the entire public surface of the library. The schedule
+# stereotyping factories ("build_bullet", "build_jm", "build_price", "build", and the "get_*_daily_returns" wrappers)
+# moved into the CLI as private helpers. The amortization date uniqueness check moved into the core. The CLI interface
+# is english: "generate_payments", "generate_daily_returns", "help", and "calculate_za_factors". The one deliberate
+# Portuguese literal left in the public API is the "Poupança" variable index code, possibly persisted by consumers.
+#
 # [FINCORE V4]
 #
 # Represents a complete rewrite of the daily returns calculation. Released on October 20, 2024.
@@ -93,13 +105,13 @@
 #       kargs = { … }  # Options for a Custom Amortization System, including a calculation date.
 #
 #       # Execute Fincore (1st time) to get the position on the calculation date.
-#       row = next(_tail(fincore.build(**kargs)))
+#       row = next(_tail(fincore.get_payments_table(**kargs)))
 #
 #       # Here, "row.raw + row.bal" would be the value of a total prepayment on the calculation date, but it won't always be.
-#       kargs['insertions'].append(fincore.Amortization.Bare(date=datetime.date(…), value=row.raw + row.bal))
+#       kargs['amortizations'].append(fincore.Amortization.Bare(date=datetime.date(…), value=row.raw + row.bal))
 #
 #       # Execute Fincore (2nd time). Theoretically, the payment schedule would end at the prepayment.
-#       row = next(_tail(fincore.build(**kargs)))
+#       row = next(_tail(fincore.get_payments_table(**kargs)))
 #
 #     In the previous example, both "row.raw" and "row.bal" may have been rounded up, and the value of the
 #     prepayment would be higher than the remaining balance of the loan by one cent. It's better to be explicit and use
@@ -117,8 +129,7 @@
 #
 # [TODO]
 #
-#   • Implement validations to prevent non-quantized "Amortization.Bare" inputs in auxiliary routines,
-#     the "factories", and in "get_payments_table".
+#   • Implement validations to prevent non-quantized "Amortization.Bare" inputs in "get_payments_table".
 #
 #   • Implement a memory for paid IPCA and for the accumulated, in case of prepayment, similar to paid interest.
 #     Remember that interest compounds, but IPCA doesn't.
@@ -1170,7 +1181,7 @@ class InMemoryBackend(IndexStorageBackend):
         (datetime.date(2024, 2, 1),   datetime.date(2024, 3, 20),  decimal.Decimal('0.041957')),  # NOQA
         (datetime.date(2024, 3, 21),  datetime.date(2024, 5, 8),   decimal.Decimal('0.040168')),  # NOQA
         (datetime.date(2024, 5, 9),   datetime.date(2024, 9, 18),  decimal.Decimal('0.039270')),  # NOQA
-        (datetime.date(2024, 9, 19),  datetime.date(2025, 1, 31),  decimal.Decimal('0.040168')),  # NOQA FIXME: projeção aqui.
+        (datetime.date(2024, 9, 19),  datetime.date(2025, 1, 31),  decimal.Decimal('0.040168')),  # NOQA FIXME: projection here.
     ]
 
     # A repository of IPCA indexes.
@@ -1332,7 +1343,7 @@ class InMemoryBackend(IndexStorageBackend):
                                                                    '0.6143', '0.6147', '0.6524', '0.6801', '0.6794',
                                                                    '0.6791', '0.6516', '0.6136']]),
         (datetime.date(2022, 11, 1), [decimal.Decimal(x) for x in ['0.6515', '0.6515', '0.6792', '0.6519', '0.6139',
-                                                                   '0.6516', '0.6793', '0.6799', '0.6801', '0.6796'] + ['0.6448'] * 18]),  # As 17 taxas finais são estimadas.
+                                                                   '0.6516', '0.6793', '0.6799', '0.6801', '0.6796'] + ['0.6448'] * 18]),  # The final 17 rates are estimates.
         (datetime.date(2022, 12, 1), [decimal.Decimal(x) for x in ['0.5000'] * 28]),                                  # NOQA
         (datetime.date(2023, 1, 1),  [decimal.Decimal(x) for x in ['0.5000'] * 28]),                                  # NOQA
         (datetime.date(2023, 2, 1),  [decimal.Decimal(x) for x in ['0.5000'] * 28]),                                  # NOQA
@@ -1607,6 +1618,9 @@ def get_payments_table(
 
     elif vir and vir.code == 'CDI' and capitalisation != '252':
         raise ValueError('CDI should use the 252 working days capitalisation')
+
+    if len({x.date for x in amortizations if type(x) is Amortization}) != sum(type(x) is Amortization for x in amortizations):
+        raise ValueError('amortization dates must be unique.')
 
     for i, x in enumerate(amortizations):
         if type(x) is Amortization:
@@ -2034,7 +2048,7 @@ def get_payments_table(
                 # If there is no principal amortization in the period, and "pla.amortizes_adjustment" is true, then
                 # "pmt.pla" will be the value of monetary correction of the outstanding balance. This s what
                 # happens with loans that have the American Amortization system, by default. See the
-                # "amortizes_correction" parameter on the "preprocess_jm" function.
+                # "amortizes_correction" flag of the American Amortization stereotype.
                 #
                 elif pla and pla.amortizes_adjustment:
                     pmt.pla = calc_adjustment(f_c.value)
@@ -2109,7 +2123,7 @@ def get_payments_table(
         yield pmt
 
         if pmt.bal == _0:
-            break  # Se o saldo é zero, o cronograma acabou.
+            break  # If the balance is zero, the schedule is over.
 # }}}
 
 # Public API. Daily returns. {{{
@@ -2649,12 +2663,15 @@ def get_daily_returns(
     elif vir and vir.code == 'CDI' and capitalisation != '252':
         raise ValueError('CDI should use the 252 working days capitalisation')
 
+    if len({x.date for x in amortizations if type(x) is Amortization}) != sum(type(x) is Amortization for x in amortizations):
+        raise ValueError('amortization dates must be unique.')
+
     for i, x in enumerate(amortizations):
         if type(x) is Amortization:
             aux += x.amortization_ratio
 
         if vir and vir.code not in t.get_args(_PL_INDEX) and type(x) is Amortization and x.price_level_adjustment:
-            raise TypeError(f"amortization {i} has price level adjustment, but a variable index wasn't provided, or isn't IPCA nor IGPM")
+            raise TypeError(f"amortization {i} has price level adjustment, but either a variable index wasn't provided or it isn't IPCA nor IGPM")
 
         elif aux > _1 and not math.isclose(aux, _1):
             raise ValueError('the accumulated percentage of the amortizations overflows 1.0')
@@ -2751,10 +2768,10 @@ def get_daily_returns(
         # Calculation of DT, from DP/DT. Notice that here, DP == 1, since we are working with the smallest fraction of
         # a factor, a day.
         #
-        elif ref < amortizations[-1].date and not vir and capitalisation == '30/360':  # Juros mensais, Price, Livre.
+        elif ref < amortizations[-1].date and not vir and capitalisation == '30/360':  # American Amortization, Price, Custom.
             facs.spread = facs.spread.normalize(next(idxs.fixed))
 
-        elif ref < amortizations[-1].date and vir and vir.code == 'CDI' and capitalisation == '252':  # Bullet, Juros mensais, Livre.
+        elif ref < amortizations[-1].date and vir and vir.code == 'CDI' and capitalisation == '252':  # Bullet, American Amortization, Custom.
             facs.variable = facs.variable.normalize(next(idxs.variable))
 
             # Note that the index on a 252 basis only earns on a business day. This is how the CDI works. In this case
@@ -2783,7 +2800,7 @@ def get_daily_returns(
         #
         # Same logic as the monthly fixed rate, 30/360, but with the added price level adjustment. See comments above.
         #
-        elif ref < amortizations[-1].date and vir and vir.code == 'IPCA' and capitalisation == '30/360':  # Juros mensais, Livre.
+        elif ref < amortizations[-1].date and vir and vir.code == 'IPCA' and capitalisation == '30/360':  # American Amortization, Custom.
             facs.spread = facs.spread.normalize(next(idxs.fixed))
             facs.correction = facs.correction.normalize(next(idxs.variable))
 
@@ -2997,609 +3014,6 @@ def get_daily_returns(
 
         else:
             break
-# }}}
-
-# Public API. Factories. {{{
-def preprocess_bullet(
-    zero_date: datetime.date,
-    term: int,
-    insertions: t.List[Amortization.Bare] = [],
-    anniversary_date: t.Optional[datetime.date] = None,
-    capitalisation: _DAILY_CAPITALISATION = '360',
-    vir: t.Optional[VariableIndex] = None,
-    calc_date: t.Optional[CalcDate] = None,
-    verbose: bool = True
-) -> t.List[Amortization | Amortization.Bare]:
-    sched: t.List[Amortization | Amortization.Bare] = []
-
-    # 1. Validate.
-    if term <= 0:  # See [ANNOTATED_TYPES] above.
-        raise ValueError('"term" must be a greater than, or equal to, one')
-
-    if anniversary_date and anniversary_date <= zero_date:
-        raise ValueError(f'the "anniversary_date", {anniversary_date}, must be greater than "zero_date", {zero_date}')
-
-    for i, x in enumerate(insertions):
-        if x.value <= 0:
-            raise ValueError(f'invalid value for insertion entry #{i} – should be positive')
-
-        elif x.date <= zero_date:
-            raise ValueError(f'"insertions[{i}].date", {x.date}, must succeed "zero_date", {zero_date}')
-
-        elif not anniversary_date and x.date > (due := zero_date + _MONTH * term):
-            raise ValueError(f'"insertions[{i}].date", {x.date}, succeeds the regular payment date, {due}')
-
-        elif anniversary_date and x.date > anniversary_date:
-            raise ValueError(f'"insertions[{i}].date", {x.date}, succeeds "anniversary_date", {anniversary_date}')
-
-    # Base of calculation 365 only for historical fixed-rate. Fincore recommends using 360 days instead.
-    if capitalisation == '365' and verbose:
-        _LOG.warning('capitalising 365 days per year exists solely for legacy Bullet support – prefer 360 days')
-
-    # 2.1. Create the amortizations. Regular flow, without insertions. Fast.
-    if not insertions and not vir:
-        sched.append(Amortization(date=zero_date, amortizes_interest=False))
-        sched.append(Amortization(date=anniversary_date or zero_date + _MONTH * term, amortization_ratio=_1))
-
-    # 2.2. Create the amortizations. Regular flow with National Index of Consumer Prices, without insertions. Fast.
-    elif not insertions and vir and vir.code == 'IPCA':
-        dif = min(_delta_months(calc_date.value, zero_date), term) if calc_date else term
-        pla = PriceLevelAdjustment('IPCA', base_date=zero_date.replace(day=1), period=dif)
-
-        sched.append(Amortization(date=zero_date, amortizes_interest=False))
-        sched.append(Amortization(date=anniversary_date or zero_date + _MONTH * term, amortization_ratio=_1, price_level_adjustment=pla))
-
-    # 2.3. Create the amortizations. Insertions in the regular flow. Slow.
-    else:
-        lst = []
-
-        lst.append(Amortization(date=zero_date, amortizes_interest=False))
-        lst.append(Amortization(date=anniversary_date or zero_date + _MONTH * term, amortization_ratio=_1))
-
-        for skel in _interleave(lst, insertions, key=lambda x: x.date):
-            sched.append(skel.item)
-
-            if skel.from_a and vir and vir.code == 'IPCA':
-                dif = _delta_months(skel.item.date, zero_date)
-
-                skel.item.price_level_adjustment = PriceLevelAdjustment('IPCA')
-
-                skel.item.price_level_adjustment.base_date = zero_date.replace(day=1)
-                skel.item.price_level_adjustment.period = dif
-                skel.item.price_level_adjustment.amortizes_adjustment = skel.index_a == len(lst) - 1
-
-    return sched
-
-def preprocess_jm(
-    zero_date: datetime.date,
-    term: int,
-    insertions: t.List[Amortization.Bare] = [],
-    anniversary_date: t.Optional[datetime.date] = None,
-    vir: t.Optional[VariableIndex] = None,
-    amortizes_correction: bool = True
-) -> t.List[Amortization] | t.List[Amortization | Amortization.Bare]:
-    lst = []
-
-    # 1. Validate.
-    if term <= 0:  # See [ANNOTATED_TYPES] above.
-        raise ValueError('"term" must be a greater than, or equal to, one')
-
-    if anniversary_date and anniversary_date <= zero_date:
-        raise ValueError(f'the "anniversary_date", {anniversary_date}, must be greater than "zero_date", {zero_date}')
-
-    if vir and vir.code == 'Poupança':
-        raise NotImplementedError('"Poupança" is currently unsupported')  # pragma: no cover
-
-    for i, x in enumerate(insertions):
-        if x.date <= zero_date:
-            raise ValueError(f'"insertions[{i}].date", {x.date}, must succeed "zero_date", {zero_date}')
-
-        elif not anniversary_date and x.date > (due := zero_date + _MONTH * term):
-            raise ValueError(f'"insertions[{i}].date", {x.date}, succeeds the last regular payment date, {due}')
-
-        elif anniversary_date and x.date > (due := anniversary_date + _MONTH * (term - 1)):
-            raise ValueError(f'"insertions[{i}].date", {x.date}, succeeds the last regular payment date, {due}')
-
-    # 2. Create the amortizations.
-    if anniversary_date and anniversary_date == zero_date + _MONTH:
-        anniversary_date = None
-
-    # Regular flow, without insertions. Fast.
-    lst.append(Amortization(date=zero_date, amortizes_interest=False))  # Data zero (início do rendimento).
-
-    for i in range(1, term + 1):
-        due = anniversary_date + _MONTH * (i - 1) if anniversary_date else zero_date + _MONTH * i
-        ent = Amortization(date=due, amortization_ratio=_0 if i != term else _1)
-
-        # American Amortization systems have, by default, a shift configuration of M-2 months, and a period of one a
-        # single index, for each payment. This means that, for a payment P on day D of month M, we consider the IPCA
-        # index of two months prior to M. If M is December of 2024, for example, then the index of October 2024 should
-        # be used.
-        #
-        # See section "Juros mensais", subsections "Indexador IPCA", on the Biblioteca Financeira INCO Jupyter notebook.
-        #
-        #   https://github.com/inco-org/fincore/blob/master/labs/fincore-01.ipynb
-        #
-        if vir and vir.code == 'IPCA' and amortizes_correction:
-            ent.price_level_adjustment = PriceLevelAdjustment('IPCA')
-
-            ent.price_level_adjustment.shift = 'M-2'
-            ent.price_level_adjustment.base_date = due.replace(day=1)
-            ent.price_level_adjustment.period = 1
-            ent.price_level_adjustment.amortizes_adjustment = True
-
-        # When the "amortizes_correction" parameter is False, the IPCA index should behave similarly to its monthly
-        # amortized counterpart: the shift configuration is equal to M-2 months, and the base date is constant on all
-        # iterations. It should be equal to the date of the first payment. The period should increase by one for each
-        # iteration, starting with one. The monetary correction will be settled on the last iteration – that's when
-        # "i == term", and the "amortizes_adjustment" flag becomes true.
-        #
-        # To help understand the concept, consider three payments, P1, P2, and P3. Assume P1 should be payed on day D
-        # of month M. Subsequent payments are due one month after the previous one.
-        #
-        #   • For P1, the base date is day one of M. The period is one, which means a single IPCA index will be
-        #     evaluated on the monetary correction calculation. The monetary correction value will not be settled,
-        #     since "amortizes_adjustment" is false.
-        #
-        #   • For P2, the base date is still day one of M. The period is now two, which means two IPCA indexes will be
-        #     evaluated on the monetary correction calculation. The monetary correction value will not be settled
-        #     either.
-        #
-        #   • For P3, the base date is still day one of M. The period is now three, which means three IPCA indexes will
-        #     be evaluated on the monetary correction calculation. The monetary correction value will be settled, since
-        #     "amortizes_adjustment" is true.
-        #
-        # Also consider an American Amortization system with a single monetary correction settlement on its last
-        # payment, LP. Do not expect the monetary correction of LP, "LP.pla", to be equal to the sum of the monetary
-        # corrections of another American Amortization system with the same properties, but amortizing corrections
-        # monthly.
-        #
-        elif vir and vir.code == 'IPCA':
-            ent.price_level_adjustment = PriceLevelAdjustment('IPCA')
-
-            ent.price_level_adjustment.shift = 'M-2'
-            ent.price_level_adjustment.base_date = anniversary_date.replace(day=1) if anniversary_date else zero_date.replace(day=1) + _MONTH
-            ent.price_level_adjustment.period = i
-            ent.price_level_adjustment.amortizes_adjustment = i == term
-
-        lst.append(ent)
-
-    # Insertions in the regular flow. Slow.
-    if insertions:
-        return list(x.item for x in _interleave(lst, insertions, key=lambda x: x.date))
-
-    return lst
-
-def preprocess_price(
-    principal: decimal.Decimal,
-    apy: decimal.Decimal,
-    zero_date: datetime.date,
-    term: int,
-    insertions: t.List[Amortization.Bare] = [],
-    anniversary_date: t.Optional[datetime.date] = None
-) -> t.List[Amortization] | t.List[Amortization | Amortization.Bare]:
-    lst = []
-
-    # 1. Validate.
-    if term <= 0:  # See [ANNOTATED_TYPES] above.
-        raise ValueError('"term" must be a greater than, or equal to, one')
-
-    if anniversary_date and anniversary_date <= zero_date:
-        raise ValueError(f'the "anniversary_date", {anniversary_date}, must be greater than "zero_date", {zero_date}')
-
-    for i, x in enumerate(insertions):
-        if x.date <= zero_date:
-            raise ValueError(f'"insertions[{i}].date", {x.date}, must succeed "zero_date", {zero_date}')
-
-        elif not anniversary_date and x.date > (due := zero_date + _MONTH * term):
-            raise ValueError(f'"insertions[{i}].date", {x.date}, succeeds the last regular payment date, {due}')
-
-        elif anniversary_date and x.date > (due := anniversary_date + _MONTH * (term - 1)):
-            raise ValueError(f'"insertions[{i}].date", {x.date}, succeeds the last regular payment date, {due}')
-
-    # 2. Create the amortizations.
-    if anniversary_date and anniversary_date == zero_date + _MONTH:
-        anniversary_date = None
-
-    # Regular flow, without insertions. Fast.
-    lst.append(Amortization(date=zero_date, amortizes_interest=False))  # Data zero (início do rendimento).
-
-    for i, pct in enumerate(amortize_fixed(principal, apy, term), 1):
-        due = anniversary_date + _MONTH * (i - 1) if anniversary_date else zero_date + _MONTH * i
-
-        lst.append(Amortization(date=due, amortization_ratio=pct))
-
-    # Insertions in the regular flow. Slow.
-    if insertions:
-        return list(x.item for x in _interleave(lst, insertions, key=lambda x: x.date))
-
-    return lst
-
-def preprocess_livre(
-    amortizations: t.List[Amortization],
-    insertions: t.List[Amortization.Bare] = [],
-    vir: t.Optional[VariableIndex] = None
-) -> t.List[Amortization] | t.List[Amortization | Amortization.Bare]:
-    aux = _0
-
-    # 1. Validate.
-    if len(amortizations) < 2:
-        raise ValueError('at least two amortizations are required: the start of the schedule, and its end')
-
-    if vir and vir.code == 'Poupança':
-        raise NotImplementedError('"Poupança" is currently unsupported')  # pragma: no cover
-
-    for i, x in enumerate(amortizations):
-        aux += x.amortization_ratio
-
-        if vir and vir.code not in t.get_args(_PL_INDEX) and type(x) is Amortization and x.price_level_adjustment:
-            raise TypeError(f"amortization {i} has price level adjustment, but a variable index wasn't provided, or isn't IPCA nor IGPM")
-
-    for i, y in enumerate(insertions):
-        if y.value <= 0:
-            raise ValueError(f'invalid value for insertion entry #{i} – should be positive')
-
-        elif y.date <= (zero_date := amortizations[0].date):
-            raise ValueError(f'"insertions[{i}].date", {y.date}, must succeed "zero_date", {zero_date}')
-
-        elif y.date > (due := amortizations[-1].date):
-            raise ValueError(f'"insertions[{i}].date", {y.date}, succeeds the last regular payment date, {due}')
-
-    if len(set([z.date for z in amortizations])) != len(amortizations):
-        raise ValueError('amortization dates must be unique.')
-
-    if not math.isclose(aux, _1):
-        raise ValueError('the accumulated percentage of the amortizations does not reach 1.0')
-
-    if insertions:  # Extraordinary flow, with insertions.
-        return list(x.item for x in _interleave(amortizations, insertions, key=lambda x: x.date))
-
-    return amortizations  # Regular flow, without insertions.
-
-# FIXME: renomear para "get_bullet_payments".
-@typeguard.typechecked
-def build_bullet(
-    principal: decimal.Decimal,
-    apy: decimal.Decimal,
-    zero_date: datetime.date,
-    term: int, *,  # Junto com "zero_date", equivale ao "amortizations".
-
-    # Optional list of non-scheduled amortizations, a.k.a. prepayments.
-    insertions: t.List[Amortization.Bare] = [],
-
-    # Etc.
-    anniversary_date: t.Optional[datetime.date] = None,
-    vir: t.Optional[VariableIndex] = None,
-    capitalisation: _DAILY_CAPITALISATION = '360',
-    tax_exempt: t.Optional[bool] = False,
-    first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
-    calc_date: t.Optional[CalcDate] = None,
-    gain_output: _GAIN_OUTPUT_MODE = 'current',
-    verbose: bool = True
-) -> t.Generator[Payment, None, None]:
-    '''
-    Stereotypes a Bullet operation.
-
-    In addition to the initial principal value and the annual percentage rate, "apy", this function receives the
-    starting date of the bullet loan, "zero_date", and its term, "term". With this, it generates an amortization
-    schedule, by calling "fincore.get_payments_table". Note that although this system is characterized by a single
-    payment, the generated schedule will have at least two entries: one for the starting date, and another for the
-    final amortization (which could be an anticipation, if insertions are provided).
-
-    Prepayments go in the "insertions" parameter. It is a list of "Amortization.Bare" instances, where,
-
-      • "obj.date" is the prepayment date.
-
-      • "obj.amortization_ratio" is the percentage of the initial principal that will be amortized in this prepayment.
-
-    The "vir" and "calc_date" parameters are the same as in "fincore.get_payments_table".
-    '''
-
-    kwa: t.Dict[str, t.Any] = {}
-
-    kwa['principal'] = principal
-    kwa['apy'] = apy
-
-    # The purpose of the "preprocess_bullet" helper is to generate the amortizations list, which is required by the
-    # "get_payments_table" routine. Amongst its responsibilities are the following:
-    #
-    #   • Combine prepayments with the regular flow.
-    #
-    #   • Apply monetary correction informed in the "vir" parameter, using the "M-1" shift automatically. The correction
-    #     accumulates until the last payment, whether planned or a total prepayment.
-    #
-    #   • Automatically uses the "360" adjustment for fixed rate operations, and "252" for postfixed. Accepts "365" for
-    #     legacy operations. See the "capitalisation" parameter.
-    #
-    kwa['amortizations'] = preprocess_bullet(zero_date, term, insertions, anniversary_date, capitalisation, vir, calc_date, verbose)
-
-    kwa['vir'] = vir
-    kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else capitalisation
-
-    kwa['calc_date'] = calc_date
-    kwa['tax_exempt'] = tax_exempt
-    kwa['first_dct_rule'] = first_dct_rule
-    kwa['gain_output'] = gain_output
-
-    yield from get_payments_table(**kwa)
-
-get_bullet_payments = build_bullet
-
-# FIXME: renomear para "get_jm_payments".
-@typeguard.typechecked
-def build_jm(
-    principal: decimal.Decimal,
-    apy: decimal.Decimal,
-    zero_date: datetime.date,
-    term: int, *,  # Junto com "zero_date", equivale ao "amortizations".
-
-    # Optional list of non-scheduled amortizations, a.k.a. prepayments.
-    insertions: t.List[Amortization.Bare] = [],
-
-    # Etc.
-    anniversary_date: t.Optional[datetime.date] = None,
-    vir: t.Optional[VariableIndex] = None,
-    tax_exempt: t.Optional[bool] = False,
-    amortizes_correction: bool = True,
-    first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
-    calc_date: t.Optional[CalcDate] = None,
-    gain_output: _GAIN_OUTPUT_MODE = 'current'
-) -> t.Generator[Payment, None, None]:
-    '''
-    Stereotypes an American Amortization operation.
-
-    In addition to the initial principal value and the annual percentage rate, "apy", this function receives the initial
-    yield date, "zero_date", and its term, "term". With this, it generates a Price amortization schedule, and from it
-    derives the payment values, by calling "fincore.get_payments_table".
-
-    Furthermore, when you want to simulate one or more early payments, total or partial, this function performs the
-    prerequisites.
-
-      • Interleaves the prepayments with the regular monthly interest flow in a consolidated schedule.
-
-      • Applies the monetary correction informed in the "vir" parameter. Uses "M-1" shift automatically. The
-        correction accumulates until the last payment, whether planned or a total prepayment.
-
-      • Automatically uses the "30/360" quotient for fixed-rate operations, and "252" for post-fixed.
-
-    Prepayments go in the "insertions" parameter. It is a list of "obj" objects, where,
-
-      • "obj.date" is the prepayment date.
-
-      • "obj.amortization_ratio" is the percentage of the initial principal that will be amortized in this prepayment.
-
-    The "vir" and "calc_date" parameters are the same as in "fincore.get_payments_table".
-    '''
-
-    # 3. Generates the payment schedule.
-    kwa: t.Dict[str, t.Any] = {}
-
-    kwa['principal'] = principal
-    kwa['apy'] = apy
-    kwa['amortizations'] = preprocess_jm(zero_date, term, insertions, anniversary_date, vir, amortizes_correction=amortizes_correction)
-
-    kwa['vir'] = vir
-    kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else '30/360'
-
-    kwa['calc_date'] = calc_date
-    kwa['tax_exempt'] = tax_exempt
-    kwa['first_dct_rule'] = first_dct_rule
-    kwa['gain_output'] = gain_output
-
-    yield from get_payments_table(**kwa)
-
-get_jm_payments = build_jm
-
-# FIXME: renomear para "get_price_payments".
-@typeguard.typechecked
-def build_price(
-    principal: decimal.Decimal,
-    apy: decimal.Decimal,
-    zero_date: datetime.date,
-    term: int, *,  # Junto com "zero_date", equivale ao "amortizations".
-
-    # Optional list of non-scheduled amortizations, a.k.a. prepayments.
-    insertions: t.List[Amortization.Bare] = [],
-
-    # Etc.
-    anniversary_date: t.Optional[datetime.date] = None,
-    tax_exempt: t.Optional[bool] = False,
-    first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
-    calc_date: t.Optional[CalcDate] = None,
-    gain_output: _GAIN_OUTPUT_MODE = 'current'
-) -> t.Generator[Payment, None, None]:
-    '''
-    Stereotypes a Price operation.
-
-    In addition to the initial principal value and the annual percentage rate, "apy", this function receives the initial
-    yield date, "zero_date", and its term, "term". With this, it generates a Price amortization schedule, and from it
-    derives the payment values, by calling "fincore.get_payments_table".
-
-    Furthermore, when you want to simulate one or more early payments, total or partial, this function performs the
-    prerequisites.
-
-      • Interleaves the prepayments with the regular Price flow in a consolidated schedule.
-
-      • Recalculates the amortization percentages after a partial prepayment. Ensures that the recalculated amortizations
-        continue to convert into payments with constant value, characteristic of Price.
-
-      • Uses the "30/360" quotient.
-
-    Prepayments go in the "insertions" parameter. It is a list of "obj" objects, where,
-
-      • "obj.date" is the prepayment date.
-
-      • "obj.amortization_ratio" is the percentage of the initial principal that will be amortized in this prepayment.
-
-    The "calc_date" parameter is the same as in "fincore.get_payments_table".
-    '''
-
-    # 3. Generates the payment schedule.
-    kwa: t.Dict[str, t.Any] = {}
-
-    kwa['principal'] = principal
-    kwa['apy'] = apy
-    kwa['amortizations'] = preprocess_price(principal, apy, zero_date, term, insertions, anniversary_date)
-
-    kwa['capitalisation'] = '30/360'
-
-    kwa['calc_date'] = calc_date
-    kwa['tax_exempt'] = tax_exempt
-    kwa['first_dct_rule'] = first_dct_rule
-    kwa['gain_output'] = gain_output
-
-    yield from get_payments_table(**kwa)
-
-get_price_payments = build_price
-
-# FIXME: remove.
-@typeguard.typechecked
-def build(
-    principal: decimal.Decimal,
-    apy: decimal.Decimal,
-    amortizations: t.List[Amortization], *,
-
-    # Optional list of amortizations.
-    insertions: t.List[Amortization.Bare] = [],
-
-    # Etc.
-    vir: t.Optional[VariableIndex] = None,
-    tax_exempt: t.Optional[bool] = False,
-    first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
-    calc_date: t.Optional[CalcDate] = None,
-    gain_output: _GAIN_OUTPUT_MODE = 'current'
-) -> t.Generator[Payment, None, None]:
-    '''
-    Builds a Custom payments schedule.
-
-    In addition to the initial principal value and the annual percentage rate, "apy", this function receives two lists of
-    amortizations: one with the regular flow, and another with the prepayments. It has two main utilities:
-
-      1. Interleaves the flows in date order, before finally invoking "fincore.get_payments_table".
-
-      2. Calculates the amortization percentages when there is an extra-regular amortization, i.e., a prepayment.
-         The routine ensures that, if the prepayment is not total, the amortizations following it generate payments
-         with proportional value.
-
-    The "vir" and "calc_date" parameters are the same as in "fincore.get_payments_table".
-    '''
-
-    # 3. Generates the amortization schedule out of the skeleton.
-    kwa: t.Dict[str, t.Any] = {}
-
-    kwa['principal'] = principal
-    kwa['apy'] = apy
-    kwa['amortizations'] = preprocess_livre(amortizations, insertions, vir)
-
-    kwa['vir'] = vir
-    kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else '30/360'
-
-    kwa['calc_date'] = calc_date
-    kwa['tax_exempt'] = tax_exempt
-    kwa['first_dct_rule'] = first_dct_rule
-    kwa['gain_output'] = gain_output
-
-    yield from get_payments_table(**kwa)
-
-@typeguard.typechecked
-def get_bullet_daily_returns(
-    principal: decimal.Decimal,
-    apy: decimal.Decimal,
-    zero_date: datetime.date,
-    term: int, *,  # Junto com "zero_date", equivale ao "amortizations".
-
-    # Optional list of non-scheduled amortizations, a.k.a. prepayments.
-    insertions: t.List[Amortization.Bare] = [],
-
-    # Etc.
-    anniversary_date: t.Optional[datetime.date] = None,
-    vir: t.Optional[VariableIndex] = None,
-    capitalisation: _DAILY_CAPITALISATION = '360',
-    first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
-    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True,
-    verbose: bool = True
-) -> t.Generator[DailyReturn, None, None]:
-    kwa: t.Dict[str, t.Any] = {}
-
-    kwa['principal'] = principal
-    kwa['apy'] = apy
-    kwa['amortizations'] = preprocess_bullet(zero_date, term, insertions, anniversary_date, capitalisation, vir, calc_date=None, verbose=verbose)
-    kwa['vir'] = vir
-    kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else capitalisation
-    kwa['first_dct_rule'] = first_dct_rule
-    kwa['is_bizz_day_cb'] = is_bizz_day_cb
-
-    yield from get_daily_returns(**kwa)
-
-@typeguard.typechecked
-def get_jm_daily_returns(
-    principal: decimal.Decimal,
-    apy: decimal.Decimal,
-    zero_date: datetime.date,
-    term: int, *,  # Junto com "zero_date", equivale ao "amortizations".
-    insertions: t.List[Amortization.Bare] = [],
-    anniversary_date: t.Optional[datetime.date] = None,
-    vir: t.Optional[VariableIndex] = None,
-    amortizes_correction: bool = True,
-    first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
-    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
-) -> t.Generator[DailyReturn, None, None]:
-    kwa: t.Dict[str, t.Any] = {}
-
-    kwa['principal'] = principal
-    kwa['apy'] = apy
-    kwa['amortizations'] = preprocess_jm(zero_date, term, insertions, anniversary_date, vir, amortizes_correction=amortizes_correction)
-    kwa['vir'] = vir
-    kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else '30/360'
-    kwa['first_dct_rule'] = first_dct_rule
-    kwa['is_bizz_day_cb'] = is_bizz_day_cb
-
-    yield from get_daily_returns(**kwa)
-
-@typeguard.typechecked
-def get_price_daily_returns(
-    principal: decimal.Decimal,
-    apy: decimal.Decimal,
-    zero_date: datetime.date,
-    term: int, *,  # Junto com "zero_date", equivale ao "amortizations".
-    insertions: t.List[Amortization.Bare] = [],
-    anniversary_date: t.Optional[datetime.date] = None,
-    first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
-    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
-) -> t.Generator[DailyReturn, None, None]:
-    kwa: t.Dict[str, t.Any] = {}
-
-    kwa['principal'] = principal
-    kwa['apy'] = apy
-    kwa['amortizations'] = preprocess_price(principal, apy, zero_date, term, insertions, anniversary_date)
-    kwa['capitalisation'] = '30/360'
-    kwa['first_dct_rule'] = first_dct_rule
-    kwa['is_bizz_day_cb'] = is_bizz_day_cb
-
-    yield from get_daily_returns(**kwa)
-
-# FIXME: remove.
-@typeguard.typechecked
-def get_livre_daily_returns(
-    principal: decimal.Decimal,
-    apy: decimal.Decimal,
-    amortizations: t.List[Amortization], *,
-    insertions: t.List[Amortization.Bare] = [],
-    vir: t.Optional[VariableIndex] = None,
-    first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
-    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
-) -> t.Generator[DailyReturn, None, None]:
-    kwa: t.Dict[str, t.Any] = {}
-
-    kwa['principal'] = principal
-    kwa['apy'] = apy
-    kwa['vir'] = vir
-    kwa['amortizations'] = preprocess_livre(amortizations, insertions, vir)
-    kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else '30/360'
-    kwa['first_dct_rule'] = first_dct_rule
-    kwa['is_bizz_day_cb'] = is_bizz_day_cb
-
-    yield from get_daily_returns(**kwa)
 # }}}
 
 # Public API. Helpers. {{{
@@ -3828,7 +3242,7 @@ def get_late_payment(
         #
         for e_1 in pla_operations:
             if e_1[2].code == 'IPCA':
-                e_2 = ((x := e_1[0].replace(day=1)), x + _MONTH)  # Armazena as datas do último e do próximo aniversário.
+                e_2 = ((x := e_1[0].replace(day=1)), x + _MONTH)  # Stores the dates of the last and the next anniversary.
                 dcp = decimal.Decimal((e_1[0] - e_2[0]).days) if e_1[1] else decimal.Decimal((e_2[1] - e_1[0]).days)
                 dct = decimal.Decimal((e_2[1] - e_2[0]).days)
                 kwa: t.Dict[str, t.Any] = {}
