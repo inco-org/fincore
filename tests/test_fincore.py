@@ -2399,6 +2399,73 @@ def test_wont_settle_debt_with_prepayment_that_does_not_amortize_interest():
     # O saldo devedor corrigido na data já passa do principal, e ainda assim o teto é o principal.
     assert build(kwa['principal'])[1].amort == kwa['principal']
 
+def test_will_keep_the_term_when_prepayment_amortizes_only_the_principal():
+    '''
+    Amortizar somente o principal abate o saldo devedor, e nunca o prazo.
+
+    Mesmo que a antecipação leve todo o principal em aberto, o cronograma segue até o último pagamento regular. As
+    parcelas remanescentes continuam existindo, precificadas no que restou: a primeira recolhe os juros travados do
+    trecho, e as seguintes saem zeradas, por não haver mais base sobre a qual apurar juros.
+
+    Quitar a dívida e encerrar a operação é a outra rotina, a de quitação, que liquida juros e correção junto do
+    principal. Ver "test_wont_settle_debt_with_prepayment_that_does_not_amortize_interest".
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal(100)
+    kwa['apy'] = decimal.Decimal(24)
+    kwa['zero_date'] = datetime.date(2026, 1, 10)
+    kwa['term'] = 6
+    kwa['anniversary_date'] = datetime.date(2026, 2, 10)
+    kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2026, 3, 20), value=kwa['principal'], amortizes_interest=False)]
+
+    sched = list(fincore.build_jm(**kwa))
+
+    # O prazo se mantém: a última parcela é a do cronograma regular, e não a da antecipação.
+    assert sched[-1].date == datetime.date(2026, 7, 10)
+    assert sched[-1].date > kwa['insertions'][0].date
+
+    # A antecipação leva o principal inteiro, e nada de juros.
+    assert (adv := next(x for x in sched if x.date == kwa['insertions'][0].date)).amort == kwa['principal']
+    assert adv.raw == kwa['principal']
+
+    # A parcela seguinte recolhe os juros travados, e as demais saem zeradas.
+    assert (nxt := next(x for x in sched if x.date > adv.date)).raw > _0
+    assert nxt.amort == _0
+
+    for pmt in (x for x in sched if x.date > nxt.date):
+        assert pmt.raw == _0
+        assert pmt.amort == _0
+        assert pmt.bal == _0
+
+    # Zero é zero, e nunca "-0.00": o resíduo abaixo do centavo não pode vazar o sinal para uma cobrança.
+    assert not any(x.raw.is_signed() for x in sched)
+
+    assert sum(x.amort for x in sched) == kwa['principal']
+
+def test_wont_keep_the_term_when_prepayment_settles_the_debt():
+    '''
+    A antecipação que liquida juros encerra o cronograma ao zerar o saldo, e é o comportamento de sempre.
+
+    Contraprova de "test_will_keep_the_term_when_prepayment_amortizes_only_the_principal": a distinção está na ordem
+    de imputação, e não no valor. Mesma operação, mesma data, mesmo valor máximo.
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal(100)
+    kwa['apy'] = decimal.Decimal(24)
+    kwa['zero_date'] = datetime.date(2026, 1, 10)
+    kwa['term'] = 6
+    kwa['anniversary_date'] = datetime.date(2026, 2, 10)
+    kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2026, 3, 20), value=fincore.Amortization.Bare.MAX_VALUE)]
+
+    sched = list(fincore.build_jm(**kwa))
+
+    assert sched[-1].date == kwa['insertions'][0].date
+    assert sched[-1].bal == _0
+
 # Os dois casos de antecipação parcial da operação "CRI IPA Club Residencial", conferidos contra planilha.
 #
 # São o mesmo evento – 97.224,53 em 03/08/2026, dentro do período que vai de 07/07 a 07/08 – sob as duas ordens de
@@ -4069,6 +4136,52 @@ def test_will_create_livre_10():
         assert [x.amort, x.gain, x.raw, x.tax, x.net, x.bal] == [decimal.Decimal(y) for y in tab2[i]]
 
     assert i == len(tab1) - 1 == len(tab2)
+
+def test_will_keep_the_term_when_only_principal_is_amortized_under_a_grace_period():
+    '''
+    O mesmo do prazo preservado, com carência no caminho.
+
+    A carência não liquida juros, então ela não recolhe o travado: ele espera o primeiro pagamento regular que
+    liquide juros. As linhas de carência seguem no cronograma, zeradas, como sempre estiveram – não é a ausência de
+    valor que encerra a tabela.
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal(100)
+    kwa['apy'] = decimal.Decimal(24)
+    kwa['amortizations'] = [fincore.Amortization(date=datetime.date(2026, 1, 10), amortizes_interest=False)]
+
+    # Seis mensais, com carência na terceira e na quarta, e o principal todo na última.
+    for num in range(1, 7):
+        kwa['amortizations'].append(fincore.Amortization(
+            date=datetime.date(2026, 1 + num, 10),
+            amortization_ratio=_1 if num == 6 else _0,
+            amortizes_interest=num not in (3, 4)
+        ))
+
+    # A antecipação cai imediatamente antes da carência, para que o travado tenha de atravessá-la.
+    kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2026, 3, 20), value=kwa['principal'], amortizes_interest=False)]
+
+    sched = list(fincore.build(**kwa))
+
+    # O prazo se mantém, apesar de o principal ter zerado na terceira parcela.
+    assert sched[-1].date == datetime.date(2026, 7, 10)
+
+    # As carências seguem no cronograma, zeradas, e não recolhem o travado – ele fica no saldo, rendendo.
+    assert [(x.raw, x.bal) for x in sched if x.date in (datetime.date(2026, 4, 10), datetime.date(2026, 5, 10))] == [
+        (_0, decimal.Decimal('0.59')),
+        (_0, decimal.Decimal('0.60'))
+    ]
+
+    # Quem recolhe é o primeiro pagamento regular que liquida juros depois delas.
+    assert (nxt := next(x for x in sched if x.date == datetime.date(2026, 6, 10))).raw == decimal.Decimal('0.61')
+    assert nxt.bal == _0
+
+    # E a última parcela do prazo segue existindo, sem nada a cobrar.
+    assert sched[-1].raw == _0
+
+    assert sum(x.amort for x in sched) == kwa['principal']
 # }}}
 
 # Modos de visualização de juros. {{{
@@ -6979,6 +7092,29 @@ def test_will_match_payments_table_and_daily_returns_7():
 
     assert sched[-1].raw == next(_tail(1, iter(drs.values()))).bal
     assert sum(x.amort for x in sched) == kwa['principal']
+
+def test_will_match_payments_table_and_daily_returns_when_only_principal_is_amortized():
+    '''
+    Os dois motores atravessam juntos a amortização de todo o principal.
+
+    A tabela mensal segue até o último pagamento regular, porque amortizar não abate prazo, e a série diária tem de
+    alcançar essa mesma data. Se um dos dois encerrasse antes, a posição do investidor divergiria do cronograma.
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal(100)
+    kwa['apy'] = decimal.Decimal(24)
+    kwa['zero_date'] = datetime.date(2026, 1, 10)
+    kwa['term'] = 6
+    kwa['anniversary_date'] = datetime.date(2026, 2, 10)
+    kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2026, 3, 20), value=kwa['principal'], amortizes_interest=False)]
+
+    sched = list(fincore.build_jm(**kwa))
+    drs = list(fincore.get_jm_daily_returns(**kwa))
+
+    assert sched[-1].date == datetime.date(2026, 7, 10)
+    assert drs[-1].date == sched[-1].date - datetime.timedelta(days=1)
 # }}}
 
 # vi:fdm=marker:

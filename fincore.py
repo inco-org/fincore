@@ -1667,6 +1667,13 @@ def get_payments_table(
     # Control, save the previous regular amortization.
     prev = amortizations[0]
 
+    # Control, whether an advancement amortises principal without settling interest. Amortising only the principal
+    # never shortens the term: the interest keeps being computed over the remaining balance until the last regular
+    # payment, even when the whole outstanding principal is gone. Settling the debt is a different operation, and it
+    # is the one allowed to cut the schedule short. See the balance check at the end of the loop.
+    #
+    bare = any(type(x) is Amortization.Bare and not x.amortizes_interest for x in amortizations)
+
     # B. Execution.
     for num, (ent0, ent1) in enumerate(itertools.pairwise(amortizations), 1):
         f_v = types.SimpleNamespace(value=_1, mem=[], amount=0)
@@ -2086,13 +2093,16 @@ def get_payments_table(
         if type(ent1) is Amortization.Bare and ent1.date == calc_date.value and ent1.value < Amortization.Bare.MAX_VALUE:
             assert _Q(pmt.raw) == _Q(ent1.value)
 
-        # B.2.2. Rounds the values of the payment, and calculates its net value.
-        pmt.amort = _Q(pmt.amort)
-        pmt.gain = _Q(pmt.gain)
-        pmt.raw = _Q(pmt.raw)
-        pmt.tax = _Q(pmt.tax)
+        # B.2.2. Rounds the values of the payment, and calculates its net value. Adding zero is not a no-op here: it
+        # normalises the sign of a negative zero, which rounding a residue below a cent produces. Money is never
+        # "-0.00", and a payment priced that way reaches an invoice.
+        #
+        pmt.amort = _Q(pmt.amort) + _0
+        pmt.gain = _Q(pmt.gain) + _0
+        pmt.raw = _Q(pmt.raw) + _0
+        pmt.tax = _Q(pmt.tax) + _0
         pmt.net = pmt.raw - pmt.tax
-        pmt.bal = _Q(pmt.bal)
+        pmt.bal = _Q(pmt.bal) + _0
 
         pmt.sf = f_s
         pmt.vf = f_v.value
@@ -2108,8 +2118,13 @@ def get_payments_table(
 
         yield pmt
 
-        if pmt.bal == _0:
-            break  # Se o saldo é zero, o cronograma acabou.
+        # A zero balance ends the schedule, because the debt is settled – unless it was an advancement that did not
+        # amortise interest that brought it to zero. That one only amortises principal, and amortising does not touch
+        # the term: the remaining regular payments stay in the table, priced at whatever is left, which is zero once
+        # the locked interest has been collected.
+        #
+        if pmt.bal == _0 and not bare:
+            break
 # }}}
 
 # Public API. Daily returns. {{{
@@ -2723,6 +2738,12 @@ def get_daily_returns(
     cnt = p = 1
     buf = _0
 
+    # Whether an advancement amortises principal without settling interest. Same rule as the payments table: that
+    # operation abates the balance and never the term, so the series runs to the last regular payment even after the
+    # outstanding principal is gone. Keeping the two engines aligned matters – callers match one against the other.
+    #
+    bare = any(type(x) is Amortization.Bare and not x.amortizes_interest for x in amortizations)
+
     # Extend the end date to the next business day.
     while not is_bizz_day_cb(end):
         end = end + datetime.timedelta(days=1)
@@ -2984,13 +3005,14 @@ def get_daily_returns(
         _LOG.debug(f'T={p}, n={cnt}, f_s={facs.spread} f_v={facs.variable} f_c={facs.correction}')
         _LOG.debug(f'T={p}, n={cnt}, regs={regs}')
 
-        # If the outstanding principal is zero, and the current day is a business day, the schedule is over. The
-        # locked interest holds the series open on its own. An advancement that does not amortise interest may take
-        # the whole outstanding principal and still leave the interest of its period due, and "get_principal_outstanding"
-        # does not see it – the adjustment it carries is zero whenever there is no index. Without this term the
-        # series would end on the date of the advancement, while the payments table still charges that interest.
+        # If the outstanding principal is zero, and the current day is a business day, the schedule is over. Two terms
+        # hold the series open past that point. The locked interest, because an advancement that does not amortise
+        # interest may take the whole outstanding principal and still leave the interest of its period due, and
+        # "get_principal_outstanding" does not see it – the adjustment it carries is zero whenever there is no index.
+        # And "bare", because amortising only the principal does not shorten the term: the payments table keeps every
+        # remaining regular payment, so the daily series has to reach the last of them.
         #
-        if _Q(get_principal_outstanding()) != _0 or _Q(regs.interest.locked) != _0 or not is_bizz_day_cb(ref):
+        if _Q(get_principal_outstanding()) != _0 or _Q(regs.interest.locked) != _0 or bare or not is_bizz_day_cb(ref):
             yield dr
 
             cnt += 1
