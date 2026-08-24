@@ -514,6 +514,22 @@ def test_wont_create_sched_12():
 
     with pytest.raises(Exception, match='the value of the amortization, 150000, is greater than the remaining balance of the loan, 102081.39'):
         next(fincore.get_payments_table(**kwa))
+
+def test_wont_create_sched_13():
+    '''Fincore deve falhar ao criar um empréstimo com datas de amortização duplicadas.'''
+
+    tab = []
+
+    tab.append(fincore.Amortization(date=datetime.date(2020, 3, 15), amortization_ratio=decimal.Decimal('0.25')))
+    tab.append(fincore.Amortization(date=datetime.date(2020, 4, 15), amortization_ratio=decimal.Decimal('0.25')))
+    tab.append(fincore.Amortization(date=datetime.date(2020, 4, 15), amortization_ratio=decimal.Decimal('0.25')))
+    tab.append(fincore.Amortization(date=datetime.date(2020, 5, 15), amortization_ratio=decimal.Decimal('0.25')))
+
+    with pytest.raises(ValueError, match='amortization dates must be unique'):
+        next(fincore.get_payments_table(decimal.Decimal('222000'), decimal.Decimal('13.5'), tab))
+
+    with pytest.raises(ValueError, match='amortization dates must be unique'):
+        next(fincore.get_daily_returns(decimal.Decimal('222000'), decimal.Decimal('13.5'), tab))
 # }}}
 
 # 🎈 Bullets. {{{
@@ -5351,7 +5367,7 @@ def test_wont_create_sched_daily_returns_5():
 
     ent1.price_level_adjustment = fincore.PriceLevelAdjustment(code='IPCA', base_date=datetime.date(2018, 5, 1), period=1)
 
-    with pytest.raises(TypeError, match="amortization 1 has price level adjustment, but a variable index wasn't provided, or isn't IPCA nor IGPM"):
+    with pytest.raises(TypeError, match="amortization 1 has price level adjustment, but either a variable index wasn't provided or it isn't IPCA nor IGPM"):
         next(fincore.get_daily_returns(_1, _0, [ent0, ent1], vir=fincore.VariableIndex('CDI'), capitalisation='252'))
 
 def test_wont_create_sched_daily_returns_6():
