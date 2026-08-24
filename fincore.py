@@ -1169,7 +1169,7 @@ class InMemoryBackend(IndexStorageBackend):
         (datetime.date(2024, 2, 1),   datetime.date(2024, 3, 20),  decimal.Decimal('0.041957')),  # NOQA
         (datetime.date(2024, 3, 21),  datetime.date(2024, 5, 8),   decimal.Decimal('0.040168')),  # NOQA
         (datetime.date(2024, 5, 9),   datetime.date(2024, 9, 18),  decimal.Decimal('0.039270')),  # NOQA
-        (datetime.date(2024, 9, 19),  datetime.date(2025, 1, 31),  decimal.Decimal('0.040168')),  # NOQA FIXME: projeção aqui.
+        (datetime.date(2024, 9, 19),  datetime.date(2025, 1, 31),  decimal.Decimal('0.040168')),  # NOQA FIXME: projection here.
     ]
 
     # A repository of IPCA indexes.
@@ -1331,7 +1331,7 @@ class InMemoryBackend(IndexStorageBackend):
                                                                    '0.6143', '0.6147', '0.6524', '0.6801', '0.6794',
                                                                    '0.6791', '0.6516', '0.6136']]),
         (datetime.date(2022, 11, 1), [decimal.Decimal(x) for x in ['0.6515', '0.6515', '0.6792', '0.6519', '0.6139',
-                                                                   '0.6516', '0.6793', '0.6799', '0.6801', '0.6796'] + ['0.6448'] * 18]),  # As 17 taxas finais são estimadas.
+                                                                   '0.6516', '0.6793', '0.6799', '0.6801', '0.6796'] + ['0.6448'] * 18]),  # The final 17 rates are estimates.
         (datetime.date(2022, 12, 1), [decimal.Decimal(x) for x in ['0.5000'] * 28]),                                  # NOQA
         (datetime.date(2023, 1, 1),  [decimal.Decimal(x) for x in ['0.5000'] * 28]),                                  # NOQA
         (datetime.date(2023, 2, 1),  [decimal.Decimal(x) for x in ['0.5000'] * 28]),                                  # NOQA
@@ -2036,7 +2036,7 @@ def get_payments_table(
                 # If there is no principal amortization in the period, and "pla.amortizes_adjustment" is true, then
                 # "pmt.pla" will be the value of monetary correction of the outstanding balance. This s what
                 # happens with loans that have the American Amortization system, by default. See the
-                # "amortizes_correction" parameter on the "preprocess_jm" function.
+                # "amortizes_correction" flag of the American Amortization stereotype.
                 #
                 elif pla and pla.amortizes_adjustment:
                     pmt.pla = calc_adjustment(f_c.value)
@@ -2111,7 +2111,7 @@ def get_payments_table(
         yield pmt
 
         if pmt.bal == _0:
-            break  # Se o saldo é zero, o cronograma acabou.
+            break  # If the balance is zero, the schedule is over.
 # }}}
 
 # Public API. Daily returns. {{{
@@ -2756,10 +2756,10 @@ def get_daily_returns(
         # Calculation of DT, from DP/DT. Notice that here, DP == 1, since we are working with the smallest fraction of
         # a factor, a day.
         #
-        elif ref < amortizations[-1].date and not vir and capitalisation == '30/360':  # Juros mensais, Price, Livre.
+        elif ref < amortizations[-1].date and not vir and capitalisation == '30/360':  # American Amortization, Price, Custom.
             facs.spread = facs.spread.normalize(next(idxs.fixed))
 
-        elif ref < amortizations[-1].date and vir and vir.code == 'CDI' and capitalisation == '252':  # Bullet, Juros mensais, Livre.
+        elif ref < amortizations[-1].date and vir and vir.code == 'CDI' and capitalisation == '252':  # Bullet, American Amortization, Custom.
             facs.variable = facs.variable.normalize(next(idxs.variable))
 
             # Note that the index on a 252 basis only earns on a business day. This is how the CDI works. In this case
@@ -2788,7 +2788,7 @@ def get_daily_returns(
         #
         # Same logic as the monthly fixed rate, 30/360, but with the added price level adjustment. See comments above.
         #
-        elif ref < amortizations[-1].date and vir and vir.code == 'IPCA' and capitalisation == '30/360':  # Juros mensais, Livre.
+        elif ref < amortizations[-1].date and vir and vir.code == 'IPCA' and capitalisation == '30/360':  # American Amortization, Custom.
             facs.spread = facs.spread.normalize(next(idxs.fixed))
             facs.correction = facs.correction.normalize(next(idxs.variable))
 
@@ -3230,7 +3230,7 @@ def get_late_payment(
         #
         for e_1 in pla_operations:
             if e_1[2].code == 'IPCA':
-                e_2 = ((x := e_1[0].replace(day=1)), x + _MONTH)  # Armazena as datas do último e do próximo aniversário.
+                e_2 = ((x := e_1[0].replace(day=1)), x + _MONTH)  # Stores the dates of the last and the next anniversary.
                 dcp = decimal.Decimal((e_1[0] - e_2[0]).days) if e_1[1] else decimal.Decimal((e_2[1] - e_1[0]).days)
                 dct = decimal.Decimal((e_2[1] - e_2[0]).days)
                 kwa: t.Dict[str, t.Any] = {}
