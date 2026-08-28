@@ -252,6 +252,86 @@ def _delta_months(d1: datetime.date, d2: datetime.date) -> int:
     return (d1.year - d2.year) * 12 + d1.month - d2.month
 
 @typeguard.typechecked
+def _pl_cumulative(
+    backend: 'IndexStorageBackend',
+    zero_date: datetime.date,
+    base: datetime.date,
+    shift: _PL_SHIFT,
+    date: datetime.date
+) -> types.SimpleNamespace:
+    '''
+    Returns the price level factor accumulated from the loan's zero date up to a given date.
+
+    Whole monthly periods enter in full; the period in progress enters raised to the fraction of it that has elapsed,
+    in calendar days. Periods run from anniversary to anniversary, counted from "zero_date" – not by calendar month,
+    so a month only counts once its anniversary has passed.
+
+    [RATIO-ULTIMO-ITEM]
+
+    The closed periods and the one in progress are asked for SEPARATELY, and that is not a matter of taste.
+    "calculate_ipca_factor" applies its "ratio" to the last item the series RETURNED, and not to the month at the
+    position "period" – refer to the loop over "mem" in it. A backend that pads the series up to the end of the window,
+    as "InMemoryBackend" does with zeroed months, makes the exponent land on a padded month, where it is inert. A
+    backend that returns only what BACEN published, as the ones in production do, makes it land on the last PUBLISHED
+    month, which is owed in full. On an anniversary, where the elapsed fraction is zero, that month would be raised to
+    zero and vanish: the accumulation would go BACKWARDS, and a payoff would be cheaper on the anniversary than on the
+    day before. Asking for one month at a time makes "the last item returned" and "the month at position period" the
+    same item by construction, whatever the backend does.
+
+    The factor of a stretch between two dates is the quotient of two such accumulations. Taking the quotient, rather
+    than asking for the stretch's own window, matters for two reasons.
+
+      • The "ratio" reaches one month only, as above. A stretch that straddles two anniversary periods needs a fraction
+        at both ends, which a single call cannot express. The quotient gets both for free, since
+        "(1 + i) ^ (a/n) / (1 + i) ^ (b/n)" is "(1 + i) ^ ((a - b)/n)".
+
+      • The monthly floor at zero, which "calculate_ipca_factor" applies to a negative index, does not distribute over
+        a window split. In the quotient the whole months common to both accumulations cancel already floored, so the
+        result is exact.
+    '''
+
+    closed_periods = _delta_months(date, zero_date)
+
+    if zero_date + (_MONTH * closed_periods) > date:  # The anniversary of the current period has not been reached yet.
+        closed_periods -= 1
+
+    ini = zero_date + (_MONTH * closed_periods)
+    end = zero_date + (_MONTH * (closed_periods + 1))
+    dcp = decimal.Decimal((date - ini).days)  # Calendar days elapsed within the period in progress.
+    dct = decimal.Decimal((end - ini).days)   # Calendar days of that period, in full.
+
+    # The closed periods, in full. Their window ends where the period in progress begins.
+    ful = backend.calculate_ipca_factor(base=base, period=closed_periods, shift=shift) if closed_periods else types.SimpleNamespace(value=_1, mem=[])
+
+    # The period in progress, alone, so that the ratio prorates it and nothing else. See "[RATIO-ULTIMO-ITEM]".
+    cur = backend.calculate_ipca_factor(base=base + (_MONTH * closed_periods), period=1, shift=shift, ratio=dcp / dct)
+
+    return types.SimpleNamespace(value=ful.value * cur.value, mem=ful.mem + cur.mem)
+
+@typeguard.typechecked
+def _pl_stretch(
+    backend: 'IndexStorageBackend',
+    zero_date: datetime.date,
+    base: datetime.date,
+    shift: _PL_SHIFT,
+    date0: datetime.date,
+    date1: datetime.date
+) -> types.SimpleNamespace:
+    '''
+    Returns the price level factor of the stretch between two dates. Refer to "_pl_cumulative".
+
+    The memory of indexes is the numerator's, from the denominator's last month onwards – the months that the stretch
+    actually spans.
+    '''
+
+    den = _pl_cumulative(backend, zero_date, base, shift, date0)
+    num = _pl_cumulative(backend, zero_date, base, shift, date1)
+    val = num.value / den.value
+    ini = max(len(den.mem) - 1, 0)  # The month the denominator stops in is the one the stretch starts in.
+
+    return types.SimpleNamespace(value=val, mem=num.mem[ini:])
+
+@typeguard.typechecked
 def _date_range(start_date: datetime.date, end_date: datetime.date) -> t.Generator[datetime.date, None, None]:
     iterator = start_date
 
@@ -1731,6 +1811,22 @@ def get_payments_table(
         elif vir and vir.code == 'IPCA' and capitalisation == '360':  # Bullet.
             f_s = calculate_interest_factor(apy, decimal.Decimal((due - ent0.date).days) / decimal.Decimal(360))
 
+            # The price level factor of both branches below covers the STRETCH between the previous entry and the
+            # current one, and not the accumulation since issuance.
+            #
+            # The deferral mechanism, in phase B.1, multiplies the factor of a stretch that went unsettled by the
+            # factor of the next one. That composition is only sound when each factor covers one stretch: composing
+            # two accumulations counts the history twice, three times, as many times as there are advancements. On a
+            # Bullet with two or more of them, where an advancement's gross value runs out before reaching the whole
+            # correction of its stretch, that is what made the correction grow past the ceiling the index series
+            # allows, and left the schedule closing on a negative balance.
+            #
+            # An operation without advancements is unaffected, in either branch: there "ent0" is the zero date, and
+            # the accumulation up to it is one.
+            #
+            # The two branches differ on the month in progress, and the difference is deliberate. Refer to the comment
+            # on each.
+            #
             if type(ent1) is Amortization and ent1.price_level_adjustment:
                 kwa: t.Dict[str, t.Any] = {}
 
@@ -1743,19 +1839,51 @@ def get_payments_table(
                 f_c = vir.backend.calculate_ipca_factor(**kwa)
                 f_c.value = max(f_c.value, _1)
 
+                # An advancement settles the correction of the whole outstanding balance, not of the slice it
+                # amortizes – that is the premise of measuring it over the balance. The nominal that survives it is
+                # therefore clean, and the regular payment that follows owes the correction of its own stretch only.
+                # Dividing by the accumulation at the previous entry is what discounts what was already settled.
+                #
+                # [FRONTEIRA-COMUM]
+                #
+                # The shared boundary is measured the same way on both sides. This division uses "_pl_cumulative",
+                # the very routine the advancement branch below uses, so what the advancement left uncharged of the
+                # month in progress is exactly what this payment collects, and the sum conserves. Measuring the
+                # boundary in whole months here while the advancement prorates it by calendar days would make the
+                # two events overlap, or leave a gap – the partition would be lost, which is the class of defect
+                # this block exists to fix. An advancement of one cent, which moves no balance, would then move the
+                # total correction by a fraction of a monthly index, with a sign depending on the day of the month.
+                #
+                # The upper end of the stretch is untouched: it remains the window the operation configured, in
+                # whole months, which is what the cases conferred against a spreadsheet pin – refer to
+                # "test_will_create_bullet_ipca_1b". Those cases have no advancement, and the guard below means the
+                # division never runs for them.
+                #
+                if ent0 is not amortizations[0]:
+                    bse = t.cast(datetime.date, kwa['base'])  # The base date of a price level adjustment is optional in the dataclass, and set here.
+
+                    f_c.value = f_c.value / max(_pl_cumulative(vir.backend, amortizations[0].date, bse, kwa['shift'], ent0.date).value, _1)
+
             # In the case of an advancement, the price level adjustment must be paid – "ent1" doesn't
             # need to have the "price_level_adjustment" attribute.
+            #
+            # Both ends of the stretch are measured by "_pl_cumulative", so the month in progress enters prorated by
+            # calendar days at each end. An advancement falls wherever it falls, and has no configured window to
+            # honour; the branch above shares this measure on the boundary between the two events. See
+            # "[FRONTEIRA-COMUM]".
+            #
+            # The stretch ends at "due", and not at the entry's date: when a calculation date is given, the
+            # correction runs only up to it, which is the same bound "preprocess_bullet" applies when it shortens
+            # the period of the adjustment it builds.
+            #
+            # FIXME: the shift is fixed at "M-1" instead of the one configured on the operation. Evaluated while
+            # fixing the stretch above and deliberately left out: on the operation that motivated the fix the
+            # configured shift IS "M-1", so correcting it moves no number there, and it would move numbers on a
+            # Bullet configured with "M-2", which was not measured.
+            #
             elif type(ent1) is Amortization.Bare:
-                kwb: t.Dict[str, t.Any] = {}
-
-                kwb['base'] = amortizations[0].date.replace(day=1)
-                kwb['period'] = _delta_months(ent1.date, amortizations[0].date)
-                kwb['shift'] = 'M-1'  # FIXME.
-                kwb['ratio'] = _1
-
-                # Ensure the price level factor is at least one, i.e., the correction value must be positive.
-                f_c = vir.backend.calculate_ipca_factor(**kwb)
-                f_c.value = max(f_c.value, _1)
+                f_c = _pl_stretch(vir.backend, amortizations[0].date, amortizations[0].date.replace(day=1), 'M-1', ent0.date, due)
+                f_c.value = max(f_c.value, _1)  # Ensure the correction value is positive.
 
         elif vir and vir.code == 'IPCA' and capitalisation == '30/360':  # American and Custom Amortization systems. See comments of the 30/360, fixed rate, block above.
             dcp = (due - ent0.date).days
@@ -1812,6 +1940,25 @@ def get_payments_table(
                     f_c = vir.backend.calculate_ipca_factor(**kwc)
                     f_c.value = max(f_c.value, _1)  # Lock the price level factor.
 
+                # FIXME: the factor here is the successor's whole window, and not the stretch. Inheriting the window
+                # is only sound when that window is ONE month, which is the case of a monthly flow that amortizes the
+                # adjustment month by month – refer to "preprocess_jm". On the accumulated geometries the windows are
+                # nested rather than disjoint, all of them starting at issuance: the "amortizes_correction" false
+                # branch of "preprocess_jm", with a constant base and "period = i", and a free schedule configured
+                # with a growing period. There the deferral mechanism of phase B.1 composes two accumulations and
+                # counts the history twice, three times, as many times as there are advancements – the very defect
+                # the Bullet block above was fixed for.
+                #
+                # Measured on a monthly flow of 24 months with "amortizes_correction" false and three advancements:
+                # total correction of 248,002.49 against the 85,177.13 of the same schedule with no advancement, an
+                # excess of 162,825.36. And beware: the balance now being reported after the adjustment is collected
+                # closes that schedule on zero, so the negative balance that used to denounce this is gone. The
+                # invariant of "test_will_close_bullet_ipca_with_prepayments_on_a_zero_balance" no longer catches it
+                # on this path.
+                #
+                # The fix is the same quotient of accumulations, with "_pl_cumulative" and "_pl_stretch", and it is
+                # deliberately left for its own change, once the solution of the Bullet block is approved.
+                #
                 else:  # Implies "type(ent1) is Amortization.Bare".
                     nxt = next((x for x in amortizations[num + 1:] if type(x) is Amortization and x.price_level_adjustment), None)
 
@@ -2010,8 +2157,6 @@ def get_payments_table(
                 pmt.raw = _0
                 pmt.tax = _0
 
-            pmt.bal = calc_balance(f_c.value)
-
             # Monetary correction.
             #
             # Notice that "pmt.pla" is the monetary correction of the principal amortization. This value does not account for
@@ -2045,6 +2190,13 @@ def get_payments_table(
 
                 pmt.raw = pmt.raw + pmt.pla
                 pmt.tax = _0 if tax_exempt else pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
+
+            # The balance comes AFTER the correction, and not before: the registers of deferred adjustment are only
+            # cleared once the payment above collects it, and a balance measured before that still discounts a credit
+            # that has just been consumed. That is what left a schedule closing on a negative balance, of exactly the
+            # correction an earlier advancement had paid against a factor still deferred.
+            #
+            pmt.bal = calc_balance(f_c.value)
 
         else:  # Implies "type(ent1) is Amortization.Bare".
             pmt.amort = regs.principal.amortized.current

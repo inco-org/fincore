@@ -114,6 +114,21 @@ class _RicherIpcaBackend(fincore.InMemoryBackend):
         (datetime.date(2026, 5, 1), decimal.Decimal('0.58')),  (datetime.date(2026, 6, 1), decimal.Decimal('0.16'))     # NOQA
     ]
 
+class _UnpaddedIpcaBackend(_RicherIpcaBackend):
+    '''
+    A mesma memória de índices do backend acima, mas SEM completar a série com zeros.
+
+    O "fincore.InMemoryBackend" completa a série até o fim da janela pedida, com meses zerados. Os backends de
+    produção não completam: devolvem só o que o BACEN publicou. Ver "util.finmore.MongoDbNamespaceCache" e
+    "util.finmore.LocalDirectoryBackend", no "web-services". Este backend reproduz o comportamento de produção, para
+    que a biblioteca não possa depender do preenchimento. Ver "[RATIO-ULTIMO-ITEM]" em "fincore._pl_cumulative".
+    '''
+
+    def get_ipca_indexes(self, begin, end):
+        for month, value in self._registry_ipca:
+            if begin <= month <= end:
+                yield fincore.MonthlyIndex(date=month, value=value)
+
 # 🚩 Parametrizações inválidas. {{{
 def test_wont_create_sched_1():
     with pytest.raises(TypeError, match=r"build_bullet\(\) missing 4 required positional arguments: 'principal', 'apy', 'zero_date', and 'term'"):
@@ -2506,6 +2521,213 @@ def test_will_create_jm_ipca_3():
 
     # O limite superior é a correção do mês sem antecipação nenhuma: 0,16% sobre os seis milhões.
     assert max(curva) < decimal.Decimal('9600')
+
+# Os casos de antecipação da operação "Solve - CR Sênior - Fluxo Irregular - 30 meses".
+#
+# Bullet, IPCA, capitalização diária em ano de 360 dias, com NOVE antecipações. É a operação que revelou que o fator
+# de correção de uma antecipação, neste caminho, era acumulado desde a emissão em vez de cobrir o trecho — e que o
+# mecanismo de diferimento, ao compor dois acumulados, contava a história duas vezes, três vezes, nove vezes.
+#
+# A série de índices do "_RicherIpcaBackend" cobre exatamente a memória de índices da operação, de junho de 2025 a
+# junho de 2026, inclusive o agosto de 2025 negativo, que entra no piso zero.
+#
+def _kwa_solve():
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('3850000')
+    kwa['apy'] = decimal.Decimal('15.05')
+    kwa['zero_date'] = datetime.date(2025, 7, 7)
+    kwa['term'] = 30
+    kwa['anniversary_date'] = datetime.date(2028, 1, 7)
+    kwa['capitalisation'] = '360'
+    kwa['first_dct_rule'] = 'AUTO'
+    kwa['gain_output'] = 'settled'  # O modo que a plataforma usa: juros do período que a linha efetivamente liquida.
+    kwa['vir'] = fincore.VariableIndex(code='IPCA', backend=_RicherIpcaBackend())
+
+    return kwa
+
+def _ins_solve():
+    lst = [
+        (datetime.date(2025, 12, 10), '206280.83'), (datetime.date(2026, 2, 9), '215488.13'),
+        (datetime.date(2026, 3, 12), '400661.15'), (datetime.date(2026, 5, 20), '1036253.75'),
+        (datetime.date(2026, 6, 1), '214781.80'), (datetime.date(2026, 6, 19), '203341.17'),
+        (datetime.date(2026, 7, 2), '168571.43'), (datetime.date(2026, 7, 6), '60000.00'),
+        (datetime.date(2026, 8, 21), '12633.45')
+    ]
+
+    return [fincore.Amortization.Bare(date=x, value=decimal.Decimal(y)) for x, y in lst]
+
+def test_will_create_bullet_ipca_with_nine_prepayments():
+    '''
+    Operação "Solve - CR Sênior", Bullet - 30 meses - IPCA, com nove antecipações em ordem de imputação padrão.
+
+    Cada antecipação liquida primeiro os juros corridos, depois a correção do seu trecho, e só o resto abate
+    principal. Em 10/12/2025 e em 21/08/2026 os juros consomem o bruto inteiro: a correção fica devida, o fator é
+    diferido, e o pagamento seguinte o recolhe.
+
+    O fator de correção de cada antecipação cobre o TRECHO desde a entrada anterior, e não a acumulação desde a
+    emissão. É o que torna sólida a composição de fatores diferidos: compor dois acumulados conta a história duas
+    vezes. Antes desta correção, esta operação produzia R$ 1.073.174,06 de correção total, contra as poucas centenas
+    de milhares que a série de índices permite, e o cronograma fechava com saldo devedor NEGATIVO de R$ 55.737,79.
+
+    Os valores abaixo foram conferidos por uma implementação independente, que não chama esta biblioteca, e aprovados
+    pelo financeiro em 26/08/2026. Na mesma conferência confirmou-se que juros devidos e não pagos continuam
+    rendendo, junto do saldo — o que já era o comportamento desta biblioteca.
+
+    Ref File: https://docs.google.com/spreadsheets/d/1gGMRFCArAj0x7y10zjxiW3V1yXyxkgVp
+    Tab.....: Conferência
+    '''
+
+    kwa = _kwa_solve()
+    tab = {}
+
+    kwa['insertions'] = _ins_solve()
+
+    # Juros, correção monetária, amortização e valor bruto.
+    tab[1] = '206280.83', '0.00', '0.00', '206280.83'  # Os juros consomem o bruto; a correção fica devida.
+    tab[2] = '132445.81', '62135.10', '20907.22', '215488.13'  # Recolhe a correção diferida do trecho anterior.
+    tab[3] = '46701.85', '16055.79', '337903.51', '400661.15'
+    tab[4] = '96753.72', '61322.06', '878177.97', '1036253.75'
+    tab[5] = '12271.44', '6763.11', '195747.26', '214781.80'
+    tab[6] = '17065.57', '8731.78', '177543.83', '203341.17'
+    tab[7] = '11396.21', '5619.94', '151555.28', '168571.43'
+    tab[8] = '3257.86', '1610.80', '55131.33', '60000.00'
+    tab[9] = '12633.45', '0.00', '0.00', '12633.45'  # De novo os juros consomem o bruto.
+    tab[10] = '471102.17', '3645.44', '2033033.60', '2507781.21'  # O pagamento final, em 07/01/2028.
+
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_bullet(**kwa)]
+
+    # Antes do laço, que indexa a tabela pela posição: se o cronograma crescer, a mensagem daqui é útil, e a de um
+    # "KeyError" na linha seguinte não seria.
+    #
+    assert len(sched) == len(kwa['insertions']) + 1  # Nove antecipações e o pagamento final.
+
+    for i, x in enumerate(sched, 1):
+        assert [x.gain, x.pla, x.amort, x.raw] == [decimal.Decimal(y) for y in tab[i]]
+
+def test_will_close_bullet_ipca_with_prepayments_on_a_zero_balance():
+    '''
+    Invariantes do cronograma da operação "Solve - CR Sênior". Ver "test_will_create_bullet_ipca_with_nine_prepayments".
+
+    Não asseveram valor nenhum, e é isso que os torna úteis: pegam a CLASSE do defeito, e não este caso. Antes da
+    correção do fator por trecho, o primeiro deles falhava — o cronograma fechava com saldo devedor negativo, porque a
+    correção recomposta a cada evento saía do saldo sem nunca ter entrado nele.
+
+    O terceiro é o teto de acumulação: a correção total não pode passar do que a série de índices permite sobre o
+    principal. De junho de 2025 a junho de 2026, com os negativos no piso zero, o IPCA acumula 5,01%; sobre os
+    3.850.000 do principal isso limita a correção a menos de 200 mil, e o saldo ainda cai ao longo da operação.
+    '''
+
+    kwa = _kwa_solve()
+
+    kwa['insertions'] = _ins_solve()
+
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_bullet(**kwa)]
+
+    assert sched[-1].bal == _0
+    assert sum(x.amort for x in sched) == kwa['principal']
+    assert sum(x.pla for x in sched) < kwa['principal'] * decimal.Decimal('0.0501')
+
+def test_wont_move_bullet_ipca_without_prepayment():
+    '''
+    Operação "Solve - CR Sênior" sem antecipação nenhuma. Ver "test_will_create_bullet_ipca_with_nine_prepayments".
+
+    O caminho do defeito só é alcançado por uma inserção no cronograma, e este teste é a trava que prova que a
+    correção do fator por trecho não escapou para o fluxo regular: sem antecipação a entrada anterior ao pagamento é a
+    própria data zero, o acumulado nela é um, e o quociente não altera nada.
+    '''
+
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_bullet(**_kwa_solve())]
+
+    assert len(sched) == 1
+    assert [sched[0].gain, sched[0].pla, sched[0].amort, sched[0].raw] == [decimal.Decimal(x) for x in ('1728409.70', '192807.06', '3850000.00', '5771216.75')]
+
+def test_will_prorate_the_current_month_on_a_bullet_prepayment():
+    '''
+    Uma antecipação só, na operação "Solve - CR Sênior". Ver "test_will_create_bullet_ipca_with_nine_prepayments".
+
+    Com uma antecipação não há diferimento, logo não há composição de fatores a errar. O que muda aqui é outra coisa:
+    o mês em curso passa a entrar rateado por dias corridos, e não inteiro. Em 12/03/2026 o trecho desde a emissão
+    cobre oito meses cheios e cinco dias do nono, e é essa fração que separa este valor do anterior.
+
+    O teste existe para fixar esse efeito. Ele é deliberado, e é a convenção que a conferência aprovou.
+    '''
+
+    kwa = _kwa_solve()
+
+    kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2026, 3, 12), value=decimal.Decimal('400661.15'))]
+
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_bullet(**kwa)]
+
+    assert sched[0].pla == decimal.Decimal('2316.79')
+    assert sched[0].amort == _0  # Juros e correção consomem o bruto inteiro.
+    assert sched[-1].bal == _0
+
+def test_wont_move_the_total_price_level_adjustment_with_a_token_prepayment():
+    '''
+    Costura entre os dois extremos de um trecho, na operação "Solve - CR Sênior". Ver
+    "test_will_create_bullet_ipca_with_nine_prepayments".
+
+    Uma antecipação de um centavo não move o saldo devedor, logo não pode mover a correção monetária total do
+    cronograma. O que ela move é a fronteira: o pagamento seguinte passa a cobrar o trecho a partir dela. Se os dois
+    lados dessa fronteira forem medidos de formas diferentes — meses cheios num, dias corridos no outro — sobra uma
+    fatia de índice mensal cobrada duas vezes, ou nenhuma, com o sinal decidido pelo dia do mês em que a antecipação
+    cai. Ver "[FRONTEIRA-COMUM]".
+
+    Por isso as três posições: aniversário, meio do período, e véspera do aniversário seguinte. É teste de
+    invariante, sem valor de referência, e é isso que o torna útil — pega a CLASSE do defeito, não este caso. Os
+    demais casos desta operação não o pegam: o mês fracionário dela cai num índice no piso zero, e passam tanto com
+    a fronteira comum quanto sem ela.
+    '''
+
+    kwa = _kwa_solve()
+    ref = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_bullet(**kwa)]
+    tot = sum(x.pla for x in ref)
+
+    for dia in (datetime.date(2026, 3, 7), datetime.date(2026, 3, 22), datetime.date(2026, 4, 6)):
+        kwa = _kwa_solve()
+
+        kwa['insertions'] = [fincore.Amortization.Bare(date=dia, value=decimal.Decimal('0.01'))]
+
+        sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_bullet(**kwa)]
+
+        assert sum(x.pla for x in sched) == tot
+        assert sched[-1].bal == _0
+
+def test_wont_depend_on_a_backend_that_pads_the_index_series():
+    '''
+    O cálculo não pode mudar porque o backend completa a série de índices, ou não completa.
+
+    "calculate_ipca_factor" aplica o "ratio" ao último item que a série DEVOLVEU, e não ao mês da posição "period". O
+    "InMemoryBackend" completa a série até o fim da janela, com meses zerados, e ali o expoente é inócuo. Os backends
+    de produção devolvem só o que o BACEN publicou, e ali o expoente cai sobre o último mês PUBLICADO, que é devido
+    por inteiro. No aniversário a fração corrida é zero, então aquele mês entraria elevado a zero e desapareceria: o
+    acumulado andaria PARA TRÁS, e quitar no dia do aniversário sairia mais barato que na véspera. Ver
+    "[RATIO-ULTIMO-ITEM]".
+
+    As três datas cercam a janela de exposição, que vai do aniversário até o BACEN publicar. A memória desta operação
+    termina em junho de 2026 e o aniversário é dia 7, então 06/08 está fora e 07/08 e 20/08 estão dentro. Sem a
+    separação entre meses fechados e mês em curso, o bruto do pagamento final divergia entre os dois backends em
+    1.317,54, e em 788,46 no meio do mês.
+
+    A asserção é a IGUALDADE entre os dois backends, e não um valor de referência: o que se fixa aqui é que a
+    biblioteca não depende do preenchimento, e um número de referência não diria isso.
+    '''
+
+    for dia in (datetime.date(2026, 8, 6), datetime.date(2026, 8, 7), datetime.date(2026, 8, 20)):
+        out = []
+
+        for backend in (_RicherIpcaBackend(), _UnpaddedIpcaBackend()):
+            kwa = _kwa_solve()
+
+            kwa['vir'] = fincore.VariableIndex('IPCA', backend=backend)
+            kwa['insertions'] = [fincore.Amortization.Bare(date=dia, value=decimal.Decimal('0.01'))]
+
+            sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_bullet(**kwa)]
+
+            out.append([sched[-1].raw, sum(x.pla for x in sched), sched[-1].bal])
+
+        assert out[0] == out[1]
 
 def test_will_accrue_interest_over_deferred_price_level_adjustment():
     '''
