@@ -2908,6 +2908,127 @@ def test_will_settle_debt_with_max_value_prepayment_after_deferral():
     assert [sched[-1].gain, sched[-1].pla] == [decimal.Decimal(y) for y in ('3660.90', '6605.58')]
 
     assert sum(x.amort for x in sched) == kwa['principal']
+
+def _kwa_encaixada():
+    '''
+    Fluxo mensal de 24 meses com a janela de correção ENCAIXADA – base constante, período crescendo de um em um.
+
+    É o que "preprocess_jm" monta com "amortizes_correction" falso: a correção não é liquidada mês a mês, acumula no
+    saldo devedor e sai inteira no último pagamento. Ver "[JANELAS-ENCAIXADAS]".
+    '''
+
+    return {
+        'principal': decimal.Decimal('1000000'),
+        'apy': decimal.Decimal('12'),
+        'zero_date': datetime.date(2023, 1, 10),
+        'term': 24,
+        'vir': fincore.VariableIndex(code='IPCA', backend=_RicherIpcaBackend()),
+        'amortizes_correction': False
+    }
+
+def _ins_encaixada():
+    lst = [(datetime.date(2023, 6, 20), '50000'), (datetime.date(2023, 11, 15), '50000'), (datetime.date(2024, 5, 5), '50000')]
+
+    return [fincore.Amortization.Bare(date=x, value=decimal.Decimal(y)) for x, y in lst]
+
+def test_will_reproduce_the_nested_window_by_composing_stretches():
+    '''
+    Sem antecipação, compor os trechos reproduz a janela encaixada ao centavo.
+
+    A janela encaixada passou a ser lida UM MÊS POR VEZ, o último da janela, e o acumulado é reconstruído pelo
+    produto dos trechos que os pagamentos anteriores foram compondo. Este caso é o que prova que a reconstrução é
+    exata, e não uma aproximação: o total tem de ser o mesmo de antes da mudança, quando a janela inteira era relida
+    a cada pagamento. Ver "[JANELAS-ENCAIXADAS]".
+
+    O piso de zero por mês continua dentro de "calculate_ipca_factor", então nenhum mês negativo escapa por ser lido
+    isolado – a memória deste backend tem agosto de 2025 em −0,11%.
+    '''
+
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**_kwa_encaixada())]
+
+    assert sum(x.pla for x in sched) == decimal.Decimal('98946.55')
+    assert sum(x.amort for x in sched) == _kwa_encaixada()['principal']
+    assert sched[-1].bal == _0
+
+def test_wont_compose_nested_price_level_windows():
+    '''
+    Antecipação numa janela ENCAIXADA não pode multiplicar acumulados.
+
+    Cada pagamento relia a série inteira desde a base, e o mecanismo de diferimento compunha a janela da antecipação
+    com a do pagamento seguinte – duas leituras da MESMA história, multiplicadas. Com três antecipações a correção
+    total chegava a 247.081,22 contra as 98.946,55 do mesmo cronograma sem nenhuma.
+
+    A asserção é de invariante, sem valor de referência, e é o que a torna útil: a antecipação DERRUBA o saldo
+    devedor, então menos correção acumula, e o total tem de ficar ABAIXO do cronograma sem antecipação. Um total
+    acima daquele teto denuncia a classe do defeito, qualquer que seja a aritmética.
+    '''
+
+    kwa = _kwa_encaixada()
+    teto = sum(t.cast(fincore.PriceAdjustedPayment, x).pla for x in fincore.build_jm(**kwa))
+
+    kwa['insertions'] = _ins_encaixada()
+
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build_jm(**kwa)]
+
+    assert sum(x.pla for x in sched) < teto
+    assert sum(x.amort for x in sched) == kwa['principal']
+    assert sched[-1].bal == _0
+
+@pytest.mark.enigmatic
+def test_will_report_negative_price_level_adjustment_on_a_stepped_window():
+    '''
+    ⚠️ A janela em ESCADA com antecipação ainda erra, e este caso registra o quanto.
+
+    Base constante e período CONSTANTE ao longo de um bloco de pagamentos, saltando de doze em doze. É a geometria de
+    "test_will_create_livre_4", a ASAD Energia, conferida contra planilha – mas a planilha não tem antecipação, e é
+    por isso que os sete casos "livre" passam sem cobrir isto.
+
+    Com uma antecipação, a janela de doze meses é cobrada INTEIRA na data dela – 4.490,63 contra os 718,16 que o
+    pagamento do mês cobra –, e o pagamento seguinte recebe uma correção NEGATIVA de 3.019,29 para compensar. É o
+    mesmo defeito de composição de acumulados que "test_wont_compose_nested_price_level_windows" cobre na geometria
+    encaixada, e aqui ele segue aberto.
+
+    Por que não foi corrigido junto: a escada não é declarada por ninguém – "preprocess_livre" aceita o "pla" que o
+    chamador montou –, e "period > 1" não a separa da encaixada. Corrigi-la exige decidir o que uma taxa por período
+    deve cobrar quando o período é repartido, e para isso não há curva de referência aprovada. Ver
+    "[JANELAS-ENCAIXADAS]".
+
+    Os valores abaixo são CARACTERIZAÇÃO do defeito, não o resultado desejado. Quando o fix vier, este caso muda de
+    números e sai do "enigmatic".
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('145000')
+    kwa['apy'] = decimal.Decimal(10)
+    kwa['vir'] = fincore.VariableIndex('IPCA', backend=_RicherIpcaBackend())
+    kwa['amortizations'] = [fincore.Amortization(date=datetime.date(2022, 4, 5), amortizes_interest=False)]
+
+    for i in range(1, 25):
+        due = datetime.date(2022, 5, 5) + _MONTH * (i - 1)
+        pla = fincore.PriceLevelAdjustment('IPCA', base_date=datetime.date(2021, 7, 1), shift='AUTO', period=12 if i <= 12 else 24)
+
+        kwa['amortizations'].append(fincore.Amortization(date=due, amortization_ratio=decimal.Decimal(1) / 24, price_level_adjustment=pla))
+
+    ref = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build(**kwa)]
+
+    # Sem antecipação a taxa do período sai igual em todo pagamento do bloco de doze, e o total é o da planilha.
+    assert [ref[4].pla, ref[5].pla] == [decimal.Decimal('718.16')] * 2
+
+    kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 9, 20), value=decimal.Decimal('5000'))]
+
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in fincore.build(**kwa)]
+
+    # Com ela, a antecipação de 20/09 cobra a janela de doze meses INTEIRA, e o pagamento de 05/10 recebe o negativo
+    # que a compensa. Nenhum dos dois é o valor devido; é a composição de dois acumulados aparecendo.
+    #
+    assert sched[5].date == kwa['insertions'][0].date
+    assert sched[5].pla == decimal.Decimal('4490.63')
+    assert sched[6].pla == decimal.Decimal('-3019.29')
+
+    # O principal e o saldo, esses fecham – o defeito é de decomposição, e some no total.
+    assert sum(x.amort for x in sched) == sum(x.amort for x in ref)
+    assert sched[-1].bal == _0
 # }}}
 
 # 🎭 Juros Mensais vandalizadas. {{{
