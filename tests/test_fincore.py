@@ -3956,6 +3956,53 @@ def test_will_create_livre_6b(calc_date):
 
     assert i == len(tab2)
 
+@pytest.mark.parametrize('factory', [fincore.build_jm, fincore.build_price])
+def test_wont_charge_negative_interest_past_the_calculation_date(factory):
+    '''
+    O "runaway" acrescenta as parcelas posteriores à data de cálculo, e não altera o que já foi apurado até ela.
+
+    Uma parcela inteiramente posterior à data de cálculo não tem fator a calcular: "due" é a data de cálculo, de modo
+    que o "DCP" do trecho sairia negativo, e com ele o fator de spread ficaria abaixo de um. A parcela é emitida com
+    juro zero, que é o que a 4.12.1 fazia ao não executar a fase B.0 nesses períodos.
+
+    Medido na 4.13.2 e na 4.13.3, sobre este mesmo cronograma: Juros mensais acumulava -26.390,31 de juros, contra os
+    3.288,34 do fluxo apurado, e Price acumulava -5.284,79 contra 2.956,76. O Bullet não é atingido porque só tem dois
+    pontos no cronograma – não existe período inteiramente posterior à data de cálculo.
+
+    O único consumidor de "runaway" na plataforma é o relatório 3040 do BACEN.
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal(100000)
+    kwa['apy'] = decimal.Decimal(12)
+    kwa['zero_date'] = datetime.date(2026, 1, 1)
+    kwa['term'] = 12
+
+    calc = datetime.date(2026, 4, 15)
+
+    tab1 = list(factory(calc_date=fincore.CalcDate(value=calc, runaway=False), **kwa))
+    tab2 = list(factory(calc_date=fincore.CalcDate(value=calc, runaway=True), **kwa))
+
+    # O cronograma completo alcança o termo; o truncado para na data de cálculo.
+    assert len(tab1) == 4
+    assert len(tab2) == kwa['term']
+
+    # Nenhuma parcela cobra juro negativo.
+    assert all(x.gain >= 0 for x in tab2)
+
+    # As parcelas que só existem por causa do "runaway" saem com juro zero. A última do cronograma truncado não entra:
+    # ela vence depois da data de cálculo, mas cobre o trecho que vai até ela.
+    assert all(x.gain == 0 for x in tab2[len(tab1):])
+
+    # E o juro apurado até a data de cálculo é o mesmo nos dois modos.
+    assert [x.gain for x in tab2[:len(tab1)]] == [x.gain for x in tab1]
+    assert sum(x.gain for x in tab2) == sum(x.gain for x in tab1)
+
+    # O principal fecha – a um centavo, que é o arredondamento da parcela constante do Price –, e o saldo zera no termo.
+    assert abs(sum(x.amort for x in tab2) - kwa['principal']) <= decimal.Decimal('0.01')
+    assert tab2[-1].bal == 0
+
 def test_will_create_livre_7():
     '''
     Operação Resolvvi, primeiro e segundo pagamentos.
