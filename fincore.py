@@ -1763,7 +1763,16 @@ def get_payments_table(
         #
         #  • Calculates FS for post fixed index (CDI, Brazilian Savings etc).
         #
-        if not vir and capitalisation == '360':  # Bullet.
+        # A period entirely after the calculation date only reaches this phase under "runaway", and it has no factors
+        # to compute. "Due" is the calculation date there, so the "DCP" of the stretch comes out negative, and with it
+        # a spread factor below one – interest below zero. The period is emitted with the neutral factors above, which
+        # is what this routine did before the phases were flattened: the guard that wrapped this phase did not consult
+        # "runaway", while the ones of phases B.1 and B.2 did.
+        #
+        if ent0.date >= calc_date.value and ent1.date > calc_date.value:
+            pass
+
+        elif not vir and capitalisation == '360':  # Bullet.
             f_s = calculate_interest_factor(apy, decimal.Decimal((due - ent0.date).days) / decimal.Decimal(360))
 
         elif not vir and capitalisation == '365':  # Bullet in legacy mode.
