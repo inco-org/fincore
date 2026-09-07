@@ -688,6 +688,27 @@ class PriceLevelAdjustment:
 
       5. A boolean flag indicating forcing monetary correction over the period's balance, even if there is no principal
          amortization.
+
+      6. A boolean flag declaring that the windows of consecutive payments are NESTED, and not disjoint. Only the
+      caller knows this, and the same large period can mean opposite things – hence the declaration. Three shapes
+      exist, and an advancement falling between two payments has to be treated differently in each.
+
+        ▪︎ SLIDING. The base date walks with the payment and the period is one, so each payment consumes exactly one
+          month. That partition is disjoint, and an advancement splits the month with its successor by the ratio.
+          It is what "preprocess_jm" builds by default.
+
+        ▪︎ NESTED. The base date is constant and the period grows by one per payment, so payment N re-reads the very
+          same series that payment N-1 read, one month longer. The windows are not a partition, and composing two of
+          them counts the history twice. It is what "preprocess_jm" builds with "amortizes_correction" false. This
+          is the flag's case.
+
+        ▪︎ STEPPED. The base date is constant and the period is constant across a block of payments, jumping in
+          steps. The window is then a RATE applied per period rather than an accumulation being consumed, and
+          composing it is correct – an advancement and its successor each take their share of the same rate. Free
+          schedules configured this way behave so, and a reference case pins it.
+
+        The period alone cannot tell NESTED from STEPPED: both carry a period greater than one, and the right answer
+        is opposite in each.
     '''
 
     code: _PL_INDEX
@@ -700,6 +721,10 @@ class PriceLevelAdjustment:
 
     # This flag forces the monetary correction over the period's balance to be settled, if that period has no principal amortization.
     amortizes_adjustment: bool = True
+
+    # Declares that consecutive windows are NESTED: same base, period growing by one per regular payment. Defaults to
+    # false, which keeps the sliding and the stepped shapes reading their whole window, as they must.
+    accumulates: bool = False
 
 @dataclasses.dataclass
 class Amortization:
@@ -1937,12 +1962,32 @@ def get_payments_table(
                 # succeeds it. The index of the month ends up split between the two events by the "ratio", each
                 # one correcting the balance in force over its own period.
                 #
+                # [JANELAS-ENCAIXADAS]
+                #
+                # Inheriting the window only partitions the indexes when consecutive windows are DISJOINT, which is
+                # the sliding shape, of one month each, and the stepped shape, where the window is a rate applied per
+                # period. On the NESTED shape – constant base, period growing by one per payment – payment N re-reads
+                # the very series that payment N-1 read, and the deferral mechanism of phase B.1 would compose two
+                # accumulations, counting the history twice, three times, as many times as there are advancements.
+                #
+                # So a nested window is read ONE MONTH AT A TIME here, the last of the window, and the accumulation is
+                # rebuilt by composing those stretches – which is what the deferral mechanism was always for. Refer to
+                # "PriceLevelAdjustment", where the three shapes are described, and to the composition below, in the
+                # branch of a regular payment that settles nothing.
+                #
+                # The period cannot be the discriminator: nested and stepped both carry a period greater than one, and
+                # the right answer is opposite in each. Only the caller knows which it built, hence "pla.accumulates".
+                #
+                # And reading one month at a time is safe against a backend that does not pad the index series, for
+                # free: with a period of one the ratio falls on that single month, so the month the exponent lands on
+                # and the month it is meant for are the same by construction. See "[RATIO-ULTIMO-ITEM]".
+                #
                 if type(ent1) is Amortization:
                     pla = t.cast(PriceLevelAdjustment, ent1.price_level_adjustment)
                     kwc: t.Dict[str, t.Any] = {}
 
-                    kwc['base'] = pla.base_date
-                    kwc['period'] = pla.period
+                    kwc['base'] = pla.base_date + (_MONTH * (pla.period - 1)) if pla.accumulates else pla.base_date
+                    kwc['period'] = 1 if pla.accumulates else pla.period
                     kwc['shift'] = pla.shift
                     kwc['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)
 
@@ -1975,8 +2020,8 @@ def get_payments_table(
                         pla = t.cast(PriceLevelAdjustment, nxt.price_level_adjustment)
                         kwd: t.Dict[str, t.Any] = {}
 
-                        kwd['base'] = pla.base_date
-                        kwd['period'] = pla.period
+                        kwd['base'] = pla.base_date + (_MONTH * (pla.period - 1)) if pla.accumulates else pla.base_date
+                        kwd['period'] = 1 if pla.accumulates else pla.period
                         kwd['shift'] = pla.shift
                         kwd['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)
 
@@ -2196,6 +2241,14 @@ def get_payments_table(
                     regs.correction.deferred_factor = _1
                     regs.correction.settled = _0
                     regs.correction.locked = _0
+
+                # A payment of a NESTED window that settles nothing – no principal amortised, and the adjustment not
+                # due yet. Its stretch has to be composed into the deferred factor, or the accumulation would be lost:
+                # a nested window is read one month at a time above, so the history only exists as the product of the
+                # stretches already run. See "[JANELAS-ENCAIXADAS]".
+                #
+                elif pla and pla.accumulates:
+                    regs.correction.deferred_factor = regs.correction.deferred_factor * f_c.value
 
                 pmt.raw = pmt.raw + pmt.pla
                 pmt.tax = _0 if tax_exempt else pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
@@ -3322,6 +3375,11 @@ def preprocess_jm(
             ent.price_level_adjustment.base_date = anniversary_date.replace(day=1) if anniversary_date else zero_date.replace(day=1) + _MONTH
             ent.price_level_adjustment.period = i
             ent.price_level_adjustment.amortizes_adjustment = i == term
+
+            # Constant base and a period growing by one per payment is the NESTED shape. Declaring it is what lets an
+            # advancement charge its own stretch instead of the whole accumulation. See "[JANELAS-ENCAIXADAS]".
+            #
+            ent.price_level_adjustment.accumulates = True
 
         lst.append(ent)
 
