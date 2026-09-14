@@ -7248,6 +7248,225 @@ def test_will_match_payments_table_and_daily_returns_7():
 
     assert sched[-1].raw == next(_tail(1, iter(drs.values()))).bal
     assert sum(x.amort for x in sched) == kwa['principal']
+
+def test_will_match_payments_table_and_daily_returns_8():
+    '''
+    Correção monetária anual, com data-base deslocada, sobre a estrutura da operação "ASAD Energia", Livre - 60 meses -
+    IPCA, ID "SVRiaMgBDmhcjFhQTpvD5".
+
+    O cronograma repete a mesma janela cumulativa de correção nas doze parcelas de cada ano – "period" 12 nas parcelas
+    5 a 16, 24 nas 17 a 28, e assim por diante, todas sobre a data-base de 01/07/2021 – e as quatro primeiras não
+    corrigem. A forma é legítima, e foi conferida contra planilha de referência em 29/07/2025:
+
+      http://inco1.slack.com/archives/C0103FS2CH4/p1753793773360899
+
+    O que o motor diário devia manter, e não mantinha, é a simetria com o cronograma. "DailyReturn.value" soma, no
+    período, para "Payment.gain"; por construção "PriceAdjustedDailyReturn.pla" tem de somar para
+    "PriceAdjustedPayment.pla". Compondo "pla" sobre o principal em aberto inteiro, em vez da fatia que o período
+    amortiza, o diário rendia a correção de um ano inteiro doze vezes – o fator é renormalizado a cada amortização,
+    então a distorção se repetia todo período em vez de se diluir. Na parcela 5 o diário somava 17.549,72 contra os
+    1.457,68 do cronograma, e a operação inteira 801.177,01 contra 75.587,13.
+
+    Os sete testes acima comparam só o ponto final, e nenhum corrige anualmente – por isso a divergência atravessou a
+    suíte. Este compara período a período.
+    '''
+
+    kwa = {}
+    lst: t.List[fincore.Amortization | fincore.Amortization.Bare] = [fincore.Amortization(date=datetime.date(2022, 4, 5), amortizes_interest=False)]
+
+    # Cronograma Price: a fração amortizada cresce à taxa mensal, e as sessenta somam um. A última absorve o resíduo
+    # de arredondamento, para que a soma feche exatamente.
+    #
+    fac = fincore.calculate_interest_factor(decimal.Decimal('10'), _1 / decimal.Decimal('12'))
+    pct = [(fac - _1) / (fac ** decimal.Decimal('60') - _1) * fac ** decimal.Decimal(i) for i in range(60)]
+
+    pct[-1] = _1 - sum(pct[:-1])
+
+    for i in range(1, 61):
+        ent = fincore.Amortization(date=datetime.date(2022, 4, 5) + _MONTH * i, amortization_ratio=pct[i - 1], amortizes_interest=True)
+
+        # A correção entra na quinta parcela, e a janela cresce doze meses a cada doze parcelas.
+        if i >= 5:
+            ent.price_level_adjustment = fincore.PriceLevelAdjustment('IPCA')
+            ent.price_level_adjustment.base_date = datetime.date(2021, 7, 1)
+            ent.price_level_adjustment.period = 12 * ((i - 5) // 12 + 1)
+            ent.price_level_adjustment.shift = 'AUTO'
+            ent.price_level_adjustment.amortizes_adjustment = True
+
+        lst.append(ent)
+
+    kwa['principal'] = decimal.Decimal('145000')
+    kwa['apy'] = decimal.Decimal('10')
+    kwa['amortizations'] = lst
+    kwa['vir'] = fincore.VariableIndex(code='IPCA', backend=_RicherIpcaBackend())
+
+    sched = t.cast(t.List[fincore.PriceAdjustedPayment], list(fincore.build(**kwa)))
+    dias = collections.defaultdict(list)
+
+    for drt in fincore.get_livre_daily_returns(**kwa):
+        dias[drt.period].append(t.cast(fincore.PriceAdjustedDailyReturn, drt))
+
+    # A soma dos rendimentos diários de um período é o que o pagamento que o fecha remunera: juros mais correção. A
+    # tolerância acomoda o arredondamento diário, que o cronograma faz uma vez só, no fim do período.
+    #
+    for num, pmt in enumerate(sched, 1):
+        assert abs(sum(x.value for x in dias[num]) - pmt.gain) <= _CENTI * 30
+        assert abs(sum(x.pla for x in dias[num]) - pmt.pla) <= _CENTI * 30
+
+    # Nas quatro primeiras parcelas não há correção, e o diário é só juros.
+    assert all(x.pla == _0 for num in range(1, 5) for x in dias[num])
+
+    # E a correção não vaza para a amortização: o principal fecha, a menos do arredondamento das sessenta parcelas.
+    assert abs(sum(x.amort for x in sched) - kwa['principal']) <= _CENTI * 5
+
+@pytest.mark.parametrize('amortizes_correction', [True, False])
+def test_will_match_payments_table_and_daily_returns_9(amortizes_correction):
+    '''
+    Correção monetária em Juros mensais, sobre a estrutura da operação "YUCA SPE V", Juros mensais - 30 meses - IPCA,
+    ID "cmQFTXLsEB6Bg7Zlae1pV".
+
+    Par do teste acima, para o outro ramo da correção no motor diário. Em Juros mensais não há amortização de principal
+    nos períodos intermediários, então a correção monta sobre o saldo devedor, e não sobre fatia amortizada alguma. São
+    os dois modos de "preprocess_jm":
+
+      • "amortizes_correction" verdadeiro, o formato de Plano Empresário decidido em outubro de 2024, em que todo
+        período liquida a correção do mês – "period" um e "amortizes_adjustment" verdadeiro em todas as entradas;
+
+      • "amortizes_correction" falso, o legado, em que a correção acumula no saldo e só a última parcela a liquida.
+
+    A invariante é a mesma nos dois: a soma dos rendimentos diários de um período é o que o pagamento que o fecha
+    remunera. Nos períodos que não liquidam correção ela é zero, e o diário é só juros.
+
+    Especificado na thread "Ajustes Motor IPCA", de outubro de 2024:
+
+      http://inco1.slack.com/archives/C0103FS2CH4/p1728317663655909
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('1844500')
+    kwa['apy'] = decimal.Decimal(7)
+    kwa['zero_date'] = datetime.date(2022, 2, 18)
+    kwa['term'] = 30
+    kwa['anniversary_date'] = datetime.date(2022, 4, 5)
+    kwa['vir'] = fincore.VariableIndex(code='IPCA', backend=_RicherIpcaBackend())
+    kwa['amortizes_correction'] = amortizes_correction
+
+    sched = t.cast(t.List[fincore.PriceAdjustedPayment], list(fincore.build_jm(**kwa)))
+    dias = collections.defaultdict(list)
+
+    for drt in fincore.get_jm_daily_returns(**kwa):
+        dias[drt.period].append(t.cast(fincore.PriceAdjustedDailyReturn, drt))
+
+    for num, pmt in enumerate(sched, 1):
+        assert abs(sum(x.value for x in dias[num]) - pmt.gain) <= _CENTI * 30
+        assert abs(sum(x.pla for x in dias[num]) - pmt.pla) <= _CENTI * 30
+
+    # No legado a correção fica toda na última parcela, e as anteriores não rendem correção nenhuma.
+    if not amortizes_correction:
+        assert all(x.pla == _0 for num in range(1, len(sched)) for x in dias[num])
+        assert sched[-1].pla > _0
+
+def test_will_match_payments_table_and_daily_returns_10():
+    '''
+    Correção monetária em Bullet indexado ao IPCA.
+
+    Terceiro e último ramo da correção no motor diário. O Bullet tem uma amortização só, de cem por cento do
+    principal, no vencimento – logo a fatia amortizada e o saldo devedor coincidem, e os dois ramos do "dr.pla" dão o
+    mesmo número. O teste existe para prender essa coincidência: ela é o que mantém o Bullet fora do alcance da
+    mudança, e nenhum teste olhava o "pla" diário fora do Juros mensais.
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('176000')
+    kwa['apy'] = decimal.Decimal('10')
+    kwa['zero_date'] = datetime.date(2022, 10, 24)
+    kwa['term'] = 24
+    kwa['vir'] = fincore.VariableIndex(code='IPCA', backend=_RicherIpcaBackend())
+
+    sched = t.cast(t.List[fincore.PriceAdjustedPayment], list(fincore.build_bullet(**kwa)))
+    dias = collections.defaultdict(list)
+
+    for drt in fincore.get_bullet_daily_returns(**kwa):
+        dias[drt.period].append(t.cast(fincore.PriceAdjustedDailyReturn, drt))
+
+    for num, pmt in enumerate(sched, 1):
+        assert abs(sum(x.value for x in dias[num]) - pmt.gain) <= _CENTI * 30
+        assert abs(sum(x.pla for x in dias[num]) - pmt.pla) <= _CENTI * 30
+
+    assert len(sched) == 1
+    assert sched[0].pla > _0
+
+@pytest.mark.parametrize('amortizes_interest', [True, False])
+def test_will_match_payments_table_and_daily_returns_11(amortizes_interest):
+    '''
+    Correção monetária de uma antecipação, sobre a estrutura da operação "YUCA SPE V".
+
+    Uma antecipação entra no cronograma como "Amortization.Bare", e o "get_payments_table" lhe entrega, em
+    "pmt.pla", a correção que ela liquida — o "v02" da fase B.2, limitado pelo que sobra do valor depois dos juros.
+    O trecho que leva até ela, portanto, acrua sobre o saldo devedor.
+
+    As duas ordens de imputação da fase B.2 são exercitadas. Com "amortizes_interest", a antecipação paga juros,
+    correção e principal nessa ordem, e o que faltar da correção fica diferido. Sem, o valor vai inteiro ao
+    principal, e a correção do período fica travada em "regs.correction.locked" para o pagamento regular seguinte
+    recolher.
+
+    Nenhum dos casos acima cobre antecipação, e foi por aí que uma primeira versão desta correção passou a zerar a
+    correção dos dias que antecedem uma, subcontando o rendimento diário de três operações da base — duas de Juros
+    mensais e uma Bullet de fluxo irregular, todas com antecipação.
+
+    ESCOPO: o caso roda no modo mensal, o "amortizes_correction" verdadeiro que é o padrão de "preprocess_jm" e o
+    único que a Plataforma usa – "cron._get_daily_returns" nunca passa o parâmetro. Antecipação sobre GEOMETRIA
+    ACUMULADA, isto é, janelas aninhadas partindo da emissão, fica deliberadamente de fora: é o território do FIXME
+    de "get_payments_table", que compõe duas acumulações e conta a história uma vez por antecipação. Nessa
+    combinação os dois motores erram, o do cronograma inclusive, e nenhum dos dois fecha contra o outro. Medido num
+    fluxo Livre sintético de 24 parcelas com "period = i" e uma antecipação, a divergência cai de 131.946,68 para
+    3.783,46 com esta correção, mas não vai a zero. Fechá-la é o mesmo quociente de acumulações que aquele FIXME
+    reserva para mudança própria.
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('1844500')
+    kwa['apy'] = decimal.Decimal(7)
+    kwa['zero_date'] = datetime.date(2022, 2, 18)
+    kwa['term'] = 30
+    kwa['anniversary_date'] = datetime.date(2022, 4, 5)
+    kwa['vir'] = fincore.VariableIndex(code='IPCA', backend=_RicherIpcaBackend())
+    kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 4, 20), value=decimal.Decimal('5000'), amortizes_interest=amortizes_interest)]
+
+    sched = t.cast(t.List[fincore.PriceAdjustedPayment], list(fincore.build_jm(**kwa)))
+    dias = [t.cast(fincore.PriceAdjustedDailyReturn, x) for x in fincore.get_jm_daily_returns(**kwa)]
+    due = kwa['insertions'][0].date
+
+    # A antecipação está no fluxo, e é ela que distingue este caso do "test_..._9".
+    assert any(x.date == due for x in sched)
+
+    # A correção continua acruando nos dias que antecedem a antecipação. Zerá-los é o defeito que este caso prende:
+    # o trecho corrige o saldo em vigor, e a antecipação recolhe o que couber no que sobra do seu valor.
+    #
+    ant = [x for x in dias if x.date < due and x.date > kwa['anniversary_date']]
+
+    assert ant
+    assert all(x.pla > _0 for x in ant)
+
+    # A comparação é sobre o total, e não cumulativa a cada pagamento como nos casos acima: o período do motor
+    # diário só avança em amortização regular, então a antecipação e o pagamento regular que a sucede dividem um
+    # período, e a bijeção entre período e pagamento que os outros casos usam deixa de valer. A biblioteca também
+    # não fecha a correção pagamento a pagamento em torno de uma antecipação – isso antecede esta correção, e não é
+    # o que este caso mede.
+    #
+    # A folga é relativa, e não um centavo por entrada diária: naquele teto a deriva real deste fluxo ocupa 86% do
+    # orçamento, e o próximo ajuste de arredondamento deixaria o caso vermelho sem defeito novo. A deriva medida é
+    # de 0,003% do total, então um centésimo de por cento dá margem de três vezes sem esconder regressão.
+    #
+    tol = decimal.Decimal('0.0001')
+    c_gain = sum(x.gain for x in sched)
+    c_pla = sum(x.pla for x in sched)
+
+    assert abs(sum(x.value for x in dias) - c_gain) <= c_gain * tol
+    assert abs(sum(x.pla for x in dias) - c_pla) <= c_pla * tol
 # }}}
 
 # vi:fdm=marker:
