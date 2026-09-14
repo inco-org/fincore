@@ -3133,8 +3133,42 @@ def get_daily_returns(
 
         if vir and vir.code == 'IPCA':
             dr = t.cast(PriceAdjustedDailyReturn, dr)
-            v0 = get_principal_outstanding(facs.correction.prev_value) + regs.interest.deferred
-            v1 = get_principal_outstanding(facs.correction.value) + regs.interest.deferred
+
+            # Monetary correction of the entry.
+            #
+            # Mirrors the "pmt.pla" branches of "get_payments_table". The adjustment a period settles rides on the
+            # principal that the period amortises, so the daily entries have to accrue over that same slice, and not
+            # over the whole outstanding principal. A period that ends on an advancement, or that amortises nothing
+            # and is flagged to settle the adjustment, carries the adjustment of the entire balance instead.
+            #
+            # Accruing over the whole balance made "Σ dr.pla" of a period diverge from the "pmt.pla" of the payment
+            # that closes it, breaking the symmetry that "dr.value" keeps with "pmt.gain". The quotient between the
+            # two is the quotient between the amortised slice and the balance, and it does not wash out: the
+            # correction factor is renormalised at every amortization, so a schedule that repeats the same cumulative
+            # window over the twelve entries of a year accrued that year's correction twelve times, over the whole
+            # balance each time.
+            #
+            if type(tup[1]) is Amortization and tup[1].amortization_ratio:
+                adj = (_1 - regs.principal.amortization_ratio.adjusted) / (_1 - regs.principal.amortization_ratio.nominal)  # [FATOR-AJUSTE].
+                bse = principal * tup[1].amortization_ratio * adj
+
+                v0 = bse * (regs.correction.deferred_factor * facs.correction.prev_value - _1)
+                v1 = bse * (regs.correction.deferred_factor * facs.correction.value - _1)
+
+            # An advancement collects the adjustment of the balance in force, bounded by what is left of its value
+            # after the interest – the "v02" of phase B.2, which "get_payments_table" hands out as the "pmt.pla" of
+            # a Bare entry. The stretch that leads to it therefore accrues over the balance, like the branch below.
+            #
+            elif type(tup[1]) is Amortization.Bare:
+                v0 = calc_adjustment(facs.correction.prev_value)
+                v1 = calc_adjustment(facs.correction.value)
+
+            elif type(tup[1]) is Amortization and tup[1].price_level_adjustment and tup[1].price_level_adjustment.amortizes_adjustment:
+                v0 = calc_adjustment(facs.correction.prev_value)
+                v1 = calc_adjustment(facs.correction.value)
+
+            else:
+                v0 = v1 = _0
 
             dr.pla = _Q(v1 - v0)
 
