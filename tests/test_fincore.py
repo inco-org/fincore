@@ -116,12 +116,12 @@ class _RicherIpcaBackend(fincore.InMemoryBackend):
 
 class _UnpaddedIpcaBackend(_RicherIpcaBackend):
     '''
-    A mesma memória de índices do backend acima, mas SEM completar a série com zeros.
+    The same index memory as the backend above, but WITHOUT padding the series with zeros.
 
-    O "fincore.InMemoryBackend" completa a série até o fim da janela pedida, com meses zerados. Os backends de
-    produção não completam: devolvem só o que o BACEN publicou. Ver "util.finmore.MongoDbNamespaceCache" e
-    "util.finmore.LocalDirectoryBackend", no "web-services". Este backend reproduz o comportamento de produção, para
-    que a biblioteca não possa depender do preenchimento. Ver "[RATIO-ULTIMO-ITEM]" em "fincore._pl_cumulative".
+    "fincore.InMemoryBackend" pads the series up to the end of the requested window, with zeroed months. The production
+    backends do not: they return only what BACEN has published. Refer to "util.finmore.MongoDbNamespaceCache" and
+    "util.finmore.LocalDirectoryBackend", in "web-services". This backend reproduces the production behaviour, so that
+    the library cannot depend on the padding. Refer to "[RATIO-ULTIMO-ITEM]" in "fincore._pl_cumulative".
     '''
 
     def get_ipca_indexes(self, begin, end):
@@ -2492,14 +2492,14 @@ def test_will_create_american_ipca_3():
     # The upper bound is the month's adjustment with no prepayment at all: 0.16% on the six million.
     assert max(curva) < decimal.Decimal('9600')
 
-# Os casos de antecipação da operação "Solve - CR Sênior - Fluxo Irregular - 30 meses".
+# The prepayment cases of the operation "Solve - CR Sênior - Fluxo Irregular - 30 meses".
 #
-# Bullet, IPCA, capitalização diária em ano de 360 dias, com NOVE antecipações. É a operação que revelou que o fator
-# de correção de uma antecipação, neste caminho, era acumulado desde a emissão em vez de cobrir o trecho — e que o
-# mecanismo de diferimento, ao compor dois acumulados, contava a história duas vezes, três vezes, nove vezes.
+# Bullet, IPCA, daily capitalisation on a 360-day year, with NINE prepayments. It is the operation that revealed that
+# the price level factor of a prepayment, on this path, was accumulated since issuance instead of covering the stretch
+# – and that the deferral mechanism, by composing two accumulations, counted the history twice, three times, nine times.
 #
-# A série de índices do "_RicherIpcaBackend" cobre exatamente a memória de índices da operação, de junho de 2025 a
-# junho de 2026, inclusive o agosto de 2025 negativo, que entra no piso zero.
+# The index series of "_RicherIpcaBackend" covers exactly the index memory of the operation, from June 2025 to June
+# 2026, including the negative August 2025, which enters at the zero floor.
 #
 def _kwa_solve():
     kwa = {}
@@ -2511,7 +2511,7 @@ def _kwa_solve():
     kwa['anniversary_date'] = datetime.date(2028, 1, 7)
     kwa['capitalisation'] = '360'
     kwa['first_dct_rule'] = 'AUTO'
-    kwa['gain_output'] = 'settled'  # O modo que a plataforma usa: juros do período que a linha efetivamente liquida.
+    kwa['gain_output'] = 'settled'  # The mode the platform uses: interest of the period the row actually settles.
     kwa['vir'] = fincore.VariableIndex(code='IPCA', backend=_RicherIpcaBackend())
 
     return kwa
@@ -2529,20 +2529,21 @@ def _ins_solve():
 
 def test_will_create_bullet_ipca_with_nine_prepayments():
     '''
-    Operação "Solve - CR Sênior", Bullet - 30 meses - IPCA, com nove antecipações em ordem de imputação padrão.
+    Operation "Solve - CR Sênior", Bullet - 30 months - IPCA, with nine prepayments in the default imputation order.
 
-    Cada antecipação liquida primeiro os juros corridos, depois a correção do seu trecho, e só o resto abate
-    principal. Em 10/12/2025 e em 21/08/2026 os juros consomem o bruto inteiro: a correção fica devida, o fator é
-    diferido, e o pagamento seguinte o recolhe.
+    Each prepayment settles the running interest first, then the correction of its stretch, and only the remainder
+    amortizes principal. On 2025-12-10 and on 2026-08-21 the interest consumes the whole gross value: the correction
+    stays due, the factor is deferred, and the next payment collects it.
 
-    O fator de correção de cada antecipação cobre o TRECHO desde a entrada anterior, e não a acumulação desde a
-    emissão. É o que torna sólida a composição de fatores diferidos: compor dois acumulados conta a história duas
-    vezes. Antes desta correção, esta operação produzia R$ 1.073.174,06 de correção total, contra as poucas centenas
-    de milhares que a série de índices permite, e o cronograma fechava com saldo devedor NEGATIVO de R$ 55.737,79.
+    The price level factor of each prepayment covers the STRETCH since the previous entry, and not the accumulation
+    since issuance. That is what makes the composition of deferred factors sound: composing two accumulations counts
+    the history twice. Before this fix, this operation produced R$ 1,073,174.06 of total correction, against the few
+    hundred thousand the index series allows, and the schedule closed on a NEGATIVE outstanding balance of
+    R$ 55,737.79.
 
-    Os valores abaixo foram conferidos por uma implementação independente, que não chama esta biblioteca, e aprovados
-    pelo financeiro em 26/08/2026. Na mesma conferência confirmou-se que juros devidos e não pagos continuam
-    rendendo, junto do saldo — o que já era o comportamento desta biblioteca.
+    The values below were conferred by an independent implementation, which does not call this library, and approved
+    by the finance team on 2026-08-26. The same conference confirmed that interest due and unpaid keeps yielding,
+    along with the balance — which was already the behaviour of this library.
 
     Ref File: https://docs.google.com/spreadsheets/d/1gGMRFCArAj0x7y10zjxiW3V1yXyxkgVp
     Tab.....: Conferência
@@ -2553,39 +2554,41 @@ def test_will_create_bullet_ipca_with_nine_prepayments():
 
     kwa['insertions'] = _ins_solve()
 
-    # Juros, correção monetária, amortização e valor bruto.
-    tab[1] = '206280.83', '0.00', '0.00', '206280.83'  # Os juros consomem o bruto; a correção fica devida.
-    tab[2] = '132445.81', '62135.10', '20907.22', '215488.13'  # Recolhe a correção diferida do trecho anterior.
+    # Interest, price level adjustment, amortization and gross value.
+    tab[1] = '206280.83', '0.00', '0.00', '206280.83'  # The interest consumes the gross value; the correction stays due.
+    tab[2] = '132445.81', '62135.10', '20907.22', '215488.13'  # Collects the deferred correction of the previous stretch.
     tab[3] = '46701.85', '16055.79', '337903.51', '400661.15'
     tab[4] = '96753.72', '61322.06', '878177.97', '1036253.75'
     tab[5] = '12271.44', '6763.11', '195747.26', '214781.80'
     tab[6] = '17065.57', '8731.78', '177543.83', '203341.17'
     tab[7] = '11396.21', '5619.94', '151555.28', '168571.43'
     tab[8] = '3257.86', '1610.80', '55131.33', '60000.00'
-    tab[9] = '12633.45', '0.00', '0.00', '12633.45'  # De novo os juros consomem o bruto.
-    tab[10] = '471102.17', '3645.44', '2033033.60', '2507781.21'  # O pagamento final, em 07/01/2028.
+    tab[9] = '12633.45', '0.00', '0.00', '12633.45'  # Once again the interest consumes the gross value.
+    tab[10] = '471102.17', '3645.44', '2033033.60', '2507781.21'  # The final payment, on 2028-01-07.
 
     sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_bullet_payments(**kwa)]
 
-    # Antes do laço, que indexa a tabela pela posição: se o cronograma crescer, a mensagem daqui é útil, e a de um
-    # "KeyError" na linha seguinte não seria.
+    # Before the loop, which indexes the table by position: should the schedule grow, the message from here is useful,
+    # and that of a "KeyError" on the next line would not be.
     #
-    assert len(sched) == len(kwa['insertions']) + 1  # Nove antecipações e o pagamento final.
+    assert len(sched) == len(kwa['insertions']) + 1  # Nine prepayments and the final payment.
 
     for i, x in enumerate(sched, 1):
         assert [x.gain, x.pla, x.amort, x.raw] == [decimal.Decimal(y) for y in tab[i]]
 
 def test_will_close_bullet_ipca_with_prepayments_on_a_zero_balance():
     '''
-    Invariantes do cronograma da operação "Solve - CR Sênior". Ver "test_will_create_bullet_ipca_with_nine_prepayments".
+    Invariants of the schedule of the operation "Solve - CR Sênior". Refer to
+    "test_will_create_bullet_ipca_with_nine_prepayments".
 
-    Não asseveram valor nenhum, e é isso que os torna úteis: pegam a CLASSE do defeito, e não este caso. Antes da
-    correção do fator por trecho, o primeiro deles falhava — o cronograma fechava com saldo devedor negativo, porque a
-    correção recomposta a cada evento saía do saldo sem nunca ter entrado nele.
+    They assert no value at all, and that is what makes them useful: they catch the CLASS of the defect, and not this
+    case. Before the per-stretch factor fix, the first of them failed — the schedule closed on a negative outstanding
+    balance, because the correction recomposed at each event left the balance without ever having entered it.
 
-    O terceiro é o teto de acumulação: a correção total não pode passar do que a série de índices permite sobre o
-    principal. De junho de 2025 a junho de 2026, com os negativos no piso zero, o IPCA acumula 5,01%; sobre os
-    3.850.000 do principal isso limita a correção a menos de 200 mil, e o saldo ainda cai ao longo da operação.
+    The third one is the accumulation ceiling: the total correction cannot exceed what the index series allows on the
+    principal. From June 2025 to June 2026, with the negatives at the zero floor, IPCA accumulates 5.01%; on the
+    3,850,000 of principal that bounds the correction below 200 thousand, and the balance still falls along the
+    operation.
     '''
 
     kwa = _kwa_solve()
@@ -2600,11 +2603,11 @@ def test_will_close_bullet_ipca_with_prepayments_on_a_zero_balance():
 
 def test_wont_move_bullet_ipca_without_prepayment():
     '''
-    Operação "Solve - CR Sênior" sem antecipação nenhuma. Ver "test_will_create_bullet_ipca_with_nine_prepayments".
+    Operation "Solve - CR Sênior" with no prepayment at all. Refer to "test_will_create_bullet_ipca_with_nine_prepayments".
 
-    O caminho do defeito só é alcançado por uma inserção no cronograma, e este teste é a trava que prova que a
-    correção do fator por trecho não escapou para o fluxo regular: sem antecipação a entrada anterior ao pagamento é a
-    própria data zero, o acumulado nela é um, e o quociente não altera nada.
+    The path of the defect is only reached by an insertion in the schedule, and this test is the lock that proves the
+    per-stretch factor fix did not leak into the regular flow: with no prepayment the entry before the payment is the
+    zero date itself, the accumulation at it is one, and the quotient changes nothing.
     '''
 
     sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_bullet_payments(**_kwa_solve())]
@@ -2614,13 +2617,15 @@ def test_wont_move_bullet_ipca_without_prepayment():
 
 def test_will_prorate_the_current_month_on_a_bullet_prepayment():
     '''
-    Uma antecipação só, na operação "Solve - CR Sênior". Ver "test_will_create_bullet_ipca_with_nine_prepayments".
+    A single prepayment, on the operation "Solve - CR Sênior". Refer to
+    "test_will_create_bullet_ipca_with_nine_prepayments".
 
-    Com uma antecipação não há diferimento, logo não há composição de fatores a errar. O que muda aqui é outra coisa:
-    o mês em curso passa a entrar rateado por dias corridos, e não inteiro. Em 12/03/2026 o trecho desde a emissão
-    cobre oito meses cheios e cinco dias do nono, e é essa fração que separa este valor do anterior.
+    With one prepayment there is no deferral, hence no composition of factors to get wrong. What changes here is
+    something else: the month in progress now enters prorated by calendar days, and not in full. On 2026-03-12 the
+    stretch since issuance covers eight whole months and five days of the ninth, and it is that fraction that sets
+    this value apart from the previous one.
 
-    O teste existe para fixar esse efeito. Ele é deliberado, e é a convenção que a conferência aprovou.
+    The test exists to pin that effect. It is deliberate, and it is the convention the conference approved.
     '''
 
     kwa = _kwa_solve()
@@ -2630,34 +2635,34 @@ def test_will_prorate_the_current_month_on_a_bullet_prepayment():
     sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_bullet_payments(**kwa)]
 
     assert sched[0].pla == decimal.Decimal('2316.79')
-    assert sched[0].amort == _0  # Juros e correção consomem o bruto inteiro.
+    assert sched[0].amort == _0  # Interest and correction consume the whole gross value.
     assert sched[-1].bal == _0
 
 def test_wont_move_the_total_price_level_adjustment_with_a_token_prepayment():
     '''
-    Costura entre os dois extremos de um trecho, na operação "Solve - CR Sênior". Ver
+    Seam between the two ends of a stretch, on the operation "Solve - CR Sênior". Refer to
     "test_will_create_bullet_ipca_with_nine_prepayments".
 
-    Uma antecipação de um centavo não move o saldo devedor, logo não pode mover a correção monetária total do
-    cronograma. O que ela move é a fronteira: o pagamento seguinte passa a cobrar o trecho a partir dela. Se os dois
-    lados dessa fronteira forem medidos de formas diferentes — meses cheios num, dias corridos no outro — sobra uma
-    fatia de índice mensal cobrada duas vezes, ou nenhuma, com o sinal decidido pelo dia do mês em que a antecipação
-    cai. Ver "[FRONTEIRA-COMUM]".
+    A prepayment of one cent does not move the outstanding balance, so it cannot move the total price level adjustment
+    of the schedule. What it moves is the boundary: the next payment now charges the stretch from it. Should the two
+    sides of that boundary be measured differently — whole months on one, calendar days on the other — a slice of a
+    monthly index is charged twice, or not at all, with the sign decided by the day of the month the prepayment falls
+    on. Refer to "[FRONTEIRA-COMUM]".
 
-    Por isso as três posições: aniversário, meio do período, e véspera do aniversário seguinte. É teste de
-    invariante, sem valor de referência, e é isso que o torna útil — pega a CLASSE do defeito, não este caso. Os
-    demais casos desta operação não o pegam: o mês fracionário dela cai num índice no piso zero, e passam tanto com
-    a fronteira comum quanto sem ela.
+    Hence the three positions: anniversary, mid-period, and the eve of the next anniversary. It is an invariant test,
+    with no reference value, and that is what makes it useful — it catches the CLASS of the defect, not this case. The
+    other cases of this operation do not catch it: its fractional month falls on an index at the zero floor, and they
+    pass with the common boundary as well as without it.
     '''
 
     kwa = _kwa_solve()
     ref = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_bullet_payments(**kwa)]
     tot = sum(x.pla for x in ref)
 
-    for dia in (datetime.date(2026, 3, 7), datetime.date(2026, 3, 22), datetime.date(2026, 4, 6)):
+    for day in (datetime.date(2026, 3, 7), datetime.date(2026, 3, 22), datetime.date(2026, 4, 6)):
         kwa = _kwa_solve()
 
-        kwa['insertions'] = [fincore.Amortization.Bare(date=dia, value=decimal.Decimal('0.01'))]
+        kwa['insertions'] = [fincore.Amortization.Bare(date=day, value=decimal.Decimal('0.01'))]
 
         sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_bullet_payments(**kwa)]
 
@@ -2666,32 +2671,32 @@ def test_wont_move_the_total_price_level_adjustment_with_a_token_prepayment():
 
 def test_wont_depend_on_a_backend_that_pads_the_index_series():
     '''
-    O cálculo não pode mudar porque o backend completa a série de índices, ou não completa.
+    The calculation cannot change because the backend pads the index series, or does not.
 
-    "calculate_ipca_factor" aplica o "ratio" ao último item que a série DEVOLVEU, e não ao mês da posição "period". O
-    "InMemoryBackend" completa a série até o fim da janela, com meses zerados, e ali o expoente é inócuo. Os backends
-    de produção devolvem só o que o BACEN publicou, e ali o expoente cai sobre o último mês PUBLICADO, que é devido
-    por inteiro. No aniversário a fração corrida é zero, então aquele mês entraria elevado a zero e desapareceria: o
-    acumulado andaria PARA TRÁS, e quitar no dia do aniversário sairia mais barato que na véspera. Ver
-    "[RATIO-ULTIMO-ITEM]".
+    "calculate_ipca_factor" applies the "ratio" to the last item the series RETURNED, and not to the month at the
+    position "period". "InMemoryBackend" pads the series up to the end of the window, with zeroed months, and there the
+    exponent is inert. The production backends return only what BACEN has published, and there the exponent lands on
+    the last PUBLISHED month, which is owed in full. On the anniversary the elapsed fraction is zero, so that month
+    would enter raised to zero and vanish: the accumulation would go BACKWARDS, and paying off on the anniversary would
+    be cheaper than on the day before. Refer to "[RATIO-ULTIMO-ITEM]".
 
-    As três datas cercam a janela de exposição, que vai do aniversário até o BACEN publicar. A memória desta operação
-    termina em junho de 2026 e o aniversário é dia 7, então 06/08 está fora e 07/08 e 20/08 estão dentro. Sem a
-    separação entre meses fechados e mês em curso, o bruto do pagamento final divergia entre os dois backends em
-    1.317,54, e em 788,46 no meio do mês.
+    The three dates bracket the exposure window, which runs from the anniversary until BACEN publishes. The memory of
+    this operation ends in June 2026 and the anniversary is on the 7th, so 08-06 is outside and 08-07 and 08-20 are
+    inside. Without separating closed months from the month in progress, the gross value of the final payment diverged
+    between the two backends by 1,317.54, and by 788.46 mid-month.
 
-    A asserção é a IGUALDADE entre os dois backends, e não um valor de referência: o que se fixa aqui é que a
-    biblioteca não depende do preenchimento, e um número de referência não diria isso.
+    The assertion is the EQUALITY between the two backends, and not a reference value: what is pinned here is that the
+    library does not depend on the padding, and a reference number would not say that.
     '''
 
-    for dia in (datetime.date(2026, 8, 6), datetime.date(2026, 8, 7), datetime.date(2026, 8, 20)):
+    for day in (datetime.date(2026, 8, 6), datetime.date(2026, 8, 7), datetime.date(2026, 8, 20)):
         out = []
 
         for backend in (_RicherIpcaBackend(), _UnpaddedIpcaBackend()):
             kwa = _kwa_solve()
 
             kwa['vir'] = fincore.VariableIndex('IPCA', backend=backend)
-            kwa['insertions'] = [fincore.Amortization.Bare(date=dia, value=decimal.Decimal('0.01'))]
+            kwa['insertions'] = [fincore.Amortization.Bare(date=day, value=decimal.Decimal('0.01'))]
 
             sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_bullet_payments(**kwa)]
 
@@ -3929,17 +3934,17 @@ def test_will_create_custom_6b(calc_date):
 @pytest.mark.parametrize('factory', [_get_american_payments, _get_price_payments])
 def test_wont_charge_negative_interest_past_the_calculation_date(factory):
     '''
-    O "runaway" acrescenta as parcelas posteriores à data de cálculo, e não altera o que já foi apurado até ela.
+    "Runaway" appends the payments past the calculation date, and does not change what was already accrued up to it.
 
-    Uma parcela inteiramente posterior à data de cálculo não tem fator a calcular: "due" é a data de cálculo, de modo
-    que o "DCP" do trecho sairia negativo, e com ele o fator de spread ficaria abaixo de um. A parcela é emitida com
-    juro zero, que é o que a 4.12.1 fazia ao não executar a fase B.0 nesses períodos.
+    A payment entirely past the calculation date has no factor to compute: "due" is the calculation date, so the "DCP"
+    of the stretch would come out negative, and with it a spread factor below one. The payment is emitted with zero
+    interest, which is what 4.12.1 did by not running phase B.0 on those periods.
 
-    Medido na 4.13.2 e na 4.13.3, sobre este mesmo cronograma: Juros mensais acumulava -26.390,31 de juros, contra os
-    3.288,34 do fluxo apurado, e Price acumulava -5.284,79 contra 2.956,76. O Bullet não é atingido porque só tem dois
-    pontos no cronograma – não existe período inteiramente posterior à data de cálculo.
+    Measured on 4.13.2 and 4.13.3, on this very schedule: American accumulated -26,390.31 of interest, against the
+    3,288.34 of the accrued flow, and Price accumulated -5,284.79 against 2,956.76. Bullet is not affected, since its
+    schedule has two points only – there is no period entirely past the calculation date.
 
-    O único consumidor de "runaway" na plataforma é o relatório 3040 do BACEN.
+    The only consumer of "runaway" on the platform is the BACEN 3040 report.
     '''
 
     kwa = {}
@@ -3954,22 +3959,23 @@ def test_wont_charge_negative_interest_past_the_calculation_date(factory):
     tab1 = list(factory(calc_date=fincore.CalcDate(value=calc, runaway=False), **kwa))
     tab2 = list(factory(calc_date=fincore.CalcDate(value=calc, runaway=True), **kwa))
 
-    # O cronograma completo alcança o termo; o truncado para na data de cálculo.
+    # The full schedule reaches the term; the truncated one stops at the calculation date.
     assert len(tab1) == 4
     assert len(tab2) == kwa['term']
 
-    # Nenhuma parcela cobra juro negativo.
+    # No payment charges negative interest.
     assert all(x.gain >= 0 for x in tab2)
 
-    # As parcelas que só existem por causa do "runaway" saem com juro zero. A última do cronograma truncado não entra:
-    # ela vence depois da data de cálculo, mas cobre o trecho que vai até ela.
+    # The payments that only exist because of "runaway" come out with zero interest. The last one of the truncated
+    # schedule is not among them: it falls due after the calculation date, but covers the stretch leading up to it.
     assert all(x.gain == 0 for x in tab2[len(tab1):])
 
-    # E o juro apurado até a data de cálculo é o mesmo nos dois modos.
+    # And the interest accrued up to the calculation date is the same in both modes.
     assert [x.gain for x in tab2[:len(tab1)]] == [x.gain for x in tab1]
     assert sum(x.gain for x in tab2) == sum(x.gain for x in tab1)
 
-    # O principal fecha – a um centavo, que é o arredondamento da parcela constante do Price –, e o saldo zera no termo.
+    # The principal closes – to one cent, the rounding of the constant Price instalment –, and the balance zeroes at the
+    # term.
     assert abs(sum(x.amort for x in tab2) - kwa['principal']) <= decimal.Decimal('0.01')
     assert tab2[-1].bal == 0
 
@@ -7221,31 +7227,31 @@ def test_will_match_payments_table_and_daily_returns_7():
 
 def test_will_match_payments_table_and_daily_returns_8():
     '''
-    Correção monetária anual, com data-base deslocada, sobre a estrutura da operação "ASAD Energia", Livre - 60 meses -
-    IPCA, ID "SVRiaMgBDmhcjFhQTpvD5".
+    Annual price level adjustment, with a shifted base date, on the structure of the operation "ASAD Energia", Custom -
+    60 months - IPCA, ID "SVRiaMgBDmhcjFhQTpvD5".
 
-    O cronograma repete a mesma janela cumulativa de correção nas doze parcelas de cada ano – "period" 12 nas parcelas
-    5 a 16, 24 nas 17 a 28, e assim por diante, todas sobre a data-base de 01/07/2021 – e as quatro primeiras não
-    corrigem. A forma é legítima, e foi conferida contra planilha de referência em 29/07/2025:
+    The schedule repeats the same cumulative adjustment window over the twelve payments of each year – "period" 12 on
+    payments 5 to 16, 24 on 17 to 28, and so on, all on the base date of 2021-07-01 – and the first four do not adjust.
+    The shape is legitimate, and was conferred against a reference spreadsheet on 2025-07-29:
 
       http://inco1.slack.com/archives/C0103FS2CH4/p1753793773360899
 
-    O que o motor diário devia manter, e não mantinha, é a simetria com o cronograma. "DailyReturn.value" soma, no
-    período, para "Payment.gain"; por construção "PriceAdjustedDailyReturn.pla" tem de somar para
-    "PriceAdjustedPayment.pla". Compondo "pla" sobre o principal em aberto inteiro, em vez da fatia que o período
-    amortiza, o diário rendia a correção de um ano inteiro doze vezes – o fator é renormalizado a cada amortização,
-    então a distorção se repetia todo período em vez de se diluir. Na parcela 5 o diário somava 17.549,72 contra os
-    1.457,68 do cronograma, e a operação inteira 801.177,01 contra 75.587,13.
+    What the daily engine had to keep, and did not, is the symmetry with the schedule. "DailyReturn.value" sums, over
+    the period, to "Payment.gain"; by construction "PriceAdjustedDailyReturn.pla" has to sum to
+    "PriceAdjustedPayment.pla". Composing "pla" over the whole outstanding principal, instead of the slice the period
+    amortizes, the daily engine yielded a whole year's adjustment twelve times – the factor is renormalised at every
+    amortization, so the distortion repeated every period instead of washing out. On payment 5 the daily engine summed
+    17,549.72 against the 1,457.68 of the schedule, and the whole operation 801,177.01 against 75,587.13.
 
-    Os sete testes acima comparam só o ponto final, e nenhum corrige anualmente – por isso a divergência atravessou a
-    suíte. Este compara período a período.
+    The seven tests above compare only the end point, and none adjusts annually – which is how the divergence got
+    through the battery. This one compares period by period.
     '''
 
     kwa = {}
     lst: t.List[fincore.Amortization | fincore.Amortization.Bare] = [fincore.Amortization(date=datetime.date(2022, 4, 5), amortizes_interest=False)]
 
-    # Cronograma Price: a fração amortizada cresce à taxa mensal, e as sessenta somam um. A última absorve o resíduo
-    # de arredondamento, para que a soma feche exatamente.
+    # Price schedule: the amortized fraction grows at the monthly rate, and the sixty add up to one. The last one
+    # absorbs the rounding residue, so that the sum closes exactly.
     #
     fac = fincore.calculate_interest_factor(decimal.Decimal('10'), _1 / decimal.Decimal('12'))
     pct = [(fac - _1) / (fac ** decimal.Decimal('60') - _1) * fac ** decimal.Decimal(i) for i in range(60)]
@@ -7255,7 +7261,7 @@ def test_will_match_payments_table_and_daily_returns_8():
     for i in range(1, 61):
         ent = fincore.Amortization(date=datetime.date(2022, 4, 5) + _MONTH * i, amortization_ratio=pct[i - 1], amortizes_interest=True)
 
-        # A correção entra na quinta parcela, e a janela cresce doze meses a cada doze parcelas.
+        # The adjustment starts on the fifth payment, and the window grows twelve months every twelve payments.
         if i >= 5:
             ent.price_level_adjustment = fincore.PriceLevelAdjustment('IPCA')
             ent.price_level_adjustment.base_date = datetime.date(2021, 7, 1)
@@ -7271,43 +7277,46 @@ def test_will_match_payments_table_and_daily_returns_8():
     kwa['vir'] = fincore.VariableIndex(code='IPCA', backend=_RicherIpcaBackend())
 
     sched = t.cast(t.List[fincore.PriceAdjustedPayment], list(_get_custom_payments(**kwa)))
-    dias = collections.defaultdict(list)
+    days = collections.defaultdict(list)
 
     for drt in _get_custom_daily_returns(**kwa):
-        dias[drt.period].append(t.cast(fincore.PriceAdjustedDailyReturn, drt))
+        days[drt.period].append(t.cast(fincore.PriceAdjustedDailyReturn, drt))
 
-    # A soma dos rendimentos diários de um período é o que o pagamento que o fecha remunera: juros mais correção. A
-    # tolerância acomoda o arredondamento diário, que o cronograma faz uma vez só, no fim do período.
+    # The sum of the daily returns of a period is what the payment that closes it remunerates: interest plus
+    # adjustment. The tolerance accommodates the daily rounding, which the schedule does only once, at the end of the
+    # period.
     #
     for num, pmt in enumerate(sched, 1):
-        assert abs(sum(x.value for x in dias[num]) - pmt.gain) <= _CENTI * 30
-        assert abs(sum(x.pla for x in dias[num]) - pmt.pla) <= _CENTI * 30
+        assert abs(sum(x.value for x in days[num]) - pmt.gain) <= _CENTI * 30
+        assert abs(sum(x.pla for x in days[num]) - pmt.pla) <= _CENTI * 30
 
-    # Nas quatro primeiras parcelas não há correção, e o diário é só juros.
-    assert all(x.pla == _0 for num in range(1, 5) for x in dias[num])
+    # The first four payments carry no adjustment, and the daily engine is interest only.
+    assert all(x.pla == _0 for num in range(1, 5) for x in days[num])
 
-    # E a correção não vaza para a amortização: o principal fecha, a menos do arredondamento das sessenta parcelas.
+    # And the adjustment does not leak into the amortization: the principal closes, up to the rounding of the sixty
+    # payments.
     assert abs(sum(x.amort for x in sched) - kwa['principal']) <= _CENTI * 5
 
 @pytest.mark.parametrize('amortizes_correction', [True, False])
 def test_will_match_payments_table_and_daily_returns_9(amortizes_correction):
     '''
-    Correção monetária em Juros mensais, sobre a estrutura da operação "YUCA SPE V", Juros mensais - 30 meses - IPCA,
+    Price level adjustment on American, on the structure of the operation "YUCA SPE V", American - 30 months - IPCA,
     ID "cmQFTXLsEB6Bg7Zlae1pV".
 
-    Par do teste acima, para o outro ramo da correção no motor diário. Em Juros mensais não há amortização de principal
-    nos períodos intermediários, então a correção monta sobre o saldo devedor, e não sobre fatia amortizada alguma. São
-    os dois modos de "preprocess_jm":
+    Pair of the test above, for the other adjustment branch of the daily engine. On American there is no principal
+    amortization in the intermediate periods, so the adjustment builds up on the outstanding balance, and not on any
+    amortized slice. These are the two modes of "_preprocess_american":
 
-      • "amortizes_correction" verdadeiro, o formato de Plano Empresário decidido em outubro de 2024, em que todo
-        período liquida a correção do mês – "period" um e "amortizes_adjustment" verdadeiro em todas as entradas;
+      • "amortizes_correction" true, the Plano Empresário shape decided in October 2024, where every period settles the
+        month's adjustment – "period" one and "amortizes_adjustment" true on every entry;
 
-      • "amortizes_correction" falso, o legado, em que a correção acumula no saldo e só a última parcela a liquida.
+      • "amortizes_correction" false, the legacy one, where the adjustment accumulates on the balance and only the last
+        payment settles it.
 
-    A invariante é a mesma nos dois: a soma dos rendimentos diários de um período é o que o pagamento que o fecha
-    remunera. Nos períodos que não liquidam correção ela é zero, e o diário é só juros.
+    The invariant is the same on both: the sum of the daily returns of a period is what the payment that closes it
+    remunerates. On the periods that settle no adjustment it is zero, and the daily engine is interest only.
 
-    Especificado na thread "Ajustes Motor IPCA", de outubro de 2024:
+    Specified on the "Ajustes Motor IPCA" thread, October 2024:
 
       http://inco1.slack.com/archives/C0103FS2CH4/p1728317663655909
     '''
@@ -7323,28 +7332,28 @@ def test_will_match_payments_table_and_daily_returns_9(amortizes_correction):
     kwa['amortizes_correction'] = amortizes_correction
 
     sched = t.cast(t.List[fincore.PriceAdjustedPayment], list(_get_american_payments(**kwa)))
-    dias = collections.defaultdict(list)
+    days = collections.defaultdict(list)
 
     for drt in _get_american_daily_returns(**kwa):
-        dias[drt.period].append(t.cast(fincore.PriceAdjustedDailyReturn, drt))
+        days[drt.period].append(t.cast(fincore.PriceAdjustedDailyReturn, drt))
 
     for num, pmt in enumerate(sched, 1):
-        assert abs(sum(x.value for x in dias[num]) - pmt.gain) <= _CENTI * 30
-        assert abs(sum(x.pla for x in dias[num]) - pmt.pla) <= _CENTI * 30
+        assert abs(sum(x.value for x in days[num]) - pmt.gain) <= _CENTI * 30
+        assert abs(sum(x.pla for x in days[num]) - pmt.pla) <= _CENTI * 30
 
-    # No legado a correção fica toda na última parcela, e as anteriores não rendem correção nenhuma.
+    # On the legacy mode the whole adjustment sits on the last payment, and the previous ones yield no adjustment.
     if not amortizes_correction:
-        assert all(x.pla == _0 for num in range(1, len(sched)) for x in dias[num])
+        assert all(x.pla == _0 for num in range(1, len(sched)) for x in days[num])
         assert sched[-1].pla > _0
 
 def test_will_match_payments_table_and_daily_returns_10():
     '''
-    Correção monetária em Bullet indexado ao IPCA.
+    Price level adjustment on a Bullet indexed to IPCA.
 
-    Terceiro e último ramo da correção no motor diário. O Bullet tem uma amortização só, de cem por cento do
-    principal, no vencimento – logo a fatia amortizada e o saldo devedor coincidem, e os dois ramos do "dr.pla" dão o
-    mesmo número. O teste existe para prender essa coincidência: ela é o que mantém o Bullet fora do alcance da
-    mudança, e nenhum teste olhava o "pla" diário fora do Juros mensais.
+    Third and last adjustment branch of the daily engine. A Bullet has a single amortization, of one hundred percent of
+    the principal, at maturity – so the amortized slice and the outstanding balance coincide, and both branches of
+    "dr.pla" give the same number. The test exists to pin that coincidence: it is what keeps the Bullet out of reach of
+    the change, and no test looked at the daily "pla" outside American.
     '''
 
     kwa = {}
@@ -7356,14 +7365,14 @@ def test_will_match_payments_table_and_daily_returns_10():
     kwa['vir'] = fincore.VariableIndex(code='IPCA', backend=_RicherIpcaBackend())
 
     sched = t.cast(t.List[fincore.PriceAdjustedPayment], list(_get_bullet_payments(**kwa)))
-    dias = collections.defaultdict(list)
+    days = collections.defaultdict(list)
 
     for drt in _get_bullet_daily_returns(**kwa):
-        dias[drt.period].append(t.cast(fincore.PriceAdjustedDailyReturn, drt))
+        days[drt.period].append(t.cast(fincore.PriceAdjustedDailyReturn, drt))
 
     for num, pmt in enumerate(sched, 1):
-        assert abs(sum(x.value for x in dias[num]) - pmt.gain) <= _CENTI * 30
-        assert abs(sum(x.pla for x in dias[num]) - pmt.pla) <= _CENTI * 30
+        assert abs(sum(x.value for x in days[num]) - pmt.gain) <= _CENTI * 30
+        assert abs(sum(x.pla for x in days[num]) - pmt.pla) <= _CENTI * 30
 
     assert len(sched) == 1
     assert sched[0].pla > _0
@@ -7371,29 +7380,29 @@ def test_will_match_payments_table_and_daily_returns_10():
 @pytest.mark.parametrize('amortizes_interest', [True, False])
 def test_will_match_payments_table_and_daily_returns_11(amortizes_interest):
     '''
-    Correção monetária de uma antecipação, sobre a estrutura da operação "YUCA SPE V".
+    Price level adjustment of a prepayment, on the structure of the operation "YUCA SPE V".
 
-    Uma antecipação entra no cronograma como "Amortization.Bare", e o "get_payments_table" lhe entrega, em
-    "pmt.pla", a correção que ela liquida — o "v02" da fase B.2, limitado pelo que sobra do valor depois dos juros.
-    O trecho que leva até ela, portanto, acrua sobre o saldo devedor.
+    A prepayment enters the schedule as "Amortization.Bare", and "get_payments_table" hands it, in "pmt.pla", the
+    adjustment it settles — the "v02" of phase B.2, bounded by what is left of the value after the interest. The
+    stretch that leads to it therefore accrues over the outstanding balance.
 
-    As duas ordens de imputação da fase B.2 são exercitadas. Com "amortizes_interest", a antecipação paga juros,
-    correção e principal nessa ordem, e o que faltar da correção fica diferido. Sem, o valor vai inteiro ao
-    principal, e a correção do período fica travada em "regs.correction.locked" para o pagamento regular seguinte
-    recolher.
+    Both imputation orders of phase B.2 are exercised. With "amortizes_interest", the prepayment pays interest,
+    adjustment and principal in that order, and whatever is missing of the adjustment stays deferred. Without it, the
+    whole value goes to principal, and the adjustment of the period stays locked in "regs.correction.locked" for the
+    next regular payment to collect.
 
-    Nenhum dos casos acima cobre antecipação, e foi por aí que uma primeira versão desta correção passou a zerar a
-    correção dos dias que antecedem uma, subcontando o rendimento diário de três operações da base — duas de Juros
-    mensais e uma Bullet de fluxo irregular, todas com antecipação.
+    None of the cases above covers a prepayment, and that is how a first version of this fix started zeroing the
+    adjustment of the days that precede one, undercounting the daily return of three operations of the base — two
+    American and one Bullet of irregular flow, all with prepayments.
 
-    ESCOPO: o caso roda no modo mensal, o "amortizes_correction" verdadeiro que é o padrão de "preprocess_jm" e o
-    único que a Plataforma usa – "cron._get_daily_returns" nunca passa o parâmetro. Antecipação sobre GEOMETRIA
-    ACUMULADA, isto é, janelas aninhadas partindo da emissão, fica deliberadamente de fora: é o território do FIXME
-    de "get_payments_table", que compõe duas acumulações e conta a história uma vez por antecipação. Nessa
-    combinação os dois motores erram, o do cronograma inclusive, e nenhum dos dois fecha contra o outro. Medido num
-    fluxo Livre sintético de 24 parcelas com "period = i" e uma antecipação, a divergência cai de 131.946,68 para
-    3.783,46 com esta correção, mas não vai a zero. Fechá-la é o mesmo quociente de acumulações que aquele FIXME
-    reserva para mudança própria.
+    SCOPE: the case runs on the monthly mode, the "amortizes_correction" true that is the default of
+    "_preprocess_american" and the only one the Platform uses – "cron._get_daily_returns" never passes the parameter.
+    A prepayment over an ACCUMULATED GEOMETRY, that is, nested windows starting at issuance, is deliberately left out:
+    it is the territory of the FIXME in "get_payments_table", which composes two accumulations and counts the history
+    once per prepayment. On that combination both engines are wrong, the schedule's included, and neither closes
+    against the other. Measured on a synthetic Custom flow of 24 payments with "period = i" and one prepayment, the
+    divergence drops from 131,946.68 to 3,783.46 with this fix, but does not reach zero. Closing it is the same quotient
+    of accumulations that the FIXME reserves for a change of its own.
     '''
 
     kwa = {}
@@ -7407,36 +7416,38 @@ def test_will_match_payments_table_and_daily_returns_11(amortizes_interest):
     kwa['insertions'] = [fincore.Amortization.Bare(date=datetime.date(2022, 4, 20), value=decimal.Decimal('5000'), amortizes_interest=amortizes_interest)]
 
     sched = t.cast(t.List[fincore.PriceAdjustedPayment], list(_get_american_payments(**kwa)))
-    dias = [t.cast(fincore.PriceAdjustedDailyReturn, x) for x in _get_american_daily_returns(**kwa)]
+    days = [t.cast(fincore.PriceAdjustedDailyReturn, x) for x in _get_american_daily_returns(**kwa)]
     due = kwa['insertions'][0].date
 
-    # A antecipação está no fluxo, e é ela que distingue este caso do "test_..._9".
+    # The prepayment is in the flow, and it is what sets this case apart from "test_..._9".
     assert any(x.date == due for x in sched)
 
-    # A correção continua acruando nos dias que antecedem a antecipação. Zerá-los é o defeito que este caso prende:
-    # o trecho corrige o saldo em vigor, e a antecipação recolhe o que couber no que sobra do seu valor.
+    # The adjustment keeps accruing on the days that precede the prepayment. Zeroing them is the defect this case
+    # pins: the stretch adjusts the balance in force, and the prepayment collects whatever fits in what is left of
+    # its value.
     #
-    ant = [x for x in dias if x.date < due and x.date > kwa['anniversary_date']]
+    ant = [x for x in days if x.date < due and x.date > kwa['anniversary_date']]
 
     assert ant
     assert all(x.pla > _0 for x in ant)
 
-    # A comparação é sobre o total, e não cumulativa a cada pagamento como nos casos acima: o período do motor
-    # diário só avança em amortização regular, então a antecipação e o pagamento regular que a sucede dividem um
-    # período, e a bijeção entre período e pagamento que os outros casos usam deixa de valer. A biblioteca também
-    # não fecha a correção pagamento a pagamento em torno de uma antecipação – isso antecede esta correção, e não é
-    # o que este caso mede.
+    # The comparison is on the total, and not cumulative at each payment as in the cases above: the period of the
+    # daily engine only advances on a regular amortization, so the prepayment and the regular payment that follows it
+    # share a period, and the bijection between period and payment the other cases rely on no longer holds. The
+    # library also does not close the adjustment payment by payment around a prepayment – that predates this fix, and
+    # is not what this case measures.
     #
-    # A folga é relativa, e não um centavo por entrada diária: naquele teto a deriva real deste fluxo ocupa 86% do
-    # orçamento, e o próximo ajuste de arredondamento deixaria o caso vermelho sem defeito novo. A deriva medida é
-    # de 0,003% do total, então um centésimo de por cento dá margem de três vezes sem esconder regressão.
+    # The slack is relative, and not one cent per daily entry: under that ceiling the actual drift of this flow takes
+    # 86% of the budget, and the next rounding adjustment would turn the case red with no new defect. The measured
+    # drift is 0.003% of the total, so one hundredth of a percent leaves a threefold margin without hiding a
+    # regression.
     #
     tol = decimal.Decimal('0.0001')
     c_gain = sum(x.gain for x in sched)
     c_pla = sum(x.pla for x in sched)
 
-    assert abs(sum(x.value for x in dias) - c_gain) <= c_gain * tol
-    assert abs(sum(x.pla for x in dias) - c_pla) <= c_pla * tol
+    assert abs(sum(x.value for x in days) - c_gain) <= c_gain * tol
+    assert abs(sum(x.pla for x in days) - c_pla) <= c_pla * tol
 # }}}
 
 # vi:fdm=marker:
