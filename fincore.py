@@ -1896,8 +1896,8 @@ def get_payments_table(
             # "[FRONTEIRA-COMUM]".
             #
             # The stretch ends at "due", and not at the entry's date: when a calculation date is given, the
-            # correction runs only up to it, which is the same bound "preprocess_bullet" applies when it shortens
-            # the period of the adjustment it builds.
+            # correction runs only up to it, which is the same bound "fincore_cli._preprocess_bullet" applies when it
+            # shortens the period of the adjustment it builds.
             #
             # FIXME: the shift is fixed at "M-1" instead of the one configured on the operation. Evaluated while
             # fixing the stretch above and deliberately left out: on the operation that motivated the fix the
@@ -1965,9 +1965,10 @@ def get_payments_table(
 
                 # FIXME: the factor here is the successor's whole window, and not the stretch. Inheriting the window
                 # is only sound when that window is ONE month, which is the case of a monthly flow that amortizes the
-                # adjustment month by month – refer to "preprocess_jm". On the accumulated geometries the windows are
-                # nested rather than disjoint, all of them starting at issuance: the "amortizes_correction" false
-                # branch of "preprocess_jm", with a constant base and "period = i", and a free schedule configured
+                # adjustment month by month – refer to "fincore_cli._preprocess_american". On the accumulated geometries
+                # the windows are nested rather than disjoint, all of them starting at issuance: the
+                # "amortizes_correction" false branch of "fincore_cli._preprocess_american", with a constant base and
+                # "period = i", and a free schedule configured
                 # with a growing period. There the deferral mechanism of phase B.1 composes two accumulations and
                 # counts the history twice, three times, as many times as there are advancements – the very defect
                 # the Bullet block above was fixed for.
