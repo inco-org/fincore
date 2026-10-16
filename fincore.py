@@ -2439,7 +2439,8 @@ def get_daily_returns(
     vir: t.Optional[VariableIndex] = None,
     capitalisation: _CAPITALISATION = '360',
     first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
-    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
+    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True,
+    payout_dates: t.Dict[datetime.date, datetime.date] = {}
 ) -> t.Generator[DailyReturn, None, None]:
     '''
     Generates a yield table for a given loan.
@@ -2487,7 +2488,23 @@ def get_daily_returns(
       • "vf", is the variable component of the day's yield.
 
       • "fc", is the monetary correction component of the day's yield.
+
+    Two parameters control when a payment leaves the balance:
+
+      • "is_bizz_day_cb", tells whether a date is a business day. A payment due on a day that is not one keeps the
+        balance from before the payment until the next business day, the business due date.
+
+      • "payout_dates", maps the due date of a payment to the date it leaves the balance – the day the money reaches
+        the creditor, when that is later than the business due date. The balance from before the payment is kept up to
+        the day before it. A payment due on a Wednesday and mapped to Thursday leaves the balance on Thursday. A date
+        that is not a business day moves to the next one, and a payment the map does not have leaves the balance on the
+        business due date. A payout of the last payment extends the end of the series. Empty, the default, changes
+        nothing.
     '''
+
+    for k, v in payout_dates.items():
+        if v < k:
+            raise ValueError(f'the payout date of the payment due on {k} must not be earlier than it, got {v}')
 
     # The balance in force. Composes the given factor with the deferred one, credits the adjustment already
     # settled against it, and carries the adjustment value locked by an advancement. With nothing deferred nor
@@ -2883,8 +2900,11 @@ def get_daily_returns(
     end = amortizations[-1].date
     cnt = p = 1
     buf = _0
+    out = end  # The day the balance from before a payment, held in "buf", leaves.
 
-    # Extend the end date to the next business day.
+    # Extend the end date to the business due date of the last amortization, or to its payout.
+    end = payout_dates.get(end, end)
+
     while not is_bizz_day_cb(end):
         end = end + datetime.timedelta(days=1)
 
@@ -2961,8 +2981,15 @@ def get_daily_returns(
         # Slightly altered with respect to FRO from the "get_payments_table" routine.
         #
         while ref < amortizations[-1].date and ref == tup[1].date:
-            if not buf and not is_bizz_day_cb(ref):
-                buf = _Q(calc_balance(facs.correction.value))
+            # Keeps the balance from before the payment until it leaves, on the business due date or on the payout.
+            if not buf:
+                out = payout_dates.get(ref, ref)
+
+                while not is_bizz_day_cb(out):
+                    out = out + datetime.timedelta(days=1)
+
+                if out > ref:
+                    buf = _Q(calc_balance(facs.correction.value))
 
             if type(tup[1]) is Amortization:  # Case of a regular amortization.
                 adj = (_1 - regs.principal.amortization_ratio.adjusted) / (_1 - regs.principal.amortization_ratio.nominal)  # [FATOR-AJUSTE].
@@ -3115,7 +3142,8 @@ def get_daily_returns(
         else:
             dr.value = _0
 
-        if buf and not is_bizz_day_cb(ref):
+        # The balance from before the payment holds up to the day before it leaves.
+        if buf and ref < out:
             buf = buf + dr.value
 
             dr.bal = buf  # Balance at the end of the day.
@@ -3179,13 +3207,14 @@ def get_daily_returns(
         _LOG.debug(f'T={p}, n={cnt}, f_s={facs.spread} f_v={facs.variable} f_c={facs.correction}')
         _LOG.debug(f'T={p}, n={cnt}, regs={regs}')
 
-        # If the outstanding principal is zero, and the current day is a business day, the schedule is over. The
+        # If the outstanding principal is zero, and the current day is a business day, the schedule is over – unless the
+        # balance from before the payment still holds, waiting for the payout. The
         # locked interest holds the series open on its own. An advancement that does not amortise interest may take
         # the whole outstanding principal and still leave the interest of its period due, and "get_principal_outstanding"
         # does not see it – the adjustment it carries is zero whenever there is no index. Without this term the
         # series would end on the date of the advancement, while the payments table still charges that interest.
         #
-        if _Q(get_principal_outstanding()) != _0 or _Q(regs.interest.locked) != _0 or not is_bizz_day_cb(ref):
+        if _Q(get_principal_outstanding()) != _0 or _Q(regs.interest.locked) != _0 or not is_bizz_day_cb(ref) or buf:
             yield dr
 
             cnt += 1
@@ -3712,6 +3741,7 @@ def get_bullet_daily_returns(
     capitalisation: _DAILY_CAPITALISATION = '360',
     first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
     is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True,
+    payout_dates: t.Dict[datetime.date, datetime.date] = {},
     verbose: bool = True
 ) -> t.Generator[DailyReturn, None, None]:
     kwa: t.Dict[str, t.Any] = {}
@@ -3723,6 +3753,7 @@ def get_bullet_daily_returns(
     kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else capitalisation
     kwa['first_dct_rule'] = first_dct_rule
     kwa['is_bizz_day_cb'] = is_bizz_day_cb
+    kwa['payout_dates'] = payout_dates
 
     yield from get_daily_returns(**kwa)
 
@@ -3737,7 +3768,8 @@ def get_jm_daily_returns(
     vir: t.Optional[VariableIndex] = None,
     amortizes_correction: bool = True,
     first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
-    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
+    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True,
+    payout_dates: t.Dict[datetime.date, datetime.date] = {}
 ) -> t.Generator[DailyReturn, None, None]:
     kwa: t.Dict[str, t.Any] = {}
 
@@ -3748,6 +3780,7 @@ def get_jm_daily_returns(
     kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else '30/360'
     kwa['first_dct_rule'] = first_dct_rule
     kwa['is_bizz_day_cb'] = is_bizz_day_cb
+    kwa['payout_dates'] = payout_dates
 
     yield from get_daily_returns(**kwa)
 
@@ -3760,7 +3793,8 @@ def get_price_daily_returns(
     insertions: t.List[Amortization.Bare] = [],
     anniversary_date: t.Optional[datetime.date] = None,
     first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
-    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
+    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True,
+    payout_dates: t.Dict[datetime.date, datetime.date] = {}
 ) -> t.Generator[DailyReturn, None, None]:
     kwa: t.Dict[str, t.Any] = {}
 
@@ -3770,6 +3804,7 @@ def get_price_daily_returns(
     kwa['capitalisation'] = '30/360'
     kwa['first_dct_rule'] = first_dct_rule
     kwa['is_bizz_day_cb'] = is_bizz_day_cb
+    kwa['payout_dates'] = payout_dates
 
     yield from get_daily_returns(**kwa)
 
@@ -3782,7 +3817,8 @@ def get_livre_daily_returns(
     insertions: t.List[Amortization.Bare] = [],
     vir: t.Optional[VariableIndex] = None,
     first_dct_rule: _FIRST_DCT_RULE = 'AUTO',
-    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True
+    is_bizz_day_cb: t.Callable[[datetime.date], bool] = lambda _: True,
+    payout_dates: t.Dict[datetime.date, datetime.date] = {}
 ) -> t.Generator[DailyReturn, None, None]:
     kwa: t.Dict[str, t.Any] = {}
 
@@ -3793,6 +3829,7 @@ def get_livre_daily_returns(
     kwa['capitalisation'] = '252' if vir and vir.code == 'CDI' else '30/360'
     kwa['first_dct_rule'] = first_dct_rule
     kwa['is_bizz_day_cb'] = is_bizz_day_cb
+    kwa['payout_dates'] = payout_dates
 
     yield from get_daily_returns(**kwa)
 # }}}

@@ -7469,4 +7469,111 @@ def test_will_match_payments_table_and_daily_returns_11(amortizes_interest):
     assert abs(sum(x.pla for x in dias) - c_pla) <= c_pla * tol
 # }}}
 
+# Repasse, "payout_dates". {{{
+#
+# Juros mensais de três meses, com os pagamentos intermediários – os que seguram o saldo – em dia útil ou em sábado.
+# "payout_dates" leva o vencimento de um pagamento ao dia em que ele sai do saldo, o repasse ao credor.
+#
+def _get_jm_daily_returns(zero_date, **kwargs):
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('100000')
+    kwa['apy'] = decimal.Decimal('15')
+    kwa['zero_date'] = zero_date
+    kwa['term'] = 3
+    kwa['is_bizz_day_cb'] = lambda x: x.weekday() < 5
+
+    kwa.update(kwargs)
+
+    return {x.date: x for x in fincore.get_jm_daily_returns(**kwa)}
+
+def test_will_hold_balance_until_payout_on_business_day_payment():
+    '''Pagamento na quarta, 02/02/2022, repassado na quinta: o saldo cai na quinta, e não na quarta.'''
+
+    r00 = _get_jm_daily_returns(datetime.date(2022, 1, 2))
+    r01 = _get_jm_daily_returns(datetime.date(2022, 1, 2), payout_dates={datetime.date(2022, 2, 2): datetime.date(2022, 2, 3)})
+
+    # Sem repasse, a quarta já mostra o saldo depois do pagamento.
+    assert r00[datetime.date(2022, 2, 2)].bal < r00[datetime.date(2022, 2, 1)].bal
+
+    # Com repasse, a quarta segura o saldo de antes, e a quinta já é a mesma das duas séries.
+    assert r01[datetime.date(2022, 2, 2)].bal == r01[datetime.date(2022, 2, 1)].bal + r01[datetime.date(2022, 2, 2)].value
+    assert r01[datetime.date(2022, 2, 3)].bal == r00[datetime.date(2022, 2, 3)].bal
+
+    # O rendimento do dia não muda: o repasse só mexe no saldo.
+    assert [x.value for x in r00.values()] == [x.value for x in r01.values() if x.date in r00]
+
+def test_will_hold_balance_until_payout_on_saturday_payment():
+    '''Pagamento no sábado, 05/02/2022: o vencimento útil é a segunda, e com o repasse na terça o saldo cai na terça.'''
+
+    r00 = _get_jm_daily_returns(datetime.date(2022, 1, 5))
+    r01 = _get_jm_daily_returns(datetime.date(2022, 1, 5), payout_dates={datetime.date(2022, 2, 5): datetime.date(2022, 2, 8)})
+
+    # Sem repasse, o saldo cai na segunda, o vencimento útil.
+    assert r00[datetime.date(2022, 2, 7)].bal < r00[datetime.date(2022, 2, 6)].bal
+
+    for dt in [datetime.date(2022, 2, 5), datetime.date(2022, 2, 6), datetime.date(2022, 2, 7)]:
+        assert r01[dt].bal == r01[dt - datetime.timedelta(days=1)].bal + r01[dt].value
+
+    assert r01[datetime.date(2022, 2, 8)].bal == r00[datetime.date(2022, 2, 8)].bal
+
+def test_will_move_payout_on_holiday_to_next_business_day():
+    '''Pagamento na sexta, 04/02/2022, com o repasse informado na segunda, que é feriado: o saldo cai na terça.'''
+
+    cb = lambda x: x.weekday() < 5 and x != datetime.date(2022, 2, 7)  # noqa: E731
+    r00 = _get_jm_daily_returns(datetime.date(2022, 1, 4), is_bizz_day_cb=cb)
+    r01 = _get_jm_daily_returns(datetime.date(2022, 1, 4), is_bizz_day_cb=cb, payout_dates={datetime.date(2022, 2, 4): datetime.date(2022, 2, 7)})
+
+    assert r00[datetime.date(2022, 2, 4)].bal < r00[datetime.date(2022, 2, 3)].bal
+    assert r01[datetime.date(2022, 2, 7)].bal == r01[datetime.date(2022, 2, 6)].bal + r01[datetime.date(2022, 2, 7)].value
+    assert r01[datetime.date(2022, 2, 8)].bal == r00[datetime.date(2022, 2, 8)].bal
+
+def test_will_keep_business_due_date_for_payment_out_of_payout_dates():
+    '''Só o pagamento de fevereiro tem repasse: o de março, no sábado, cai no vencimento útil, como sem o parâmetro.'''
+
+    r00 = _get_jm_daily_returns(datetime.date(2022, 1, 5))
+    r01 = _get_jm_daily_returns(datetime.date(2022, 1, 5), payout_dates={datetime.date(2022, 2, 5): datetime.date(2022, 2, 8)})
+
+    assert [(x.date, x.value, x.bal) for x in r00.values() if x.date >= datetime.date(2022, 2, 8)] == [(x.date, x.value, x.bal) for x in r01.values() if x.date >= datetime.date(2022, 2, 8)]
+
+def test_will_extend_daily_returns_to_the_payout_of_the_last_payment():
+    '''O último pagamento é na terça, 05/04/2022: a série vai até o dia anterior ao vencimento útil, e o repasse na
+    quarta a estende por mais um dia.'''
+
+    r00 = _get_jm_daily_returns(datetime.date(2022, 1, 5))
+    r01 = _get_jm_daily_returns(datetime.date(2022, 1, 5), payout_dates={datetime.date(2022, 4, 5): datetime.date(2022, 4, 6)})
+
+    assert max(r00) == datetime.date(2022, 4, 4)
+    assert max(r01) == datetime.date(2022, 4, 5)
+
+def test_will_keep_daily_returns_unchanged_without_payout_dates():
+    '''Sem "payout_dates", o padrão, a série é a de antes do parâmetro existir. O repasse no próprio vencimento
+    útil também não muda nada.'''
+
+    r00 = _get_jm_daily_returns(datetime.date(2022, 1, 5))
+    r01 = _get_jm_daily_returns(datetime.date(2022, 1, 5), payout_dates={})
+    r02 = _get_jm_daily_returns(datetime.date(2022, 1, 5), payout_dates={datetime.date(2022, 2, 5): datetime.date(2022, 2, 7)})
+
+    assert [(x.date, x.value, x.bal) for x in r00.values()] == [(x.date, x.value, x.bal) for x in r01.values()]
+    assert [(x.date, x.value, x.bal) for x in r00.values()] == [(x.date, x.value, x.bal) for x in r02.values()]
+
+def test_will_hold_balance_until_payout_of_a_total_prepayment():
+    '''Antecipação total na quarta, 16/02/2022, repassada na quinta: o principal zera, mas a série segue com o saldo
+    de antes até o repasse.'''
+
+    ins = [fincore.Amortization.Bare(date=datetime.date(2022, 2, 16), value=fincore.Amortization.Bare.MAX_VALUE)]
+    r00 = _get_jm_daily_returns(datetime.date(2022, 1, 2), insertions=ins)
+    r01 = _get_jm_daily_returns(datetime.date(2022, 1, 2), insertions=ins, payout_dates={datetime.date(2022, 2, 16): datetime.date(2022, 2, 17)})
+
+    # Sem repasse, a série acaba na véspera da antecipação. Com ele, a quarta sai com o saldo de antes.
+    assert max(r00) == datetime.date(2022, 2, 15)
+    assert max(r01) == datetime.date(2022, 2, 16)
+
+    assert r01[datetime.date(2022, 2, 16)].bal == r01[datetime.date(2022, 2, 15)].bal + r01[datetime.date(2022, 2, 16)].value
+
+def test_wont_accept_payout_date_earlier_than_due_date():
+    with pytest.raises(ValueError, match='payout date'):
+        _get_jm_daily_returns(datetime.date(2022, 1, 5), payout_dates={datetime.date(2022, 2, 5): datetime.date(2022, 2, 4)})
+# }}}
+
 # vi:fdm=marker:
