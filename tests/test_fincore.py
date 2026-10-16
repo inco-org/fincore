@@ -7450,4 +7450,112 @@ def test_will_match_payments_table_and_daily_returns_11(amortizes_interest):
     assert abs(sum(x.pla for x in days) - c_pla) <= c_pla * tol
 # }}}
 
+# Payout, "payout_dates". {{{
+#
+# Three months of monthly interest, with the intermediate payments – the ones that hold the balance – on a business day
+# or on a Saturday. "payout_dates" maps the due date of a payment to the day it leaves the balance, the payout to the
+# creditor.
+#
+def _get_jm_daily_returns(zero_date, insertions=[], is_bizz_day_cb=lambda x: x.weekday() < 5, payout_dates={}):
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('100000')
+    kwa['apy'] = decimal.Decimal('15')
+    kwa['amortizations'] = _preprocess_american(zero_date, 3, insertions)
+    kwa['capitalisation'] = '30/360'
+    kwa['is_bizz_day_cb'] = is_bizz_day_cb
+    kwa['payout_dates'] = payout_dates
+
+    return {x.date: x for x in fincore.get_daily_returns(**kwa)}
+
+def test_will_hold_balance_until_payout_on_business_day_payment():
+    '''A payment on Wednesday, 2022-02-02, paid out on Thursday: the balance drops on Thursday, not on Wednesday.'''
+
+    r00 = _get_jm_daily_returns(datetime.date(2022, 1, 2))
+    r01 = _get_jm_daily_returns(datetime.date(2022, 1, 2), payout_dates={datetime.date(2022, 2, 2): datetime.date(2022, 2, 3)})
+
+    # Without a payout, Wednesday already shows the balance after the payment.
+    assert r00[datetime.date(2022, 2, 2)].bal < r00[datetime.date(2022, 2, 1)].bal
+
+    # With a payout, Wednesday holds the balance from before, and Thursday is already the same in both series.
+    assert r01[datetime.date(2022, 2, 2)].bal == r01[datetime.date(2022, 2, 1)].bal + r01[datetime.date(2022, 2, 2)].value
+    assert r01[datetime.date(2022, 2, 3)].bal == r00[datetime.date(2022, 2, 3)].bal
+
+    # The daily return does not change: the payout only moves the balance.
+    assert [x.value for x in r00.values()] == [x.value for x in r01.values() if x.date in r00]
+
+def test_will_hold_balance_until_payout_on_saturday_payment():
+    '''A payment on Saturday, 2022-02-05: the business due date is Monday, and with the payout on Tuesday the balance drops on Tuesday.'''
+
+    r00 = _get_jm_daily_returns(datetime.date(2022, 1, 5))
+    r01 = _get_jm_daily_returns(datetime.date(2022, 1, 5), payout_dates={datetime.date(2022, 2, 5): datetime.date(2022, 2, 8)})
+
+    # Without a payout, the balance drops on Monday, the business due date.
+    assert r00[datetime.date(2022, 2, 7)].bal < r00[datetime.date(2022, 2, 6)].bal
+
+    for dt in [datetime.date(2022, 2, 5), datetime.date(2022, 2, 6), datetime.date(2022, 2, 7)]:
+        assert r01[dt].bal == r01[dt - datetime.timedelta(days=1)].bal + r01[dt].value
+
+    assert r01[datetime.date(2022, 2, 8)].bal == r00[datetime.date(2022, 2, 8)].bal
+
+def test_will_move_payout_on_holiday_to_next_business_day():
+    '''A payment on Friday, 2022-02-04, with the payout set on Monday, a holiday: the balance drops on Tuesday.'''
+
+    cb = lambda x: x.weekday() < 5 and x != datetime.date(2022, 2, 7)  # noqa: E731
+    r00 = _get_jm_daily_returns(datetime.date(2022, 1, 4), is_bizz_day_cb=cb)
+    r01 = _get_jm_daily_returns(datetime.date(2022, 1, 4), is_bizz_day_cb=cb, payout_dates={datetime.date(2022, 2, 4): datetime.date(2022, 2, 7)})
+
+    assert r00[datetime.date(2022, 2, 4)].bal < r00[datetime.date(2022, 2, 3)].bal
+    assert r01[datetime.date(2022, 2, 7)].bal == r01[datetime.date(2022, 2, 6)].bal + r01[datetime.date(2022, 2, 7)].value
+    assert r01[datetime.date(2022, 2, 8)].bal == r00[datetime.date(2022, 2, 8)].bal
+
+def test_will_keep_business_due_date_for_payment_out_of_payout_dates():
+    '''Only the February payment has a payout: the March one, on a Saturday, leaves on the business due date, as without the parameter.'''
+
+    r00 = _get_jm_daily_returns(datetime.date(2022, 1, 5))
+    r01 = _get_jm_daily_returns(datetime.date(2022, 1, 5), payout_dates={datetime.date(2022, 2, 5): datetime.date(2022, 2, 8)})
+
+    assert [(x.date, x.value, x.bal) for x in r00.values() if x.date >= datetime.date(2022, 2, 8)] == [(x.date, x.value, x.bal) for x in r01.values() if x.date >= datetime.date(2022, 2, 8)]
+
+def test_will_extend_daily_returns_to_the_payout_of_the_last_payment():
+    '''The last payment is on Tuesday, 2022-04-05: the series runs up to the day before the business due date, and the
+    payout on Wednesday extends it by one more day.'''
+
+    r00 = _get_jm_daily_returns(datetime.date(2022, 1, 5))
+    r01 = _get_jm_daily_returns(datetime.date(2022, 1, 5), payout_dates={datetime.date(2022, 4, 5): datetime.date(2022, 4, 6)})
+
+    assert max(r00) == datetime.date(2022, 4, 4)
+    assert max(r01) == datetime.date(2022, 4, 5)
+
+def test_will_keep_daily_returns_unchanged_without_payout_dates():
+    '''Without "payout_dates", the default, the series is the one from before the parameter existed. A payout on the
+    business due date itself changes nothing either.'''
+
+    r00 = _get_jm_daily_returns(datetime.date(2022, 1, 5))
+    r01 = _get_jm_daily_returns(datetime.date(2022, 1, 5), payout_dates={})
+    r02 = _get_jm_daily_returns(datetime.date(2022, 1, 5), payout_dates={datetime.date(2022, 2, 5): datetime.date(2022, 2, 7)})
+
+    assert [(x.date, x.value, x.bal) for x in r00.values()] == [(x.date, x.value, x.bal) for x in r01.values()]
+    assert [(x.date, x.value, x.bal) for x in r00.values()] == [(x.date, x.value, x.bal) for x in r02.values()]
+
+def test_will_hold_balance_until_payout_of_a_total_prepayment():
+    '''A total prepayment on Wednesday, 2022-02-16, paid out on Thursday: the principal goes to zero, but the series
+    keeps the balance from before until the payout.'''
+
+    ins = [fincore.Amortization.Bare(date=datetime.date(2022, 2, 16), value=fincore.Amortization.Bare.MAX_VALUE)]
+    r00 = _get_jm_daily_returns(datetime.date(2022, 1, 2), insertions=ins)
+    r01 = _get_jm_daily_returns(datetime.date(2022, 1, 2), insertions=ins, payout_dates={datetime.date(2022, 2, 16): datetime.date(2022, 2, 17)})
+
+    # Without a payout, the series ends on the eve of the prepayment. With it, Wednesday comes out with the balance
+    # from before.
+    assert max(r00) == datetime.date(2022, 2, 15)
+    assert max(r01) == datetime.date(2022, 2, 16)
+
+    assert r01[datetime.date(2022, 2, 16)].bal == r01[datetime.date(2022, 2, 15)].bal + r01[datetime.date(2022, 2, 16)].value
+
+def test_wont_accept_payout_date_earlier_than_due_date():
+    with pytest.raises(ValueError, match='payout date'):
+        _get_jm_daily_returns(datetime.date(2022, 1, 5), payout_dates={datetime.date(2022, 2, 5): datetime.date(2022, 2, 4)})
+# }}}
+
 # vi:fdm=marker:
