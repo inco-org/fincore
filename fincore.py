@@ -3166,7 +3166,15 @@ def get_daily_returns(
             # window over the twelve entries of a year accrued that year's correction twelve times, over the whole
             # balance each time.
             #
-            if type(tup[1]) is Amortization and tup[1].amortization_ratio:
+            # From the maturity on, the stretch that runs up to the next business day accrues no adjustment, just as
+            # it accrues no interest. Phase B.0 no longer moves the correction factor there, so its "prev_value" and
+            # "value" are frozen on the last step, and their difference would repeat the adjustment of the eve of the
+            # maturity on every one of those days. See "test_wont_accrue_adjustment_past_a_weekend_maturity".
+            #
+            if ref >= amortizations[-1].date:
+                v0 = v1 = _0
+
+            elif type(tup[1]) is Amortization and tup[1].amortization_ratio:
                 adj = (_1 - regs.principal.amortization_ratio.adjusted) / (_1 - regs.principal.amortization_ratio.nominal)  # [FATOR-AJUSTE].
                 bse = principal * tup[1].amortization_ratio * adj
 
