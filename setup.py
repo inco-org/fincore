@@ -22,7 +22,7 @@ class CustomInstallScripts(InstallScripts):
 
 setup(
     name='fincore',
-    version='5.0.0',
+    version='5.0.1',
     description='A financial core library',
     author='Rafael Viotti',
     author_email='viotti@inco.vc',

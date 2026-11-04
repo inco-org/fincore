@@ -7181,6 +7181,36 @@ def test_will_match_payments_table_and_daily_returns_6():
 
     assert pmt.raw == drt.bal
 
+def test_wont_accrue_adjustment_past_a_weekend_maturity():
+    '''
+    Bullet - 12 months - IPCA, maturing on Saturday 01/15/2022, with Monday 01/17/2022 as the business maturity.
+
+    The daily series runs up to the business maturity, but the weekend in between accrues neither interest nor price
+    level adjustment. The correction factor stops at the maturity, and the routine used to repeat on Saturday and on
+    Sunday the adjustment of Friday, the eve of the maturity – 33.77 each, a Σ "pla" above the "pla" of the payment.
+    The business-day calendar must not change the adjustment of the operation.
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('100000')
+    kwa['apy'] = decimal.Decimal('5')
+    kwa['zero_date'] = datetime.date(2021, 1, 15)
+    kwa['term'] = 12
+    kwa['vir'] = fincore.VariableIndex('IPCA')
+
+    pmt = t.cast(fincore.PriceAdjustedPayment, next(_get_bullet_payments(**kwa)))
+    cal = [t.cast(fincore.PriceAdjustedDailyReturn, x) for x in _get_bullet_daily_returns(**kwa)]
+    biz = [t.cast(fincore.PriceAdjustedDailyReturn, x) for x in _get_bullet_daily_returns(is_bizz_day_cb=lambda x: x.weekday() < 5, **kwa)]
+
+    assert pmt.date == datetime.date(2022, 1, 15)
+    assert [x.date for x in biz[-2:]] == [datetime.date(2022, 1, 15), datetime.date(2022, 1, 16)]
+    assert [x.pla for x in biz[-2:]] == [_0, _0]
+    assert [x.value for x in biz[-2:]] == [_0, _0]
+    assert biz[-1].bal == biz[-3].bal == pmt.raw
+    assert sum(x.pla for x in biz) == sum(x.pla for x in cal)
+    assert math.isclose(sum(x.pla for x in biz), pmt.pla, abs_tol=decimal.Decimal('0.50'))
+
 def test_will_match_payments_table_and_daily_returns_7():
     '''
     A partial prepayment that reaches the interest deferred by a grace period, over the structure of the "Mirante da
@@ -7448,6 +7478,53 @@ def test_will_match_payments_table_and_daily_returns_11(amortizes_interest):
 
     assert abs(sum(x.value for x in days) - c_gain) <= c_gain * tol
     assert abs(sum(x.pla for x in days) - c_pla) <= c_pla * tol
+
+@pytest.mark.parametrize('amortizes_correction', [True, False])
+def test_will_match_payments_table_and_daily_returns_12(amortizes_correction):
+    '''
+    Juros mensais (American, 30/360) - 3 months - IPCA, maturing on Saturday 11/30/2024, with Monday 12/02/2024 as the
+    business maturity. The shape of PLAT-43, where the defect was found.
+
+    The daily series runs up to the business maturity, and Saturday and Sunday fall in the last period. The correction
+    factor stops at the maturity, and the daily engine used to repeat on each of those days the adjustment of
+    Friday, the eve of the maturity: Σ "pla" of the last period came out 284.50 above the "pla" of its payment on the
+    monthly mode, and 532.25 above it on the accumulated one.
+
+    "test_wont_accrue_adjustment_past_a_weekend_maturity" covers the Bullet, on the 360 branch of phase B.0. This is
+    the 30/360 branch, on both modes of "_preprocess_american", and it compares period by period, like the pair of
+    tests above.
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('1000000')
+    kwa['apy'] = decimal.Decimal('12')
+    kwa['zero_date'] = datetime.date(2024, 8, 30)
+    kwa['term'] = 3
+    kwa['vir'] = fincore.VariableIndex(code='IPCA', backend=_RicherIpcaBackend())
+    kwa['amortizes_correction'] = amortizes_correction
+
+    sched = [t.cast(fincore.PriceAdjustedPayment, x) for x in _get_american_payments(**kwa)]
+    days = collections.defaultdict(list)
+
+    for drt in _get_american_daily_returns(is_bizz_day_cb=lambda x: x.weekday() < 5, **kwa):
+        days[drt.period].append(t.cast(fincore.PriceAdjustedDailyReturn, drt))
+
+    # The weekend between the maturity and the business maturity is in the series, in the last period, and accrues
+    # neither interest nor adjustment.
+    #
+    assert sched[-1].date == datetime.date(2024, 11, 30)
+    assert [x.date for x in days[3][-2:]] == [datetime.date(2024, 11, 30), datetime.date(2024, 12, 1)]
+    assert [x.pla for x in days[3][-2:]] == [_0, _0]
+    assert [x.value for x in days[3][-2:]] == [_0, _0]
+
+    # The sum of the daily returns of a period is what the payment that closes it remunerates: interest plus
+    # adjustment. The tolerance accommodates the daily rounding, which the schedule does only once, at the end of the
+    # period.
+    #
+    for num, pmt in enumerate(sched, 1):
+        assert abs(sum(x.value for x in days[num]) - pmt.gain) <= _CENTI * 30
+        assert abs(sum(x.pla for x in days[num]) - pmt.pla) <= _CENTI * 30
 # }}}
 
 # vi:fdm=marker:
