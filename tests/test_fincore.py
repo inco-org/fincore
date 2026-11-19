@@ -6745,9 +6745,26 @@ def test_will_create_loan_daily_returns_custom_6():
             assert entry.period == tst[i][1]
             assert entry.no == tst[i][2]
             assert math.isclose(entry.sf, decimal.Decimal(tst[i][3]) + _1, rel_tol=1e-8)
-            assert math.isclose(entry.cf, decimal.Decimal(tst[i][4]) + _1, rel_tol=1e-8)
-            assert entry.value == decimal.Decimal(tst[i][5])
-            assert entry.bal == decimal.Decimal(tst[i][6])
+
+            # The reference spreadsheet holds day by day up to the fifth period, the first one with adjustment.
+            #
+            # From the sixth on, the periods repeat the annual window that the fifth already counted. Since PLAT-56,
+            # each month of the index enters the series once: those periods bring no new month, their daily factor is
+            # one, and the balance stays corrected through the month instead of restarting the annual correction every
+            # month. The interest of the period and the balance that closes it are still the spreadsheet's; only their
+            # distribution inside the month changes. The per-period symmetry with the schedule is in
+            # "test_will_match_payments_table_and_daily_returns_8".
+            #
+            if entry.period < 6:
+                assert math.isclose(entry.cf, decimal.Decimal(tst[i][4]) + _1, rel_tol=1e-8)
+                assert entry.value == decimal.Decimal(tst[i][5])
+                assert entry.bal == decimal.Decimal(tst[i][6])
+
+            else:
+                assert entry.cf == _1
+
+                if i + 1 not in tst or tst[i + 1][1] != tst[i][1]:
+                    assert entry.bal == decimal.Decimal(tst[i][6])
 
 def test_will_create_loan_daily_returns_american_1():
     '''
@@ -7525,6 +7542,139 @@ def test_will_match_payments_table_and_daily_returns_12(amortizes_correction):
     for num, pmt in enumerate(sched, 1):
         assert abs(sum(x.value for x in days[num]) - pmt.gain) <= _CENTI * 30
         assert abs(sum(x.pla for x in days[num]) - pmt.pla) <= _CENTI * 30
+# }}}
+
+# Price level adjustment incorporated into the balance (PLAT-56). {{{
+class _ConstantIpcaBackend(fincore.InMemoryBackend):
+    '''IPCA of 4.5% a year, the same every month: the premise of the reference spreadsheet below.'''
+
+    MONTHLY = ((_1 + decimal.Decimal('0.045')) ** (_1 / 12) - _1) * 100
+
+    def get_ipca_indexes(self, begin, end):
+        month = begin.replace(day=1)
+
+        while month <= end:
+            yield fincore.MonthlyIndex(date=month, value=self.MONTHLY)
+
+            month += _MONTH
+
+def _price_ipca_schedule(geometry):
+    '''
+    Price over the spread of 16.5% a year, with seven months of grace of principal and of adjustment that pay interest
+    only, and ten amortizations. The adjustment is IPCA, shift M-2, in one of three geometries:
+
+      • "direct": period one, the base date following each payment, and no entry settles the adjustment;
+      • "grace": the same windows, the grace entries not settling the adjustment and the amortizations settling it;
+      • "nested": the base date fixed on the first payment and the period growing, the same settlement as "grace".
+
+    All three describe the same contract, so all three have to yield the same payments.
+    '''
+
+    lst: t.List[fincore.Amortization | fincore.Amortization.Bare] = [fincore.Amortization(date=datetime.date(2026, 11, 21), amortizes_interest=False)]
+    fac = fincore.calculate_interest_factor(decimal.Decimal('16.5'), _1 / 12)
+    pct = [_0] * 7 + [(fac - _1) / (fac ** 10 - _1) * fac ** i for i in range(10)]
+
+    for i, p in enumerate(pct):
+        ent = fincore.Amortization(date=datetime.date(2026, 12, 21) + _MONTH * i, amortization_ratio=p)
+        pla = fincore.PriceLevelAdjustment('IPCA', shift='M-2')
+
+        if geometry == 'nested':
+            pla.base_date, pla.period = datetime.date(2026, 12, 1), i + 1
+
+        else:
+            pla.base_date, pla.period = datetime.date(2026, 12, 1) + _MONTH * i, 1
+
+        pla.amortizes_adjustment = geometry != 'direct' and p > _0
+        ent.price_level_adjustment = pla
+
+        lst.append(ent)
+
+    return lst
+
+@pytest.mark.parametrize('geometry', ['direct', 'grace', 'nested'])
+def test_will_incorporate_unsettled_adjustment_on_price_ipca(geometry):
+    '''
+    Reference spreadsheet of Bruno Ferreira, "Teste_Price_Pós", 2026-11-19: R$ 700 thousand, 16.5% a year plus IPCA,
+    seventeen payments. Every month the balance is corrected by the IPCA and the interest accrues over the corrected
+    balance; the grace pays interest only, and the adjustment it does not pay stays in the balance; each amortization
+    carries the adjustment of the slice it amortizes, and the remaining balance keeps its own. The spreadsheet
+    recomputes the Price installment over the corrected balance every month – the same as fixed amortization
+    percentages over the spread, which is what the schedule carries.
+
+    Before PLAT-56 an entry that did not settle the adjustment dropped it, on period one windows: the "direct" and the
+    "grace" geometries fell R$ 33,185.80 short of the spreadsheet. Only the "nested" one reached it, by repeating the
+    index months from issuance in every window.
+    '''
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('700000')
+    kwa['apy'] = decimal.Decimal('16.5')
+    kwa['amortizations'] = _price_ipca_schedule(geometry)
+    kwa['vir'] = fincore.VariableIndex(code='IPCA', backend=_ConstantIpcaBackend())
+    kwa['capitalisation'] = '30/360'
+
+    ref = ['8998.61', '9031.68', '9064.87', '9098.18', '9131.61', '9165.17', '9198.85', '77259.43', '77543.34', '77828.30', '78114.30', '78401.36', '78689.47', '78978.64', '79268.87', '79560.17', '79852.54']
+
+    sched = t.cast(t.List[fincore.PriceAdjustedPayment], list(fincore.get_payments_table(**kwa)))
+
+    assert [x.raw for x in sched] == [decimal.Decimal(x) for x in ref]
+    assert sched[-1].bal == _0
+
+    # The daily engine keeps the symmetry with the schedule, period by period.
+    days = collections.defaultdict(list)
+
+    for drt in fincore.get_daily_returns(**kwa):
+        days[drt.period].append(t.cast(fincore.PriceAdjustedDailyReturn, drt))
+
+    for num, pmt in enumerate(sched, 1):
+        assert abs(sum(x.value + x.pla for x in days[num]) - (pmt.gain + pmt.pla)) <= _CENTI * 30
+
+def test_will_settle_monthly_adjustment_on_grace_and_keep_it_on_amortization():
+    '''
+    The same Price, every entry settling the adjustment: the grace pays the month's adjustment of the whole balance,
+    and each amortization pays the adjustment of its slice while the remaining balance keeps the rest. Before PLAT-56
+    the adjustment of the remaining balance was dropped at every amortization.
+    '''
+
+    lst = _price_ipca_schedule('grace')
+
+    for ent in lst[1:]:
+        t.cast(fincore.PriceLevelAdjustment, t.cast(fincore.Amortization, ent).price_level_adjustment).amortizes_adjustment = True
+
+    kwa = {}
+
+    kwa['principal'] = decimal.Decimal('700000')
+    kwa['apy'] = decimal.Decimal('16.5')
+    kwa['amortizations'] = lst
+    kwa['vir'] = fincore.VariableIndex(code='IPCA', backend=_ConstantIpcaBackend())
+    kwa['capitalisation'] = '30/360'
+
+    sched = t.cast(t.List[fincore.PriceAdjustedPayment], list(fincore.get_payments_table(**kwa)))
+    mon = _ConstantIpcaBackend.MONTHLY / 100
+
+    # The grace pays the adjustment of the whole nominal balance, month by month.
+    for pmt in sched[:7]:
+        assert pmt.pla == (decimal.Decimal('700000') * mon).quantize(_CENTI)
+
+    # After the grace, the remaining balance keeps its adjustment: after the j-th amortization, the nominal balance
+    # still due carries j months of IPCA. Before PLAT-56 it carried one, the month of the payment.
+    amz = _0
+
+    for j, pmt in enumerate(sched[7:], 1):
+        amz += t.cast(fincore.Amortization, lst[7 + j]).amortization_ratio
+
+        assert abs(pmt.bal - decimal.Decimal('700000') * (_1 - amz) * (_1 + mon) ** j) <= _CENTI
+
+    assert sched[-1].bal == _0
+
+    days = collections.defaultdict(list)
+
+    for drt in fincore.get_daily_returns(**kwa):
+        days[drt.period].append(t.cast(fincore.PriceAdjustedDailyReturn, drt))
+
+    for num, pmt in enumerate(sched, 1):
+        assert abs(sum(x.value + x.pla for x in days[num]) - (pmt.gain + pmt.pla)) <= _CENTI * 30
 # }}}
 
 # vi:fdm=marker:

@@ -1523,6 +1523,46 @@ class VariableIndex:
     percentage: int = 100
 
     backend: IndexStorageBackend = dataclasses.field(default=InMemoryBackend(), compare=False)
+
+@typeguard.typechecked
+def _trim_price_level_windows(amortizations: t.List[Amortization | Amortization.Bare]) -> t.List[Amortization | Amortization.Bare]:
+    '''
+    Trims the price level window of each regular amortization to the months that no earlier window has covered.
+
+    A schedule is free to describe its correction with disjoint windows, one month per entry, or with nested windows,
+    all of them starting at issuance and growing by one month per entry. Once a correction that is not settled stays
+    incorporated in the balance, the second geometry would count every month again on each entry. Trimming makes both
+    geometries the same partition of the index series, so each month is counted exactly once.
+
+    >>> from datetime import date
+    >>> from decimal import Decimal
+    >>> nested = [Amortization(date(2022, 1, 1), amortizes_interest=False)]
+    >>> for i in range(1, 4):
+    ...     pla = PriceLevelAdjustment('IPCA', base_date=date(2022, 1, 1), period=i, shift='M-2', amortizes_adjustment=False)
+    ...     nested.append(Amortization(date(2022, 1, 1) + _MONTH * i, Decimal(1) / 3, price_level_adjustment=pla))
+    >>> [(x.price_level_adjustment.base_date, x.price_level_adjustment.period) for x in _trim_price_level_windows(nested)[1:]]
+    [(datetime.date(2022, 1, 1), 1), (datetime.date(2022, 2, 1), 1), (datetime.date(2022, 3, 1), 1)]
+    '''
+
+    out: t.List[Amortization | Amortization.Bare] = []
+    end: t.Optional[datetime.date] = None  # Last month already covered, already shifted.
+
+    for ent in amortizations:
+        if type(ent) is Amortization and (pla := ent.price_level_adjustment) and pla.base_date and pla.period > 0:
+            sft = _MONTH * t.get_args(_PL_SHIFT).index(pla.shift)
+            ini = pla.base_date - sft
+            fin = pla.base_date + _MONTH * (pla.period - 1) - sft
+
+            if end is not None and ini <= end:
+                new = end + _MONTH
+                pla = dataclasses.replace(pla, base_date=new + sft, period=_delta_months(fin, new) + 1 if new <= fin else 0)
+                ent = dataclasses.replace(ent, price_level_adjustment=pla)
+
+            end = fin if end is None else max(end, fin)
+
+        out.append(ent)
+
+    return out
 # }}}
 
 # Public API. Payments table. {{{
@@ -1717,6 +1757,10 @@ def get_payments_table(
 
     if calc_date is None:
         calc_date = CalcDate(value=amortizations[-1].date, runaway=False)
+
+    # Each month of the index series is counted once. See "_trim_price_level_windows".
+    if vir and vir.code == 'IPCA' and capitalisation == '30/360':
+        amortizations = _trim_price_level_windows(amortizations)
 
     # Registers.
     #
@@ -1960,7 +2004,7 @@ def get_payments_table(
                     kwc['shift'] = pla.shift
                     kwc['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)
 
-                    f_c = vir.backend.calculate_ipca_factor(**kwc)
+                    f_c = vir.backend.calculate_ipca_factor(**kwc) if pla.period > 0 else types.SimpleNamespace(value=_1, mem=[])
                     f_c.value = max(f_c.value, _1)  # Lock the price level factor.
 
                 # FIXME: the factor here is the successor's whole window, and not the stretch. Inheriting the window
@@ -1995,7 +2039,7 @@ def get_payments_table(
                         kwd['shift'] = pla.shift
                         kwd['ratio'] = decimal.Decimal(dcp) / decimal.Decimal(dct)
 
-                        f_c = vir.backend.calculate_ipca_factor(**kwd)
+                        f_c = vir.backend.calculate_ipca_factor(**kwd) if pla.period > 0 else types.SimpleNamespace(value=_1, mem=[])
                         f_c.value = max(f_c.value, _1)  # Lock the price level factor.
 
         elif vir:  # pragma: no cover
@@ -2188,17 +2232,29 @@ def get_payments_table(
             #
             # Applies the price level adjustment to the gross value, and to the revenue tax.
             #
+            # Whether the adjustment of this period was incorporated into the balance, instead of settled. See below.
+            inc = False
+
             if vir and vir.code == 'IPCA':
                 pmt = t.cast(PriceAdjustedPayment, pmt)
 
                 # Pays monetary correction over the principal amortization. The factor collects whatever an
-                # earlier advancement has left deferred.
+                # earlier advancement, or an earlier entry that did not settle the adjustment, has left deferred.
+                #
+                # The amortized slice carries its own adjustment, and the balance that remains keeps the adjustment it
+                # has accrued: the factor stays deferred, and each later amortization collects it in the proportion it
+                # amortizes – the same way interest deferred by a grace period comes out. That is the correction of
+                # the principal of the Brazilian market ("VNa"), and it is what a schedule with nested windows already
+                # computed; with disjoint windows the adjustment of the remaining balance used to be dropped.
+                #
                 if (pla := t.cast(PriceLevelAdjustment, ent1.price_level_adjustment)) and pmt.amort:
                     pmt.pla = pmt.amort * (regs.correction.deferred_factor * f_c.value - 1) - regs.correction.settled + regs.correction.locked
 
-                    regs.correction.deferred_factor = _1
+                    regs.correction.deferred_factor = regs.correction.deferred_factor * f_c.value
                     regs.correction.settled = _0
                     regs.correction.locked = _0
+
+                    inc = True
 
                 # If there is no principal amortization in the period, and "pla.amortizes_adjustment" is true, then
                 # "pmt.pla" will be the value of monetary correction of the outstanding balance. This s what
@@ -2212,6 +2268,12 @@ def get_payments_table(
                     regs.correction.settled = _0
                     regs.correction.locked = _0
 
+                # No principal amortization, and the adjustment is not settled: it is incorporated into the balance.
+                elif pla:
+                    regs.correction.deferred_factor = regs.correction.deferred_factor * f_c.value
+
+                    inc = True
+
                 pmt.raw = pmt.raw + pmt.pla
                 pmt.tax = _0 if tax_exempt else pmt.tax + pmt.pla * calculate_revenue_tax(amortizations[0].date, due)
 
@@ -2220,7 +2282,10 @@ def get_payments_table(
             # that has just been consumed. That is what left a schedule closing on a negative balance, of exactly the
             # correction an earlier advancement had paid against a factor still deferred.
             #
-            pmt.bal = calc_balance(f_c.value)
+            # An incorporated adjustment already sits in the deferred factor, so the factor of the period is not
+            # applied again.
+            #
+            pmt.bal = calc_balance(_1 if inc else f_c.value)
 
         else:  # Implies "type(ent1) is Amortization.Bare".
             pmt.amort = regs.principal.amortized.current
@@ -2772,7 +2837,7 @@ def get_daily_returns(
                     kwb['shift'] = pla.shift
                     kwb['ratio'] = _1
 
-                    if (obj := backend.calculate_ipca_factor(**kwb)).mem:
+                    if (obj := backend.calculate_ipca_factor(**kwb) if pla.period > 0 else types.SimpleNamespace(value=_1, mem=[])).mem:
                         fac = max(obj.value, _1) - _1
                         fac = calculate_interest_factor(fac, _1 / decimal.Decimal(dct), False)
 
@@ -2841,6 +2906,10 @@ def get_daily_returns(
     if not math.isclose(aux, _1):
         raise ValueError('the accumulated percentage of the amortizations does not reach 1.0')
 
+    # Each month of the index series is counted once. See "_trim_price_level_windows".
+    if vir and vir.code == 'IPCA' and capitalisation == '30/360':
+        amortizations = _trim_price_level_windows(amortizations)
+
     # Registers.
     #
     #   • "correction.deferred_factor" is the adjustment factor due and not yet settled, and "correction.settled" is the
@@ -2867,7 +2936,7 @@ def get_daily_returns(
     #
     regs.principal = types.SimpleNamespace(amortization_ratio=types.SimpleNamespace(adjusted=_0, nominal=_0), amortized=types.SimpleNamespace(current=_0, total=_0))
     regs.interest = types.SimpleNamespace(daily=_0, current=_0, accrued=_0, settled=types.SimpleNamespace(current=_0, total=_0), deferred=_0, locked=_0)
-    regs.correction = types.SimpleNamespace(deferred_factor=_1, settled=_0, locked=_0)
+    regs.correction = types.SimpleNamespace(deferred_factor=_1, settled=_0, locked=_0, incorporated=False)
 
     # Control, create generators.
     gens.interest_tracker_1 = track_interest_1()
@@ -3006,10 +3075,29 @@ def get_daily_returns(
                 # A regular payment that settles adjustment collects what earlier advancements have left deferred
                 # or locked. Mirrors the "pmt.pla" sites of "get_payments_table".
                 #
-                if (pla := tup[1].price_level_adjustment) and (regs.principal.amortized.current or pla.amortizes_adjustment):
+                # A payment that does not settle the adjustment incorporates it: the factor of the period joins the
+                # deferred one before the renormalization below resets it. Only when that renormalization happens –
+                # otherwise the factor simply keeps accruing into the next period.
+                #
+                # The factor of the period is the one up to the eve ("prev_value"): on the day of the payment the
+                # triplet already carries the first day of the next period, and "normalize" keeps that day out of the
+                # period that closes.
+                #
+                if (pla := tup[1].price_level_adjustment) and regs.principal.amortized.current:
+                    regs.correction.deferred_factor = regs.correction.deferred_factor * facs.correction.prev_value
+                    regs.correction.settled = _0
+                    regs.correction.locked = _0
+                    regs.correction.incorporated = True
+
+                elif pla and pla.amortizes_adjustment:
                     regs.correction.deferred_factor = _1
                     regs.correction.settled = _0
                     regs.correction.locked = _0
+                    regs.correction.incorporated = False
+
+                elif pla and tup[1].amortizes_interest:
+                    regs.correction.deferred_factor = regs.correction.deferred_factor * facs.correction.prev_value
+                    regs.correction.incorporated = True
 
                 # The interest factors have to be renormalized on principal changes. See comments above.
                 if tup[1].amortization_ratio > 0 or tup[1].amortizes_interest:
@@ -3171,6 +3259,13 @@ def get_daily_returns(
             # "value" are frozen on the last step, and their difference would repeat the adjustment of the eve of the
             # maturity on every one of those days. See "test_wont_accrue_adjustment_past_a_weekend_maturity".
             #
+            # A payment collects, besides the adjustment of its period, the adjustment that earlier periods
+            # incorporated into the balance. That part has no day of its own in this period, so the first day of the
+            # period carries it: the day is measured from the nominal value, and not from the incorporated one.
+            # Without incorporation the deferred factor is one there, and both measures coincide.
+            #
+            fst = regs.correction.incorporated and cnt == 1
+
             if ref >= amortizations[-1].date:
                 v0 = v1 = _0
 
@@ -3178,7 +3273,7 @@ def get_daily_returns(
                 adj = (_1 - regs.principal.amortization_ratio.adjusted) / (_1 - regs.principal.amortization_ratio.nominal)  # [FATOR-AJUSTE].
                 bse = principal * tup[1].amortization_ratio * adj
 
-                v0 = bse * (regs.correction.deferred_factor * facs.correction.prev_value - _1)
+                v0 = _0 if fst else bse * (regs.correction.deferred_factor * facs.correction.prev_value - _1)
                 v1 = bse * (regs.correction.deferred_factor * facs.correction.value - _1)
 
             # An advancement collects the adjustment of the balance in force, bounded by what is left of its value
@@ -3190,7 +3285,7 @@ def get_daily_returns(
                 v1 = calc_adjustment(facs.correction.value)
 
             elif type(tup[1]) is Amortization and tup[1].price_level_adjustment and tup[1].price_level_adjustment.amortizes_adjustment:
-                v0 = calc_adjustment(facs.correction.prev_value)
+                v0 = _0 if fst else calc_adjustment(facs.correction.prev_value)
                 v1 = calc_adjustment(facs.correction.value)
 
             else:
